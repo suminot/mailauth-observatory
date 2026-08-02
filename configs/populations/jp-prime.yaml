@@ -1,0 +1,81 @@
+# 東証プライム市場上場企業
+#
+# 日本側の identity は政府オープンデータで構築する。
+# JPX の data_j.xls は商用二次利用が規約で禁止のため使わない（非商用であっても方針として使わない）。
+id: jp-prime
+label: 東証プライム市場上場企業
+country: JP
+enabled: true
+implemented: true
+
+source:
+  primary: edinet_code_list
+
+  edinet_code_list:
+    # EDINETコードリスト（EdinetcodeDlInfo.csv）の ZIP。cp932・全13列。
+    # スクレイピングは禁止。ダウンロードエンドポイントを直接叩く。
+    url: https://disclosure2dl.edinet-fsa.go.jp/searchdocument/codelist/Edinetcode.zip
+    # Subscription-Key を付与するかどうか。EDINET API v2 系は全リクエストで必須。
+    # 配信元がキーを要求しない場合でも、付けて害はない。
+    send_subscription_key: true
+    subscription_key_param: Subscription-Key
+    encoding: cp932
+    # 1行目はタイトル行、2行目がヘッダ行
+    header_row: 1
+    columns:
+      edinet_code: 0          # 1列目
+      submitter_type: 1
+      listing_status: 2       # 上場区分
+      consolidated: 3
+      capital: 4
+      fiscal_year_end: 5
+      name: 6                 # 7列目 提出者名
+      name_en: 7
+      name_kana: 8
+      address: 9
+      industry: 10            # 11列目 提出者業種（東証33業種と同一ラベル集合）
+      securities_code: 11     # 12列目 証券コード（上場は5桁・末尾0、非上場は空欄）
+      houjin_bangou: 12       # 13列目 提出者法人番号（13桁）
+
+  market_filter:
+    # 市場区分の判定方法。JPX に依存しない手段を第一候補とする
+    method: securities_code_presence   # 証券コードが存在＝上場
+    # 決定: 市場区分は内部フィルタに留め、成果物には出さない
+    # JPX への依存を避けるため segment_source は none で固定する
+    segment_source: none
+    # segment_source: none の場合、EDINET だけではプライム/スタンダード/グロースを
+    # 区別できないため、本設定は「全上場企業」を母集団とする。
+    # 区分で絞りたい場合は JPX 由来でない証券コード一覧を下に指定する。
+    # 未指定のとき P1 は manifest に MARKET_SEGMENT_UNAVAILABLE 警告を出す。
+    segment_allowlist: null   # 例: configs/populations/_segments/jp-prime-codes.csv
+    expects_segment: true
+
+  enrich:
+    - houjin_bangou      # 国税庁：商号・所在地の裏取り
+    - gbizinfo           # company_url の取得
+
+  industry:
+    primary_scheme: EDINET33
+    common_mapping: configs/industry/edinet33_to_common12.csv
+
+refresh:
+  # EDINETコードリストは月次更新
+  cadence: monthly
+  # 取得はAPI経由（スクレイピング禁止）
+  method: api
+  # ダウンロード結果は run をまたいでキャッシュする（再実行の冪等性のため）
+  cache_ttl_hours: 24
+
+acceptance:
+  # DESIGN.md P1 受け入れ基準。範囲外なら manifest に警告を出す（実行は止めない）
+  expected_count_min: 1450
+  expected_count_max: 1650
+  max_missing_rate:
+    houjin_bangou: 0.01
+    official_url: 0.10
+    common12: 0.05
+
+attribution:
+  - "出典：EDINET（金融庁）"
+  - "出典：国税庁法人番号公表サイト（国税庁）"
+  - "出典：経済産業省gBizINFO"

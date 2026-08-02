@@ -1,0 +1,79 @@
+# DKIM セレクタ辞書 L2（プロバイダ別・動的付与）
+#
+# MX / SPF から推定した事業者に応じて、そのプロバイダの既知セレクタを
+# 優先的に付与する。例: MX が *.outlook.com なら selector1 / selector2 を最優先。
+# DESIGN.md P4「DKIM の三層辞書」の第2層。
+version: 2026-08-01
+
+providers:
+  - id: microsoft365
+    label: Microsoft 365
+    triggers:
+      mx_pattern: '\.mail\.protection\.outlook\.com\.?$'
+      spf_include: [spf.protection.outlook.com]
+    selectors: [selector1, selector2]
+    # DKIM CNAME が *.onmicrosoft.com を指していれば実基盤の裏付けが強い
+    cname_hint: '\.onmicrosoft\.com\.?$'
+
+  - id: google_workspace
+    label: Google Workspace
+    triggers:
+      mx_pattern: '\.google\.com\.?$|\.googlemail\.com\.?$'
+      spf_include: [_spf.google.com]
+    selectors: [google, "20161025", "20230601", default]
+
+  - id: amazon_ses
+    label: Amazon SES
+    triggers:
+      spf_include: [amazonses.com]
+    selectors: [sig1, ses, amazonses]
+    cname_hint: '\.dkim\.amazonses\.com\.?$'
+
+  - id: sendgrid
+    label: SendGrid
+    triggers:
+      spf_include: [sendgrid.net]
+    selectors: [s1, s2, smtpapi, sendgrid]
+
+  - id: mailchimp
+    label: Mailchimp
+    triggers:
+      spf_include: [servers.mcsv.net, spf.mandrillapp.com]
+    selectors: [k1, k2, k3, mte1, mte2, mandrill]
+
+  - id: salesforce
+    label: Salesforce
+    triggers:
+      spf_include: [_spf.salesforce.com]
+    selectors: [sfdc, sf1, sf2]
+
+  - id: iij_securemx
+    label: IIJ セキュアMXサービス
+    region: JP
+    triggers:
+      mx_pattern: '\.securemx\.jp\.?$'
+    selectors: [dxg, iij, default]
+    # ゲートウェイ独自の署名ドメイン。実基盤と誤認しないこと（DESIGN.md P6 実装メモ）
+    gateway_signing_domain: dxg.dox.jp
+
+  - id: hennge
+    label: HENNGE One
+    region: JP
+    triggers:
+      mx_pattern: '^mo\..*\.hdemail\.jp\.?$|\.hdemail\.jp\.?$'
+    selectors: [hennge, hde, default]
+
+  - id: cybersolutions
+    label: CYBERMAIL
+    region: JP
+    triggers:
+      mx_pattern: '\.cybermail\.jp\.?$'
+    selectors: [cybermail, default]
+
+  - id: sakura
+    label: さくらインターネット
+    region: JP
+    triggers:
+      # さくらは専用 include ではなく a:wwwNNNN.sakura.ne.jp mx 形式（DESIGN.md P6）
+      spf_mechanism_pattern: 'a:www\d+\.sakura\.ne\.jp'
+    selectors: [rs, sakura, default]

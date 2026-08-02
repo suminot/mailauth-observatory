@@ -1,0 +1,89 @@
+# ESP / マーケティング配信基盤（esp）の判定規則
+#
+# 業務メールの基盤とは別に、配信専用ドメインで使われることが多い。
+# mail_platform と併存しうるので、単一ベンダーに丸めないこと。
+version: 2026-08-01
+category: esp
+
+rules:
+  - id: ses-spf-01
+    vendor: Amazon Web Services
+    product: Amazon SES
+    match:
+      record: SPF_INCLUDE
+      pattern: '^amazonses\.com$|^.+\.amazonses\.com$'
+    confidence: high
+
+  - id: ses-dkim-01
+    vendor: Amazon Web Services
+    product: Amazon SES
+    match:
+      record: DKIM_CNAME
+      pattern: '\.dkim\.amazonses\.com\.?$'
+    confidence: high
+
+  - id: sendgrid-spf-01
+    vendor: Twilio
+    product: SendGrid
+    match:
+      record: SPF_INCLUDE
+      pattern: '^sendgrid\.net$'
+    confidence: high
+
+  - id: mailchimp-spf-01
+    vendor: Intuit
+    product: Mailchimp
+    match:
+      record: SPF_INCLUDE
+      pattern: '^servers\.mcsv\.net$'
+    confidence: high
+
+  - id: mandrill-spf-01
+    vendor: Intuit
+    product: Mailchimp Transactional (Mandrill)
+    match:
+      record: SPF_INCLUDE
+      pattern: '^spf\.mandrillapp\.com$'
+    confidence: high
+
+  - id: salesforce-spf-01
+    vendor: Salesforce
+    product: Salesforce (Marketing Cloud / Sales Cloud)
+    match:
+      record: SPF_INCLUDE
+      pattern: '^_spf\.salesforce\.com$|^cust-spf\.exacttarget\.com$'
+    confidence: high
+
+  - id: hubspot-spf-01
+    vendor: HubSpot
+    product: HubSpot
+    match:
+      record: SPF_INCLUDE
+      pattern: '^\d+\.spf\d*\.hubspotemail\.net$|^spf\.hubspotemail\.net$'
+    confidence: high
+
+  - id: marketo-spf-01
+    vendor: Adobe
+    product: Marketo Engage
+    match:
+      record: SPF_INCLUDE
+      pattern: '^mktomail\.com$'
+    confidence: high
+
+  - id: zendesk-spf-01
+    vendor: Zendesk
+    product: Zendesk
+    match:
+      record: SPF_INCLUDE
+      pattern: '^mail\.zendesk\.com$'
+    confidence: high
+
+  - id: benchmark-spf-jp-01
+    vendor: ラクス
+    product: 配配メール
+    region: JP
+    match:
+      record: SPF_INCLUDE
+      pattern: '^spf\.haihaimail\.jp$'
+    confidence: medium
+    note: 実測で確認したら confidence を high に上げる

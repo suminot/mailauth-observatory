@@ -1,0 +1,27 @@
+# 作業領域。bronze / silver は Git に入れない（DESIGN.md 第4章）
+# 履歴肥大化の回避のため。退避先は Cloudflare R2。
+data/runs/
+data/cache/
+
+# gold/ は集計結果のみコミットする（.gitignore しない）
+
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+
+.env
+.env.local
+
+node_modules/
+console/frontend/dist/
+console/frontend/tsconfig.tsbuildinfo
+site/dist/
+site/.observablehq/
+
+.DS_Store

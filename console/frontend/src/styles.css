@@ -1,0 +1,344 @@
+/* 運用コンソールの見た目。内部ツールなので装飾より情報密度を優先する。
+   公開サイト（site/）の配色規約とは別物。あちらは DESIGN.md P8 に従うこと。 */
+
+:root {
+  --fg: #1a1c1e;
+  --muted: #6b7280;
+  --bg: #f7f8fa;
+  --card: #ffffff;
+  --border: #d7dbe0;
+  --ok: #1f7a4d;
+  --ng: #a33a2c;
+  --warn: #8a6100;
+  --accent: #24537a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.app {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
+}
+
+header h1 {
+  font-size: 18px;
+  margin: 0 0 4px;
+}
+
+nav {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+nav button {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+nav button.active {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.muted {
+  color: var(--muted);
+}
+.small {
+  font-size: 12px;
+}
+.ok {
+  color: var(--ok);
+}
+.ng {
+  color: var(--ng);
+}
+
+.toolbar {
+  margin-bottom: 16px;
+}
+
+/* --- 画面1 --- */
+
+.pipeline-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.arrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  padding: 4px 0 4px 20px;
+  font-size: 12px;
+}
+
+.arrow-counts {
+  font-variant-numeric: tabular-nums;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+
+.card-success {
+  border-left-color: var(--ok);
+}
+.card-partial {
+  border-left-color: var(--warn);
+}
+.card-failed {
+  border-left-color: var(--ng);
+}
+.card-not_run {
+  border-left-color: var(--border);
+  opacity: 0.75;
+}
+
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.badge-success {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+.badge-partial,
+.badge-running {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+.badge-failed,
+.badge-cancelled {
+  color: var(--ng);
+  border-color: var(--ng);
+}
+
+.counts {
+  display: flex;
+  gap: 16px;
+  margin: 8px 0 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bar {
+  position: relative;
+  height: 14px;
+  background: #eceef1;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  background: var(--ok);
+  opacity: 0.7;
+}
+
+.bar-label {
+  position: absolute;
+  right: 6px;
+  top: -1px;
+  font-size: 11px;
+  color: var(--fg);
+}
+
+.section-title {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.failure-row {
+  display: grid;
+  grid-template-columns: 140px 40px 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.failure-bar {
+  height: 8px;
+  background: var(--ng);
+  opacity: 0.5;
+  border-radius: 2px;
+}
+
+.warn {
+  margin-top: 8px;
+  color: var(--warn);
+  font-size: 12px;
+}
+
+.warn-msg {
+  color: var(--muted);
+}
+
+.error {
+  margin-top: 8px;
+  color: var(--ng);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.output {
+  margin-top: 6px;
+  color: var(--muted);
+}
+
+.card-actions {
+  margin-top: 10px;
+}
+
+/* --- 画面2 --- */
+
+.execute {
+  display: grid;
+  grid-template-columns: minmax(320px, 400px) 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.form label {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.form label.inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.form input[type="text"],
+.form input:not([type]),
+.form select {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 13px;
+  background: var(--card);
+}
+
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+}
+
+legend {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.phase-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.phase-row label {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+button {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--card);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.link {
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 12px;
+  padding: 0;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.log-pane {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  overflow: hidden;
+}
+
+.log-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.log {
+  margin: 0;
+  padding: 12px;
+  height: 520px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+footer {
+  margin-top: 32px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}

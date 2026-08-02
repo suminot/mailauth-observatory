@@ -1,0 +1,74 @@
+# DKIM セレクタ辞書 L1（コア）
+#
+# Wang et al. の頻出上位40相当 + 主要ESP既定セレクタ。
+# DESIGN.md P4「DKIM の三層辞書」の第1層。全ドメインに投げる。
+#
+# 初回フル計測時に「セレクタ数 対 新規発見ドメイン数」の飽和曲線を描き、
+# 自母集団での最適セレクタ数を実証的に決め直すこと。
+# 1行1セレクタ。# 以降はコメント。
+
+# --- Microsoft 365 / Exchange Online ---
+selector1
+selector2
+
+# --- Google Workspace ---
+google
+20161025
+20230601
+
+# --- 汎用・頻出 ---
+default
+dkim
+mail
+email
+k1
+k2
+k3
+s1
+s2
+s512
+s1024
+smtp
+mx
+key1
+key2
+dk
+dkim1
+dkim2
+
+# --- 主要 ESP ---
+mandrill          # Mailchimp Transactional
+mte1              # Mailchimp
+mte2
+sendgrid
+smtpapi           # SendGrid
+sm                # 各社共通で頻出
+pm                # Postmark
+pic               # Postmark
+mailjet
+mj                # Mailjet
+scph0316          # SparkPost 系
+scph1017
+sig1              # Amazon SES / 一部SaaS
+zoho
+zmail             # Zoho
+protonmail
+protonmail2
+fm1               # Fastmail
+fm2
+fm3
+ctct1             # Constant Contact
+ctct2
+hs1               # HubSpot
+hs2
+mailo
+everlytickey1     # Everlytic
+everlytickey2
+
+# --- 日本国内で観測されやすいもの ---
+biglobe
+sakura
+xserver
+lolipop
+nifty
+ocn

@@ -1,0 +1,118 @@
+# メールセキュリティゲートウェイ（security_gateway）の判定規則
+#
+# ゲートウェイ型は MX を自社に向けさせるため、MX だけでは背後の実基盤が見えない。
+# 二段推定（DESIGN.md P6）で SPF include / DKIM CNAME から背後を別途推定すること。
+#
+# 国内ベンダーの固定ホスト名は未解決事項の筆頭（DESIGN.md 第11章 #1）。
+# 運用コンソール画面5の「未知 MX ホスト頻度順リスト」から帰納的に埋めていく。
+version: 2026-08-01
+category: security_gateway
+
+rules:
+  - id: pp-mx-01
+    vendor: Proofpoint
+    product: Proofpoint Enterprise Protection
+    match:
+      record: MX
+      pattern: '^mx0[ab]-[0-9a-f]{8}\.pphosted\.com\.?$'
+    confidence: high
+    source: dmarc.mx
+
+  - id: pp-mx-02
+    vendor: Proofpoint
+    product: Proofpoint Essentials
+    match:
+      record: MX
+      pattern: '\.ppe-hosted\.com\.?$'
+    confidence: high
+
+  - id: mimecast-mx-01
+    vendor: Mimecast
+    product: Mimecast Email Security
+    match:
+      record: MX
+      pattern: '\.mimecast\.com\.?$|\.mimecast\.co\.za\.?$'
+    confidence: high
+
+  - id: cisco-mx-01
+    vendor: Cisco
+    product: Cisco Secure Email (Cloud Gateway)
+    match:
+      record: MX
+      pattern: '\.iphmx\.com\.?$'
+    confidence: high
+
+  - id: barracuda-mx-01
+    vendor: Barracuda
+    product: Barracuda Email Gateway Defense
+    match:
+      record: MX
+      pattern: '\.barracudanetworks\.com\.?$|\.ess\.barracudanetworks\.com\.?$'
+    confidence: high
+
+  - id: trendmicro-mx-01
+    vendor: Trend Micro
+    product: Trend Micro Email Security
+    match:
+      record: MX
+      pattern: '\.trendmicro\.com\.?$|\.tmes\.trendmicro\.com\.?$'
+    confidence: high
+
+  - id: mfilter-spf-01
+    vendor: デジタルアーツ
+    product: m-FILTER@Cloud
+    region: JP
+    match:
+      record: SPF_INCLUDE
+      pattern: '^(_spf1\.)?spf\.mail\.system\.digitalartscloud\.com$'
+    confidence: high
+    source: daj.jp/bs/serverlist/
+
+  - id: guardianwall-spf-01
+    vendor: キヤノンITソリューションズ
+    product: GUARDIANWALL メールセキュリティクラウド
+    region: JP
+    match:
+      record: SPF_INCLUDE
+      pattern: '^_spf\.guardianwall\.jp$'
+    confidence: high
+
+  - id: iij-mx-01
+    vendor: IIJ
+    product: IIJ セキュアMXサービス
+    region: JP
+    match:
+      record: MX
+      pattern: '\.securemx\.jp\.?$'
+    confidence: high
+
+  - id: hennge-mx-01
+    vendor: HENNGE
+    product: HENNGE One (Email DLP)
+    region: JP
+    match:
+      record: MX
+      pattern: '\.hdemail\.jp\.?$'
+    confidence: high
+
+  - id: qualitia-mx-01
+    vendor: クオリティア
+    product: Active! gate SS
+    region: JP
+    match:
+      record: MX
+      pattern: '\.activegate-ss\.jp\.?$'
+    confidence: high
+
+# DNS に痕跡を残さない製品（DESIGN.md P6「API連携型製品という構造的盲点」）
+# 「検出されなかった＝使っていない」ではないことを出力とレポートに明示する。
+undetectable_by_dns:
+  - vendor: Abnormal Security
+  - vendor: Check Point
+    product: Avanan / Harmony Email & Collaboration
+  - vendor: Darktrace
+    product: Darktrace EMAIL
+  - vendor: Vade
+    product: Vade for M365
+  - vendor: Perception Point
+  - vendor: Agari

@@ -1,0 +1,42 @@
+# Fortune 500 (US)
+#
+# Sprint 1.5 で実装する。Sprint 1 では実行するとその旨のエラーになる。
+id: us-fortune500
+label: Fortune 500 (US)
+country: US
+enabled: true
+implemented: false
+blocked_by: Sprint 1.5（P1 米国・グローバル）で実装
+
+source:
+  # fortune.com はスクレイピングと二次利用を規約で禁止
+  # 会社名リストは CC0 / パブリックドメインのソースから再構築する
+  primary: wikidata
+  wikidata_query: configs/populations/_sparql/fortune500.rq
+  fallback: wikipedia          # CC BY-SA 4.0（帰属表示が必要）
+  enrich:
+    - sec_edgar_cik            # company_tickers.json でCIK付与
+    - sec_edgar_submissions    # website と SIC を取得
+    - gleif_lei
+  industry:
+    primary_scheme: SIC
+    common_mapping: configs/industry/sic_to_common12.csv
+
+refresh:
+  # Fortune 500(US) は毎年6月上旬発表、2024会計年度基準
+  cadence: annual
+  announce_month: 6
+  recheck_only_on_announce: true
+
+constraints:
+  # 順位と売上高は成果物に含めない（Fortune の編集著作物であるため）
+  exclude_fields: [rank, revenue]
+
+acceptance:
+  expected_count_min: 480
+  expected_count_max: 500
+
+attribution:
+  - "Source: Wikidata (CC0)"
+  - "Source: U.S. SEC EDGAR (public domain)"
+  - "Source: GLEIF"

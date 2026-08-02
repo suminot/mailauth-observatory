@@ -1,0 +1,66 @@
+# 所有権確認TXT の判定規則
+#
+# 証拠としては最も弱い（DESIGN.md P3 証拠の優先順位）。
+# 削除されずに残りやすいため、対応する MX / SPF / DKIM の裏付けが無ければ
+# 「過去に検討・併用したが現行のメール基盤ではない」と判定する（stale）。
+# 3か月連続で裏付けが出なければ stale に降格（DESIGN.md P6）。
+version: 2026-08-01
+category: verification_txt
+
+rules:
+  - id: ms-verify-01
+    vendor: Microsoft
+    product: Microsoft 365
+    match:
+      record: TXT
+      pattern: '^MS=ms\d+$|^MS=[A-Za-z0-9]+$'
+    confidence: low
+    # この裏付けのどれかが立てば「利用中」と見なす
+    corroborated_by:
+      mx_pattern: '\.mail\.protection\.outlook\.com\.?$'
+      spf_include: [spf.protection.outlook.com]
+      dkim_cname: '\.onmicrosoft\.com\.?$'
+
+  - id: google-verify-01
+    vendor: Google
+    product: Google Workspace
+    match:
+      record: TXT
+      pattern: '^google-site-verification=[A-Za-z0-9_-]+$'
+    confidence: low
+    note: Search Console でも使われるため、単独ではメール基盤の証拠にならない
+    corroborated_by:
+      mx_pattern: '\.google(mail)?\.com\.?$'
+      spf_include: [_spf.google.com]
+
+  - id: atlassian-verify-01
+    vendor: Atlassian
+    product: Atlassian Cloud
+    match:
+      record: TXT
+      pattern: '^atlassian-domain-verification=[A-Za-z0-9+/=]+$'
+    confidence: low
+
+  - id: facebook-verify-01
+    vendor: Meta
+    product: Meta Business
+    match:
+      record: TXT
+      pattern: '^facebook-domain-verification=[a-z0-9]+$'
+    confidence: low
+
+  - id: docusign-verify-01
+    vendor: Docusign
+    product: Docusign
+    match:
+      record: TXT
+      pattern: '^docusign=[a-f0-9-]+$'
+    confidence: low
+
+  - id: adobe-verify-01
+    vendor: Adobe
+    product: Adobe
+    match:
+      record: TXT
+      pattern: '^adobe-idp-site-verification=[a-f0-9-]+$'
+    confidence: low

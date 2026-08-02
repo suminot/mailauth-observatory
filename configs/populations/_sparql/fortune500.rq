@@ -1,0 +1,35 @@
+#+ Fortune 500 (US) の会社名リストを Wikidata（CC0）から再構築する
+#+
+#+ fortune.com のスクレイピングは規約で禁止のため、順位そのものは取得しない。
+#+ Fortune の編集著作物である rank / revenue は成果物に含めない
+#+ （configs/populations/us-fortune500.yaml の constraints.exclude_fields）。
+#+
+#+ Sprint 1.5 で実測して調整する。P31448 (Fortune 500 ranking) は
+#+ 年次で付与が遅れることがあるため、取得件数が 480 を下回る場合は
+#+ fallback: wikipedia に切り替える。
+#+ endpoint: https://query.wikidata.org/sparql
+
+SELECT DISTINCT ?company ?companyLabel ?companyLabelEn ?lei ?cik ?website ?tickerLabel
+WHERE {
+  # Fortune 500 に位置づけられた企業
+  ?company p:P31448 ?statement .
+  ?statement ps:P31448 ?rank .
+  OPTIONAL { ?statement pq:P585 ?pointInTime . }
+
+  # 米国に本社を置くものに限定
+  ?company wdt:P17 wd:Q30 .
+
+  OPTIONAL { ?company wdt:P1278 ?lei . }        # Legal Entity Identifier
+  OPTIONAL { ?company wdt:P5531 ?cik . }        # SEC Central Index Key
+  OPTIONAL { ?company wdt:P856  ?website . }    # 公式サイト
+  OPTIONAL { ?company wdt:P249  ?tickerLabel . }
+
+  SERVICE wikibase:label {
+    bd:serviceParam wikibase:language "en,ja" .
+    ?company rdfs:label ?companyLabel .
+  }
+  OPTIONAL {
+    ?company rdfs:label ?companyLabelEn .
+    FILTER(LANG(?companyLabelEn) = "en")
+  }
+}

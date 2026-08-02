@@ -1,0 +1,55 @@
+# DNS計測のパラメータ（DESIGN.md P4）
+# Sprint 3 で実装する。Sprint 1 時点では読み込みのみ検証する。
+
+resolver:
+  mode: local_unbound          # localhost に unbound を立てて上流にフォワード
+  upstream:
+    - 8.8.8.8                  # Google 公式既定 1,500 QPS/IP
+    - 1.1.1.1                  # Cloudflare（公式値非公表、10 req/s で絞られる報告あり）
+    - 9.9.9.9
+  cross_check:
+    enabled: true
+    sample_rate: 0.05          # 5%を3系統で引いて差分検出
+
+rate:
+  threads: 80                  # 実効 QPS <= 80〜100 を目標
+  timeout_sec: 5
+  retries: 3
+  backoff: [1, 3, 9]
+  shuffle_domains: true        # 同一権威への連続クエリを避ける
+
+cache:
+  # SPF include 先は大手プロバイダに集中する
+  # キャッシュなしでは同一権威に不当な負荷をかける（倫理的義務）
+  spf_include: true
+  mx_host_resolution: true
+
+dkim:
+  # 決定: 当面 L1/L2 まで。L3（Tatang 3,498語）は GPL-3.0 の
+  # コピーレフト波及の法務確認が済むまで無効化する。
+  # コンソールには「L3 開発予定」と表示すること。
+  layers: [l1_core, l2_provider]
+  l3_on_miss: false                   # 法務確認後に true へ
+  l3_status: planned                  # UI 表示用
+  negative_control: true              # ワイルドカードDNS検出
+  wildcard_selector_probe: true       # *._domainkey の失効鍵を検出
+
+extras:
+  mta_sts: true
+  tls_rpt: true
+  bimi: true
+  dnssec: true
+  dane: true                          # 取得はするが日米では指標化しない
+  https_fetch: false                  # 第2段で有効化（MTA-STSポリシー、BIMI SVG/VMC）
+
+tiers:
+  # P3 が割り当てる measure_tier ごとの計測の深さ（DESIGN.md P4 表）
+  A:
+    label: フル計測
+    applies_to_confidence: [confirmed, likely]
+    queries: [mx, spf, dmarc, dmarc_subdomain, dkim, dkim_control,
+              dkim_wildcard, mta_sts, tls_rpt, bimi, dane]
+  C:
+    label: 簡易計測
+    applies_to_confidence: [parked, unknown]
+    queries: [mx, spf, dmarc, dmarc_subdomain, dkim_wildcard]

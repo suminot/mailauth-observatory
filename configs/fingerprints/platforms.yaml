@@ -1,0 +1,105 @@
+# メール基盤（mail_platform）の判定規則
+#
+# 証拠の強さ: DKIM_CNAME >= MX > SPF_INCLUDE > VERIFICATION_TXT（DESIGN.md P3/P6）
+# ゲートウェイ型製品が MX を握っていても、SPF include / DKIM CNAME から
+# 背後の実基盤を別カテゴリとして残すこと（原則2。単一ベンダーに丸めない）。
+version: 2026-08-01
+category: mail_platform
+
+rules:
+  - id: m365-mx-01
+    vendor: Microsoft
+    product: Microsoft 365 (Exchange Online)
+    match:
+      record: MX
+      pattern: '\.mail\.protection\.outlook\.com\.?$'
+    confidence: high
+
+  - id: m365-spf-01
+    vendor: Microsoft
+    product: Microsoft 365 (Exchange Online)
+    match:
+      record: SPF_INCLUDE
+      pattern: '^spf\.protection\.outlook\.com$'
+    confidence: high
+
+  - id: m365-dkim-01
+    vendor: Microsoft
+    product: Microsoft 365 (Exchange Online)
+    match:
+      record: DKIM_CNAME
+      pattern: '\.onmicrosoft\.com\.?$'
+    confidence: high
+    note: 署名基盤。MX が前段ゲートウェイでも実基盤が M365 であることを示す
+
+  - id: gws-mx-01
+    vendor: Google
+    product: Google Workspace
+    match:
+      record: MX
+      pattern: '^(aspmx|alt[1-4]\.aspmx|aspmx[2-5]\.googlemail)\.l?\.?google(mail)?\.com\.?$|\.googlemail\.com\.?$'
+    confidence: high
+
+  - id: gws-mx-02
+    vendor: Google
+    product: Google Workspace
+    match:
+      record: MX
+      pattern: '^smtp\.google\.com\.?$'
+    confidence: high
+
+  - id: gws-spf-01
+    vendor: Google
+    product: Google Workspace
+    match:
+      record: SPF_INCLUDE
+      pattern: '^_spf\.google\.com$'
+    confidence: high
+
+  - id: cybermail-mx-01
+    vendor: サイバーソリューションズ
+    product: CYBERMAIL
+    region: JP
+    match:
+      record: MX
+      pattern: '\.cybermail\.jp\.?$'
+    confidence: high
+
+  - id: sakura-spf-01
+    vendor: さくらインターネット
+    product: さくらのレンタルサーバ / マネージドサーバ
+    region: JP
+    match:
+      # 専用 include を持たず a: メカニズムで表現される。
+      # include 検索だけでは取りこぼす（DESIGN.md P6 実装メモ）
+      record: SPF_MECHANISM
+      pattern: '^a:www\d+\.sakura\.ne\.jp$'
+    confidence: medium
+
+  - id: gmo-spf-01
+    vendor: GMOグローバルサイン・ホールディングス
+    product: GMOクラウド / お名前.com 系メール
+    region: JP
+    match:
+      record: SPF_INCLUDE
+      # 番号付き include はワイルドカード化する（DESIGN.md P6 実装メモ）
+      pattern: '^spf\d*\.gmoserver\.jp$'
+    confidence: medium
+
+  - id: biglobe-spf-01
+    vendor: ビッグローブ
+    product: BIGLOBE メール
+    region: JP
+    match:
+      record: SPF_INCLUDE
+      pattern: '^spf\d*\.biglobe\.ne\.jp$'
+    confidence: medium
+
+  - id: nifty-spf-01
+    vendor: ニフティ
+    product: "@nifty メール"
+    region: JP
+    match:
+      record: SPF_INCLUDE
+      pattern: '^spf\d*\.nifty\.com$'
+    confidence: medium

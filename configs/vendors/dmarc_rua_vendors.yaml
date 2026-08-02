@@ -1,0 +1,78 @@
+# DMARC rua 宛先ドメイン → レポート処理ベンダーの推定
+#
+# rua の宛先が第三者サービスなら、その企業が DMARC 運用支援サービスを
+# 使っていると推定できる。カテゴリは dmarc_vendor。
+#
+# 国内ベンダーの rua 宛先は dmarc25.jp（TwoFive）以外ほぼ未確認
+# （DESIGN.md 第11章 未解決事項 #6）。実測で埋める。
+version: 2026-08-01
+category: dmarc_vendor
+
+rules:
+  - id: rua-twofive-01
+    vendor: TwoFive
+    product: DMARC/25 Analyze
+    region: JP
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)dmarc25\.jp$'
+    confidence: high
+
+  - id: rua-valimail-01
+    vendor: Valimail
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)valimail\.com$|(^|\.)dmarc-reports\.valimail\.com$'
+    confidence: high
+
+  - id: rua-dmarcian-01
+    vendor: dmarcian
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)dmarcian\.com$|(^|\.)dmarcian-eu\.com$|(^|\.)dmarcian-ap\.com$'
+    confidence: high
+
+  - id: rua-agari-01
+    vendor: Agari
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)agari\.com$|(^|\.)dmarc\.agari\.com$'
+    confidence: high
+
+  - id: rua-proofpoint-01
+    vendor: Proofpoint
+    product: Email Fraud Defense
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)emaildefense\.proofpoint\.com$|(^|\.)ppops\.net$'
+    confidence: high
+
+  - id: rua-mimecast-01
+    vendor: Mimecast
+    product: DMARC Analyzer
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)dmarc-analyzer\.com$|(^|\.)mimecast\.com$'
+    confidence: high
+
+  - id: rua-easydmarc-01
+    vendor: EasyDMARC
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)easydmarc\.com$|(^|\.)report\.easydmarc\.com$'
+    confidence: high
+
+  - id: rua-urirportal-01
+    vendor: URIports
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)uriports\.com$'
+    confidence: high
+
+  - id: rua-postmark-01
+    vendor: Postmark
+    product: DMARC Digests
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)dmarc\.postmarkapp\.com$'
+    confidence: high

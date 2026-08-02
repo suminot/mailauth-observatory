@@ -1,0 +1,27 @@
+# 東証グロース市場上場企業
+#
+# 未実装。事情は jp-standard.yaml と同じ。
+id: jp-growth
+label: 東証グロース市場上場企業
+country: JP
+enabled: false
+implemented: false
+blocked_by: 市場区分の非JPX由来ソースが未確保
+
+source:
+  primary: edinet_code_list
+  market_filter:
+    method: securities_code_presence
+    segment_source: none
+    segment_allowlist: null
+  enrich: [houjin_bangou, gbizinfo]
+  industry:
+    primary_scheme: EDINET33
+    common_mapping: configs/industry/edinet33_to_common12.csv
+
+refresh:
+  cadence: monthly
+  method: api
+
+attribution:
+  - "出典：EDINET（金融庁）"
