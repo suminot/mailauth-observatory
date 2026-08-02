@@ -39,7 +39,11 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+# "." はコンソール（console パッケージ）を import するために必要。
+# console は配布パッケージではなくローカル専用ツールなので src/ の下に置いていない。
+# `python -m pytest` は cwd を sys.path に入れるが `pytest` は入れないため、
+# ここで明示しないと CI（pytest 直叩き）だけで落ちる。
+pythonpath = ["src", "."]
 
 [tool.ruff]
 line-length = 100
