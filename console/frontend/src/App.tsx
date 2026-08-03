@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import { ExecuteView } from "./ExecuteView";
 import { PipelineView } from "./PipelineView";
+import { ViewsPanel } from "./ViewsPanel";
 
-type Tab = "pipeline" | "execute";
+type Tab = "pipeline" | "execute" | "views";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("pipeline");
@@ -41,24 +42,29 @@ export default function App() {
           <button className={tab === "execute" ? "active" : ""} onClick={() => setTab("execute")}>
             画面2 フェーズ実行
           </button>
+          <button className={tab === "views" ? "active" : ""} onClick={() => setTab("views")}>
+            ビュー切り替え
+          </button>
         </nav>
       </header>
 
       <main>
-        {tab === "pipeline" ? (
+        {tab === "pipeline" && (
           <PipelineView
             runId={runId}
             runs={runs}
             onSelectRun={setRunId}
             onRerun={() => setTab("execute")}
           />
-        ) : (
+        )}
+        {tab === "execute" && (
           <ExecuteView
             onJobFinished={() => {
               refreshRuns();
             }}
           />
         )}
+        {tab === "views" && <ViewsPanel runId={runId} />}
       </main>
 
       <footer className="muted small">

@@ -67,6 +67,38 @@ export interface Job {
   lines?: string[];
 }
 
+export interface ViewDef {
+  id: string;
+  label: string;
+  description: string | null;
+  default_group_by: string;
+  requires_segment: boolean;
+}
+
+export interface ViewGroup {
+  code: string;
+  label: string;
+  n: number;
+  share: number;
+}
+
+export interface ViewResult {
+  view_id: string;
+  label: string;
+  group_by: string;
+  total: number;
+  groups: ViewGroup[];
+  segment_data_available: boolean;
+  warnings: string[];
+  coverage: {
+    entities_in_run: number;
+    entities_in_view: number;
+    with_official_domain: number;
+    with_common12: number;
+    with_segment: number;
+  };
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(path);
   if (!res.ok) {
@@ -82,6 +114,11 @@ export const api = {
   run: (runId: string) => get<RunView>(`/api/runs/${runId}`),
   populations: () => get<{ populations: Population[] }>("/api/populations"),
   jobs: () => get<{ jobs: Job[] }>("/api/jobs"),
+  views: () => get<{ views: ViewDef[]; group_by_options: string[] }>("/api/views"),
+  runView: (runId: string, view: string, by: string) =>
+    get<ViewResult>(
+      `/api/runs/${runId}/view?view=${encodeURIComponent(view)}&by=${encodeURIComponent(by)}`,
+    ),
   job: (id: string) => get<Job>(`/api/jobs/${id}`),
 
   async createJob(body: {

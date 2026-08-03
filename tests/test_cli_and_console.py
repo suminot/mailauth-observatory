@@ -236,3 +236,96 @@ def test_job_reports_failure_for_unimplemented_phase():
             time.sleep(0.2)
         assert job["status"] == "failed"
         assert job["exit_code"] == 2
+
+
+# -- ビュー切り替え -----------------------------------------------------------
+
+
+def _run_p1(edinet_sample, jp_config, run_id="2026-08"):
+    return runner.invoke(
+        app,
+        ["p1-population", "--config", jp_config, "--run", run_id,
+         "--source-file", str(edinet_sample)],
+    )
+
+
+def test_views_command_lists_shipped_views():
+    result = runner.invoke(app, ["views"])
+    assert result.exit_code == 0
+    assert "jp-all" in result.stdout
+    assert "jp-prime" in result.stdout
+
+
+def test_view_command_groups_by_industry(edinet_sample, jp_config):
+    _run_p1(edinet_sample, jp_config)
+    result = runner.invoke(
+        app, ["view", "--run", "2026-08", "--view", "jp-all", "--by", "common12"]
+    )
+    assert result.exit_code == 0
+    assert "情報通信" in result.stdout
+    assert "合計" in result.stdout
+
+
+def test_view_command_warns_when_segment_data_missing(edinet_sample, jp_config):
+    _run_p1(edinet_sample, jp_config)
+    result = runner.invoke(app, ["view", "--run", "2026-08", "--view", "jp-prime"])
+    assert result.exit_code == 0
+    assert "区分を判定できない" in result.output
+
+
+def test_view_command_json_output(edinet_sample, jp_config):
+    import json as _json
+
+    _run_p1(edinet_sample, jp_config)
+    result = runner.invoke(
+        app, ["view", "--run", "2026-08", "--view", "jp-all", "--json"]
+    )
+    assert result.exit_code == 0
+    body = _json.loads(result.stdout)
+    assert body["view_id"] == "jp-all"
+    assert body["total"] == 17
+
+
+def test_view_command_without_a_run_fails_clearly():
+    result = runner.invoke(app, ["view", "--run", "2099-01"])
+    assert result.exit_code == 1
+    assert "entities.parquet" in result.output
+
+
+def test_view_command_rejects_unknown_view(edinet_sample, jp_config):
+    _run_p1(edinet_sample, jp_config)
+    result = runner.invoke(app, ["view", "--run", "2026-08", "--view", "nope"])
+    assert result.exit_code == 2
+
+
+def test_views_endpoint(client):
+    body = client.get("/api/views").json()
+    assert {v["id"] for v in body["views"]} >= {"jp-all", "jp-prime"}
+    assert "common12" in body["group_by_options"]
+    assert "segment" in body["group_by_options"]
+
+
+def test_run_view_endpoint(client, edinet_sample, jp_config):
+    _run_p1(edinet_sample, jp_config)
+    body = client.get("/api/runs/2026-08/view", params={"view": "jp-all", "by": "common12"}).json()
+    assert body["total"] == 17
+    assert body["groups"]
+    assert body["coverage"]["entities_in_view"] == 17
+
+
+def test_run_view_endpoint_reports_missing_segment_data(client, edinet_sample, jp_config):
+    _run_p1(edinet_sample, jp_config)
+    body = client.get("/api/runs/2026-08/view", params={"view": "jp-prime"}).json()
+    assert body["total"] == 0
+    assert body["segment_data_available"] is False
+    assert body["warnings"]
+
+
+def test_run_view_endpoint_404s_without_a_run(client):
+    assert client.get("/api/runs/2099-01/view").status_code == 404
+
+
+def test_run_view_endpoint_rejects_bad_axis(client, edinet_sample, jp_config):
+    _run_p1(edinet_sample, jp_config)
+    resp = client.get("/api/runs/2026-08/view", params={"view": "jp-all", "by": "bogus"})
+    assert resp.status_code == 400

@@ -342,3 +342,53 @@ footer {
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
+
+/* --- ビュー切り替え --- */
+
+.view-toolbar {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+
+.view-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.view-table th,
+.view-table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-weight: normal;
+}
+
+.view-table thead th,
+.view-table tfoot th {
+  font-weight: 600;
+  background: #f2f4f6;
+}
+
+.view-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.view-table .bar-cell {
+  width: 40%;
+}
+
+.view-bar {
+  display: block;
+  height: 10px;
+  background: var(--accent);
+  opacity: 0.55;
+  border-radius: 2px;
+}
