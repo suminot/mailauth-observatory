@@ -148,6 +148,33 @@ def p3_domains(
         raise typer.Exit(code=1)
 
 
+@app.command("p4-measure")
+def p4_measure(
+    run: RunOption = "",
+    method: Annotated[
+        str, typer.Option("--method", help="計測バックエンド。dnspython | zdns")
+    ] = "dnspython",
+    tier: Annotated[
+        str | None, typer.Option("--tier", help="階層を絞る。A（フル）| C（簡易）")
+    ] = None,
+    limit: LimitOption = None,
+    dry_run: DryRunOption = False,
+) -> None:
+    """P4 DNS計測 ── メール認証レコードを取得し bronze に生保存。"""
+    from .p4_measure import MissingInputError, UnknownBackendError
+    from .p4_measure import run as run_p4
+
+    run_id = validate_run_id(run or default_run_id())
+    try:
+        result = run_p4(run_id=run_id, method=method, tier=tier, limit=limit, dry_run=dry_run)
+    except (MissingInputError, UnknownBackendError) as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(code=2) from exc
+    _echo_summary(result)
+    if result.get("status") == "failed":
+        raise typer.Exit(code=1)
+
+
 def _stub_command(phase: str):
     def command(run: RunOption = "") -> None:
         run_id = validate_run_id(run or default_run_id())
@@ -162,7 +189,7 @@ def _stub_command(phase: str):
 
 
 #: 実装済みのフェーズ。残りはスタブとして登録する
-IMPLEMENTED = {"p1_population", "p2_candidates", "p3_domains"}
+IMPLEMENTED = {"p1_population", "p2_candidates", "p3_domains", "p4_measure"}
 
 for _phase in PHASES:
     if _phase in IMPLEMENTED:

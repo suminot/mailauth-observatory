@@ -20,6 +20,8 @@ dependencies = [
     "httpx>=0.27",
     # P2/P3 の軽量な一次実証に使う。P4 の本格計測は zdns を主力にする
     "dnspython>=2.6",
+    # bronze の JSON Lines を固める
+    "zstandard>=0.22",
 ]
 
 [project.optional-dependencies]

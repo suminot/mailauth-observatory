@@ -25,7 +25,7 @@ Sprint 1（骨格と P1・日本側）まで実装済み。
 | P1 母集団確定 | 企業リストの取得と identity 付与 | **実装済**（日本・EDINET 経路） |
 | P2 ドメイン候補生成 | 企業から関連ドメイン群を展開 | **実装済** |
 | P3 メールドメイン確定 | 候補から送信ドメインを絞り確度付与 | **実装済** |
-| P4 DNS計測 | MX/TXT/SPF/DKIM/DMARC 等の生取得 | 未実装（Sprint 3） |
+| P4 DNS計測 | MX/TXT/SPF/DKIM/DMARC 等の生取得 | **実装済** |
 | P5 パース | 生レスポンスの構造化と仕様準拠の解釈 | 未実装（Sprint 4） |
 | P6 推察 | メール基盤・製品の推定、パーク分類 | 未実装（Sprint 5） |
 | P7 集計 | 全社統計・業種別集計・前月差分 | 未実装（Sprint 6） |
@@ -58,6 +58,10 @@ mailauth p1-population --run 2026-08 --source-file path/to/Edinetcode.zip
 
 mailauth p2-candidates --run 2026-08   # 候補ドメインを展開（再現率優先）
 mailauth p3-domains    --run 2026-08   # 送信ドメインを絞り確度を付ける
+mailauth p4-measure    --run 2026-08   # 認証レコードを取得し bronze に生保存
+mailauth p4-measure    --run 2026-08 --dry-run   # クエリ量の見積りだけ出す
+mailauth p4-measure    --run 2026-08 --tier A    # 階層を絞る
+mailauth p4-measure    --run 2026-08 --method zdns
 
 # 実行状況
 mailauth status --run 2026-08
@@ -175,6 +179,55 @@ rua が第三者のレポート処理サービス（`dmarc25.jp` 等）を指し
 確度に応じて P4 の計測の深さ（`measure_tier`）を決める。A がフル計測、C が簡易計測。
 送信していないドメインに DKIM セレクタを50個投げても検出されないし、権威DNSへの
 負荷という点で作法が悪い。
+
+## DNS計測（P4）
+
+確定したドメインの認証レコードを取得し、**生のまま bronze に保存**する（原則1）。
+
+### 階層別計測
+
+30,000ドメインすべてにフル計測をかけると GitHub Actions の6時間上限に触れるため、
+P3 が付けた `measure_tier` で深さを変える。
+
+| 階層 | 対象 | クエリ | 内容 |
+|---|---|---|---|
+| A | confirmed / likely | 約59 | MX/SPF/DMARC + DKIM 約56セレクタ + 対照 + MTA-STS/TLS-RPT/BIMI/DANE |
+| C | parked / unknown | 5 | MX/SPF/DMARC/DMARC-sub + DKIM ワイルドカード |
+
+`--dry-run` でクエリ量の見積りだけ出せる。実行前に上限に触れないか確認できる。
+
+### DKIM セレクタは動的に決まる
+
+MX と SPF を先に引いて事業者を推定し（L2）、その既知セレクタを L1 の前に置く。
+MX が `*.mail.protection.outlook.com` なら `selector1` / `selector2` が最優先になる。
+L3（Tatang 3,498語）は GPL-3.0 のため無効のまま。
+
+セレクタは DNS 上で列挙できないので、**「未設定」と「既知セレクタでは未検出」は
+区別する**（原則5）。実在しないセレクタを引く対照クエリを必ず投げ、応答したら
+ワイルドカードDNSとして `WILDCARD_DNS` を警告する（偽陽性ガード）。
+
+### bronze は不変・追記のみ
+
+```
+data/runs/2026-08/p4_measure/bronze/
+├── method=dnspython/part-0000.jsonl.zst
+└── method=zdns/part-0000.jsonl.zst
+```
+
+同じ run に対して P4 を再実行すると、既存パートには触らず次の番号に追記し、
+`BRONZE_APPENDED_TO_EXISTING` を警告する。原則1（不変）と原則6（再実行可能）を
+これで両立させている。やり直すなら別の `run_id` を使うこと。
+
+**分割された TXT は連結せず character-string の配列のまま保存する。** 連結は P5 の
+責務。255バイト境界で分割された SPF の末尾の空白を削ると
+`"…example.com" + "-all"` = `"…example.com-all"` になり SPF として成立しなくなるため、
+生データ用のモデルは空白を一切削らない。
+
+### バックエンドはプラガブル
+
+`--method` で切り替える。既定は `dnspython`（依存として常に入っている）、
+DESIGN.md の主力は `zdns`。**無いバックエンドに黙って落ちない。** どの手法で
+測ったかは成果物の意味を変えるため、暗黙の差し替えはしない。
 
 ### TCP/53 が必要
 

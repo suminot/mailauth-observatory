@@ -153,6 +153,22 @@ class _Model(BaseModel):
     model_config = ConfigDict(use_enum_values=True, extra="forbid", str_strip_whitespace=True)
 
 
+class _RawModel(BaseModel):
+    """bronze（生データ）用。**空白を一切削らない**。
+
+    原則1 は生データの忠実性を要求する。TXT の character-string は
+    前後の空白まで意味を持つ。たとえば 255 バイト境界で分割された SPF が
+
+        ["v=spf1 include:_spf.example.com ", "-all"]
+
+    のとき、末尾の空白を削ると連結結果が "…example.com-all" になり、
+    SPF レコードとして成立しなくなる。`str_strip_whitespace` を
+    生データに適用してはいけない。
+    """
+
+    model_config = ConfigDict(use_enum_values=True, extra="forbid", str_strip_whitespace=False)
+
+
 # --------------------------------------------------------------------------
 # P1 母集団確定
 # --------------------------------------------------------------------------
@@ -335,7 +351,7 @@ DOMAIN_SORT_KEYS = ["entity_id", "domain"]
 # --------------------------------------------------------------------------
 
 
-class DnsAnswer(_Model):
+class DnsAnswer(_RawModel):
     type: str
     ttl: int | None = None
     #: 分割された TXT は連結せず character-string の配列のまま保存する。
@@ -343,13 +359,13 @@ class DnsAnswer(_Model):
     data: str | list[str]
 
 
-class DnssecFlags(_Model):
+class DnssecFlags(_RawModel):
     do: bool | None = None
     ad: bool | None = None
     rrsig_present: bool | None = None
 
 
-class RawResponse(_Model):
+class RawResponse(_RawModel):
     """bronze の1行。ここに書いたものは以後一切変更しない（原則1）。"""
 
     schema_version: str = SCHEMA_VERSION
