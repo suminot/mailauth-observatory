@@ -22,6 +22,10 @@ node_modules/
 console/frontend/dist/
 console/frontend/tsconfig.tsbuildinfo
 site/dist/
-site/.observablehq/
+# Observable Framework のキャッシュは src/ の下に出る
+site/**/.observablehq/
+# P8 が gold から書き出す。gold を正本とし、生成物は入れない
+site/src/data/*.json
+site/src/data/*.csv
 
 .DS_Store

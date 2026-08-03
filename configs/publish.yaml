@@ -1,0 +1,43 @@
+# 公開の設定（DESIGN.md P8）
+#
+# 第2層（個社名付き明細）は既定で出さない。訂正期間を経ていない個社明細を
+# 公開すると取り返しがつかない（キャッシュもインデックスも残る）ため、
+# 「出す」側を明示的な操作にしてある。
+
+site:
+  # 公開サイトの生成先。Observable Framework のプロジェクト
+  dir: site
+  # データローダが読む先。ここに gold から書き出す
+  data_dir: site/src/data
+  title: メール認証月次計測
+  # 常時表示する限界の明示。vocabulary.DISCLAIMER と一致していること
+  disclaimer: 本サイトは標準準拠の計測であり、総合的セキュリティ評価ではない
+
+tier1:
+  # 無条件公開。ライセンス上公開可のデータのみ
+  enabled: true
+  license: CC0-1.0
+  formats: [parquet, csv, json]
+
+tier2:
+  # 個社名付き明細。**既定で無効。**
+  enabled: false
+  # 対象企業への事前通知を行った日（YYYY-MM-DD）。未設定なら公開できない
+  notified_on: null
+  # Cloudflare Access 等の認証が設定済みか。未設定なら公開できない
+  access_control_configured: false
+  # 訂正申告の受付窓口。第2層を出すなら必須
+  correction_contact: null
+
+deploy:
+  # Cloudflare Pages。トークンは .env から読む（コードにも設定にも書かない）
+  provider: cloudflare_pages
+  project: null
+  # 第2層のパス。Cloudflare Access のポリシーをこのパスに掛ける
+  tier2_path: /companies
+
+attribution:
+  - 金融庁 EDINET コードリスト（政府標準利用規約2.0）
+  - 経済産業省 gBizINFO（政府標準利用規約2.0）
+  - 国税庁 法人番号公表サイト（公共データ利用規約1.0）
+  - Public Suffix List (Mozilla, MPL-2.0)

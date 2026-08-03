@@ -55,3 +55,36 @@ jobs:
 
       - name: 型検査とビルド
         run: npm run build
+
+  site:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: 依存関係のインストール
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "..[console,dev]"
+          npm install
+
+      # サイトのデータは gold から P8 が書き出す。生成物はコミットしない。
+      # **P8 を通さずにビルドさせない。** 第1層に個社特定情報が混ざっていないか、
+      # ページに断定的な語彙や順位付けが無いかを、ここで機械的に弾いている。
+      - name: 公開データの生成と規約検査
+        working-directory: .
+        run: mailauth p8-publish --any-month
+
+      - name: ビルド
+        run: npm run build

@@ -1,0 +1,91 @@
+/* 配色は3段階（DESIGN.md P8「表現上の規約」）。
+   赤の面積を最小化するため、未対応はグレー寄りの赤にする。
+   彩度の高い赤で塗ると、標準への準拠状況の提示が「危険な企業の告発」に見える。 */
+
+:root {
+  --pass: #2f7d4f;
+  --attention: #b8791f;
+  --absent: #9a6b6b;
+  --neutral: #8a9099;
+}
+
+.legend {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  margin: 8px 0 16px;
+}
+
+.legend span::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 6px;
+}
+
+.legend .pass::before { background: var(--pass); }
+.legend .attention::before { background: var(--attention); }
+.legend .absent::before { background: var(--absent); }
+
+/* 事実と推察の視覚的分離（DESIGN.md P8）。
+   同じカードの中で「観測値」と「推定」を混ぜて見せない。 */
+.observed,
+.inferred {
+  border-left: 3px solid var(--neutral);
+  padding: 8px 14px;
+  margin: 12px 0;
+}
+
+.observed {
+  border-left-color: var(--pass);
+  background: color-mix(in srgb, var(--pass) 5%, transparent);
+}
+
+.inferred {
+  border-left-color: var(--neutral);
+  background: color-mix(in srgb, var(--neutral) 7%, transparent);
+  border-left-style: dashed;
+}
+
+.observed > h3::after {
+  content: " ── DNS から直接読み取った事実";
+  font-weight: normal;
+  font-size: 12px;
+  color: var(--neutral);
+}
+
+.inferred > h3::after {
+  content: " ── 辞書との照合による推定。確度と根拠を併記";
+  font-weight: normal;
+  font-size: 12px;
+  color: var(--neutral);
+}
+
+.limits {
+  font-size: 13px;
+  border: 1px solid #e3e5e8;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin: 16px 0;
+}
+
+.limits li {
+  margin: 4px 0;
+}
+
+.checklist {
+  list-style: none;
+  padding: 0;
+}
+
+.checklist li::before {
+  display: inline-block;
+  width: 1.4em;
+}
+
+.checklist li.met::before { content: "✓"; color: var(--pass); }
+.checklist li.partial::before { content: "△"; color: var(--attention); }
+.checklist li.unmet::before { content: "−"; color: var(--absent); }
+.checklist li.unknown::before { content: "?"; color: var(--neutral); }

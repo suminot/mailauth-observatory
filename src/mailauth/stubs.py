@@ -1,8 +1,12 @@
 """未実装フェーズの共通スタブ。
 
-Sprint 1 の時点では P2〜P8 は未実装である。呼ばれたら、何もせず
-成功したふりをするのではなく、どのスプリントで実装予定かを添えて止める。
-空の出力を作ってしまうと、下流が「0件だった」と解釈しうるため。
+**現在は全フェーズが実装済みなので `PLANNED_SPRINT` は空**である。
+仕組みは残す。フェーズを追加したときに「何もせず成功したふりをする」
+実装が入り込むのを防ぐため。空の出力を作ると、下流が「0件だった」と
+解釈してしまう。
+
+新しいフェーズを足すときは、実装前に PLANNED_SPRINT に登録して
+CLI から理由付きで止まるようにする。
 """
 
 from __future__ import annotations
@@ -10,10 +14,10 @@ from __future__ import annotations
 from .manifest import STATUS_FAILED, RunManifest
 from .paths import phase_dir
 
-#: フェーズ -> 実装予定スプリント（DESIGN.md 第8章）
-PLANNED_SPRINT = {
-    "p8_publish": "Sprint 7",
-}
+#: フェーズ -> 実装予定スプリント（DESIGN.md 第8章）。
+#: 実装済みのフェーズはここから外す。cli.IMPLEMENTED と排他であることを
+#: tests/test_cli_and_console.py が確認している
+PLANNED_SPRINT: dict[str, str] = {}
 
 
 class PhaseNotImplementedError(NotImplementedError):
