@@ -192,6 +192,13 @@ class Entity(_Model):
     common12_label: str | None = None
     industry_map_version: str | None = None
 
+    #: 市場区分（prime / standard / growth など）。
+    #: **内部の集計軸専用**であり、公開成果物には出さない（DESIGN.md P1）。
+    #: JPX 由来のファイルは使わないため、区分は別途与えた対応表からのみ付く。
+    #: 与えていなければ None。「区分が無い」ではなく「区分を知らない」を意味する。
+    market_segment: str | None = None
+    market_segment_source: str | None = None
+
     first_seen_month: dt.date | None = None
     last_seen_month: dt.date | None = None
     status: str = EntityStatus.ACTIVE
@@ -222,6 +229,8 @@ ENTITY_ARROW_SCHEMA = pa.schema(
         ("common12_code", pa.string()),
         ("common12_label", pa.string()),
         ("industry_map_version", pa.string()),
+        ("market_segment", pa.string()),
+        ("market_segment_source", pa.string()),
         ("first_seen_month", pa.date32()),
         ("last_seen_month", pa.date32()),
         ("status", pa.string()),

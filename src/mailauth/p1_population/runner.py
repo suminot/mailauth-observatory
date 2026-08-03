@@ -27,6 +27,7 @@ from ..normalize import (
     normalize_securities_code,
 )
 from ..paths import config_path, month_date, phase_dir, phase_output, previous_run_id
+from ..segments import load_segment_map
 from .edinet import EdinetError, fetch_code_list, parse_code_list
 from .enrich import GbizInfoClient, HoujinBangouClient
 from .industry import IndustryMapper
@@ -130,6 +131,68 @@ def _build_entities(
         entities.append(entity)
 
     return entities, stats
+
+
+def _annotate_segments(
+    entities: list[Entity], cfg: PopulationConfig, manifest: RunManifest
+) -> None:
+    """市場区分のラベルを付ける。計測対象は絞らない。
+
+    絞らないのは、全上場を測っておけばビューで
+    「全体を業種軸で」「プライムだけで」を切り替えられるからである。
+    母集団を変えて計測し直すと月次の比較ができなくなる。
+    """
+    mf = cfg.source.market_filter
+    if not mf.segment_map:
+        manifest.set_breakdown(
+            market_segment={
+                "available": False,
+                "reason": (
+                    "market_filter.segment_map が未設定。"
+                    "EDINETコードリストは市場区分を持たないため区分は付かない"
+                ),
+            }
+        )
+        return
+
+    seg_map = load_segment_map(mf.segment_map)
+    matched = 0
+    for e in entities:
+        segment = seg_map.get(e.securities_code)
+        if segment:
+            e.market_segment = segment
+            e.market_segment_source = seg_map.source
+            matched += 1
+
+    unmatched = len(entities) - matched
+    manifest.set_breakdown(
+        market_segment={
+            "available": True,
+            "map_path": str(seg_map.path),
+            "map_size": len(seg_map),
+            "map_source": seg_map.source,
+            "map_retrieved": seg_map.retrieved,
+            "matched": matched,
+            "unmatched": unmatched,
+            "by_segment": seg_map.counts(),
+            "invalid_rows": seg_map.invalid_rows,
+        }
+    )
+    if seg_map.invalid_rows:
+        manifest.add_warning(
+            "SEGMENT_MAP_INVALID_ROWS",
+            count=seg_map.invalid_rows,
+            message="区分の対応表に証券コードか区分が読めない行がある",
+        )
+    if unmatched:
+        manifest.add_warning(
+            "SEGMENT_UNMATCHED",
+            count=unmatched,
+            message=(
+                f"{unmatched}社に市場区分が付かなかった。"
+                "対応表の網羅性を確認すること（区分ビューの分母から漏れる）"
+            ),
+        )
 
 
 def _apply_enrichment(
@@ -468,11 +531,14 @@ def run(
 
         entities, build_stats = _build_entities(listed, cfg, run_id, mapper, manifest)
 
-        # 4. enrich
+        # 4. 市場区分のラベル付け（絞り込みではない）
+        _annotate_segments(entities, cfg, manifest)
+
+        # 5. enrich
         if not dry_run:
             _apply_enrichment(entities, cfg, manifest, limit=limit)
 
-        # 5. 前月との差分
+        # 6. 前月との差分
         if limit:
             # --limit は開発中の高速反復用。母集団を切り詰めた状態で差分を取ると
             # 対象外の企業が軒並み delisted になり、時系列を汚す。
@@ -505,7 +571,7 @@ def run(
 
         _check_acceptance(entities, cfg, manifest)
 
-        # 6. 書き出し
+        # 7. 書き出し
         if dry_run:
             manifest.add_warning("DRY_RUN", message="dry_run のため出力を書いていない")
         else:

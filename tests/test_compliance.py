@@ -97,13 +97,29 @@ def _effective_text(path) -> str:
     return "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith(("#", "#+")))
 
 
+#: 設定や文書で「使わない」と方針を書くこと自体は違反ではない。
+#: 違反なのは実際に取りに行ける形（URL・パス）で書かれていること。
+#: Python は _effective_text が docstring とコメントを落としたあとなので、
+#: 文字列定数に出てきた時点で違反として扱う。
+_PROSE_SUFFIXES = {".yaml", ".yml", ".md", ".csv", ".txt", ".rq"}
+
+
+def _offenders(code_pattern: str, prose_pattern: str) -> list[str]:
+    hits = []
+    for p in _files():
+        pattern = prose_pattern if p.suffix.lower() in _PROSE_SUFFIXES else code_pattern
+        if re.search(pattern, _effective_text(p)):
+            hits.append(str(p.relative_to(repo_root())))
+    return hits
+
+
 def test_jpx_data_file_is_never_referenced():
     """JPX の data_j.xls は商用二次利用が規約で禁止。非商用でも方針として使わない。"""
-    offenders = [
-        str(p.relative_to(repo_root()))
-        for p in _files()
-        if re.search(r"data_j\.xls|jpx\.co\.jp/markets/statistics-equities", _effective_text(p))
-    ]
+    offenders = _offenders(
+        code_pattern=r"data_j\.xls|jpx\.co\.jp/markets/statistics-equities",
+        # 文書側は、パス区切りに続く形か JPX の配布URLだけを違反とする
+        prose_pattern=r"[/\\]data_j\.xls|jpx\.co\.jp/markets/statistics-equities",
+    )
     assert offenders == [], f"JPX の銘柄一覧ファイルを参照している: {offenders}"
 
 

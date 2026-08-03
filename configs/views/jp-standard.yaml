@@ -1,0 +1,12 @@
+# 東証スタンダード市場
+# 事情は jp-prime.yaml と同じ。市場区分の対応表が要る。
+id: jp-standard
+label: 東証スタンダード市場
+description: 市場区分の対応表が必要
+default_group_by: common12
+requires_segment: true
+
+filter:
+  country: [JP]
+  status: [active, renamed]
+  market_segment: [standard]

@@ -243,3 +243,65 @@ def test_segment_allowlist_filters_by_securities_code(edinet_sample, tmp_path, m
     run_p1("2026-08", edinet_sample, config=cfg)
     df = entities("2026-08")
     assert set(df["securities_code"]) == {"1234", "2345"}
+
+
+# -- 市場区分のラベル付け -----------------------------------------------------
+
+
+def _config_with_segment_map(tmp_path, segment_csv) -> str:
+    import yaml
+
+    from mailauth import paths
+
+    base = yaml.safe_load(
+        (paths.repo_root() / "configs/populations/jp-all-listed.yaml").read_text(encoding="utf-8")
+    )
+    base["source"]["market_filter"]["segment_source"] = "manual_csv"
+    base["source"]["market_filter"]["segment_map"] = str(segment_csv)
+    cfg = tmp_path / "with-segment.yaml"
+    cfg.write_text(yaml.safe_dump(base, allow_unicode=True), encoding="utf-8")
+    return str(cfg)
+
+
+def test_no_segment_map_means_segment_is_unknown_not_absent(edinet_sample):
+    """区分の対応表が無ければ市場区分は付かない。それを manifest に明記する。"""
+    result = run_p1("2026-08", edinet_sample)
+    assert result["breakdown"]["market_segment"]["available"] is False
+    assert entities("2026-08")["market_segment"].isna().all()
+
+
+def test_segment_map_labels_without_filtering(edinet_sample, tmp_path):
+    """区分は絞り込みではなくラベル付け。全上場を測ったまま区分が付く。"""
+    seg = tmp_path / "seg.csv"
+    seg.write_text(
+        "securities_code,market_segment,source,retrieved\n"
+        "1234,プライム,有価証券報告書,2026-08-01\n"
+        "2345,プライム,有価証券報告書,2026-08-01\n"
+        "3456,スタンダード,有価証券報告書,2026-08-01\n",
+        encoding="utf-8",
+    )
+    result = run_p1("2026-08", edinet_sample, config=_config_with_segment_map(tmp_path, seg))
+
+    df = entities("2026-08")
+    # 対象を絞っていないこと（17社のまま）
+    assert len(df[df.status == "active"]) == 17
+    assert set(df["market_segment"].dropna()) == {"prime", "standard"}
+    assert (df["market_segment"] == "prime").sum() == 2
+
+    breakdown = result["breakdown"]["market_segment"]
+    assert breakdown["available"] is True
+    assert breakdown["matched"] == 3
+    assert breakdown["unmatched"] == 14
+    assert breakdown["by_segment"] == {"prime": 2, "standard": 1}
+    assert breakdown["map_source"] == "有価証券報告書"
+    assert "SEGMENT_UNMATCHED" in {w["code"] for w in result["warnings"]}
+
+
+def test_segment_source_is_recorded_for_attribution(edinet_sample, tmp_path):
+    seg = tmp_path / "seg.csv"
+    seg.write_text(
+        "securities_code,market_segment,source\n1234,プライム,有価証券報告書\n", encoding="utf-8"
+    )
+    run_p1("2026-08", edinet_sample, config=_config_with_segment_map(tmp_path, seg))
+    df = entities("2026-08").set_index("entity_id")
+    assert df.loc["jp:1234567890123", "market_segment_source"] == "有価証券報告書"

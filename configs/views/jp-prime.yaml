@@ -1,0 +1,17 @@
+# 東証プライム市場
+#
+# 市場区分は EDINET コードリストに含まれないため、
+# configs/populations/_segments/ の対応表を与えないと判定できない。
+# 与えていない場合、このビューは総数0になるが、それは
+# 「該当企業が無い」ではなく「区分を知らない」という意味である。
+# mailauth view はその区別を警告として明示する。
+id: jp-prime
+label: 東証プライム市場
+description: 市場区分の対応表が必要。JPX の data_j.xls は使わない
+default_group_by: common12
+requires_segment: true
+
+filter:
+  country: [JP]
+  status: [active, renamed]
+  market_segment: [prime]

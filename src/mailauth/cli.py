@@ -159,6 +159,78 @@ def status(
         typer.echo(f"  {r['phase']:<16} {r['status']:<10} {counts}")
 
 
+@app.command("view")
+def view(
+    run: RunOption = "",
+    view_id: Annotated[
+        str, typer.Option("--view", help="ビューID。configs/views/ の定義")
+    ] = "jp-all",
+    by: Annotated[
+        str | None,
+        typer.Option("--by", help="集計軸。common12 | industry | segment | country | status"),
+    ] = None,
+    as_json: Annotated[bool, typer.Option("--json", help="JSON で出力する")] = False,
+) -> None:
+    """計測済みの run を別の軸で見る。
+
+    計測は全上場で一度だけ回し、見るときに絞る。
+
+        mailauth view --run 2026-08 --view jp-all   --by common12
+        mailauth view --run 2026-08 --view jp-prime --by common12
+        mailauth view --run 2026-08 --view jp-all   --by segment
+    """
+    from .io import read_parquet
+    from .paths import phase_output
+    from .views import get_view, summarize
+
+    run_id = validate_run_id(run or default_run_id())
+    df = read_parquet(phase_output(run_id, "p1_population", "entities.parquet"))
+    if df is None:
+        typer.secho(
+            f"run {run_id} の entities.parquet がありません。先に p1-population を実行してください",
+            fg="red",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        cfg = get_view(view_id)
+    except KeyError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(code=2) from exc
+
+    result = summarize(df, cfg, group_by=by)
+
+    if as_json:
+        typer.echo(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+        return
+
+    typer.echo(f"{result.label}（{result.view_id}） run={run_id} 軸={result.group_by}")
+    for w in result.warnings:
+        typer.secho(f"  ⚠ {w}", fg="yellow")
+    if not result.groups:
+        typer.echo("  該当なし")
+    for g in result.groups:
+        bar = "▓" * max(1, round(g["share"] * 40)) if g["n"] else ""
+        typer.echo(f"  {g['label']:<20} {g['n']:>6}  {g['share']:>6.1%} {bar}")
+    typer.echo(f"  {'合計':<20} {result.total:>6}")
+    cov = result.coverage
+    typer.echo(
+        f"  （run全体 {cov['entities_in_run']} 社 / うち本ビュー {cov['entities_in_view']} 社"
+        f" / 区分付き {cov['with_segment']} 社）"
+    )
+
+
+@app.command("views")
+def views() -> None:
+    """使えるビューの一覧。"""
+    from .views import list_views
+
+    for cfg in list_views():
+        need = "（要 市場区分データ）" if cfg.requires_segment else ""
+        typer.echo(f"{cfg.id:<14} {cfg.label}{need}")
+
+
 @app.command("runs")
 def runs() -> None:
     """存在する run の一覧。"""

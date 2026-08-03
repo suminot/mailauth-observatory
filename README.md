@@ -59,6 +59,12 @@ mailauth p1-population --run 2026-08 --source-file path/to/Edinetcode.zip
 # 実行状況
 mailauth status --run 2026-08
 mailauth populations
+
+# 同じ計測結果を別の軸で見る（下記「ビュー」）
+mailauth views
+mailauth view --run 2026-08 --view jp-all   --by common12   # 全上場 × 業種軸
+mailauth view --run 2026-08 --view jp-prime --by common12   # プライムのみ
+mailauth view --run 2026-08 --view jp-all   --by segment    # 市場区分の内訳
 ```
 
 運用コンソール（ローカル専用・認証なし）:
@@ -80,17 +86,51 @@ cd console/frontend && npm install && npm run dev   # http://localhost:5173
 | `jp-nikkei225` | 日経225 | 構成銘柄リストの利用条件が未確認のため無効 |
 | `us-fortune500` / `global500` | Fortune 500 / Global 500 | Sprint 1.5 |
 
-### 市場区分について（既知の制約）
+## ビュー ── 計測は一度、見方は切り替える
 
-DESIGN.md は `segment_source: none`（JPX 非依存）を定めているが、EDINETコードリストは
-市場区分を持たない。したがって `jp-prime` を実行しても実際に取れるのは
-**全上場企業**であり、受け入れ基準の 1,450〜1,650 社には収まらない。
-P1 はこの状態を `MARKET_SEGMENT_UNAVAILABLE` として manifest に記録する。
+「全上場を業種軸で見たい」ときと「プライムだけ見たい」ときがある。これを
+母集団を変えて計測し直す形で実現すると、計測を何度も回すことになり、月次の
+比較もできなくなる。そこで **計測は全上場で一度だけ回し、見るときに絞る**。
 
-当面の運用は次のいずれか。
+- `configs/populations/` = 何を測るか
+- `configs/views/` = どう見るか
 
-- `jp-all-listed` を使う（分母が広くなるが、JPX 非依存は保たれる）
-- JPX 由来でない証券コード一覧を用意し、`market_filter.segment_allowlist` に指定する
+```bash
+mailauth view --run 2026-08 --view jp-all   --by common12   # 全上場 × 共通12業種
+mailauth view --run 2026-08 --view jp-all   --by industry   # 全上場 × EDINET33
+mailauth view --run 2026-08 --view jp-prime --by common12   # プライム × 共通12業種
+mailauth view --run 2026-08 --view jp-all   --by segment    # 区分ごとの社数
+```
+
+コンソールの「ビュー切り替え」タブでも同じことができる（数字は CLI と一致する。
+同じ `mailauth.views` を呼んでいる）。
+
+### 市場区分は、対応表を与えたときだけ付く
+
+EDINETコードリストは市場区分を持たない。JPX の `data_j.xls` は使わない方針なので、
+区分は `configs/populations/_segments/` に対応表を置いたときにだけ付く。
+
+```yaml
+source:
+  market_filter:
+    segment_source: manual_csv
+    segment_map: configs/populations/_segments/jp-tse.csv
+```
+
+これは**計測対象を絞る設定ではない**。全上場を測ったまま各社にラベルを付けるだけで、
+絞るのはビューの役目。書式と作り方は
+[`configs/populations/_segments/README.md`](configs/populations/_segments/README.md) を参照。
+
+対応表が無い状態で `jp-prime` を見ると総数は0になるが、これは「該当企業が無い」
+ではなく「区分を判定できない」である。CLI もコンソールもその区別を警告として
+明示する（原則5）。**総数0を該当なしと読まないこと。**
+
+区分の自動生成（各社の有価証券報告書 表紙【上場金融商品取引所】を XBRL から読む）は
+将来のスプリントで実装する。Wikidata は実測したが、東証上場で証券コードを持つ項目が
+1件しかなく、区分の項目も存在しないため使えない。
+
+なお `market_segment` 列は**内部の集計軸専用**であり、公開成果物には出さない
+（DESIGN.md P1「市場区分は内部フィルタに留め、成果物には出さない」）。
 
 ## 設計上の約束
 

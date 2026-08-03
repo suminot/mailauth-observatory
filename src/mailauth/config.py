@@ -74,7 +74,10 @@ class EdinetSourceConfig(_Cfg):
 class MarketFilterConfig(_Cfg):
     method: str = "securities_code_presence"
     segment_source: str = "none"
+    #: 計測対象そのものを区分で絞る。月次比較が難しくなるので通常は使わない
     segment_allowlist: str | None = None
+    #: 計測対象は絞らず、各社に区分のラベルだけ付ける。ビューで切り替える用
+    segment_map: str | None = None
     #: この母集団が市場区分による絞り込みを前提としているか。
     #: true なのに segment_source が none だと、実際には全上場企業が
     #: 取れてしまうので P1 が警告を出す。

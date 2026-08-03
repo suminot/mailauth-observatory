@@ -1,0 +1,13 @@
+# 国内上場企業すべて（市場区分によらず）── 既定のビュー
+#
+# 計測は jp-all-listed の1本だけ回し、見るときにここで絞る。
+# 母集団を変えて計測し直すと、月次の比較ができなくなるため。
+id: jp-all
+label: 国内上場企業（全市場）
+description: 証券コードを持つ EDINET 提出者すべて。業種軸で見るときの既定
+default_group_by: common12
+requires_segment: false
+
+filter:
+  country: [JP]
+  status: [active, renamed]

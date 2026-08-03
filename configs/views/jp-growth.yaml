@@ -1,0 +1,12 @@
+# 東証グロース市場
+# 事情は jp-prime.yaml と同じ。市場区分の対応表が要る。
+id: jp-growth
+label: 東証グロース市場
+description: 市場区分の対応表が必要
+default_group_by: common12
+requires_segment: true
+
+filter:
+  country: [JP]
+  status: [active, renamed]
+  market_segment: [growth]
