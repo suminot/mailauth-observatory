@@ -1,0 +1,24 @@
+#+ Fortune Global 500 の会社名リストを Wikidata（CC0）から再構築する
+#+
+#+ 米国以外を多く含むため、identity の主キーは CIK ではなく LEI（GLEIF）。
+#+ 順位と売上高は取得しても成果物に出さない。
+#+ endpoint: https://query.wikidata.org/sparql
+
+SELECT DISTINCT ?company ?companyLabel ?countryCode ?lei ?cik ?website
+WHERE {
+  ?company p:P2226 ?revStatement .   # 時価総額ではなく収益系のプロパティで粗く絞る
+  ?company wdt:P31/wdt:P279* wd:Q4830453 .   # business enterprise
+
+  # Fortune Global 500 の記載がある場合はそれを優先
+  OPTIONAL { ?company wdt:P31448 ?fortuneRank . }
+
+  ?company wdt:P17 ?country .
+  ?country wdt:P297 ?countryCode .   # ISO 3166-1 alpha-2
+
+  OPTIONAL { ?company wdt:P1278 ?lei . }
+  OPTIONAL { ?company wdt:P5531 ?cik . }
+  OPTIONAL { ?company wdt:P856  ?website . }
+
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en,ja" . }
+}
+LIMIT 2000

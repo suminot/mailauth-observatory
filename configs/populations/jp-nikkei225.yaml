@@ -1,0 +1,24 @@
+# 日経225 構成銘柄
+#
+# 未実装かつ要注意。構成銘柄一覧は日本経済新聞社が編集した著作物であり、
+# 指数の構成銘柄リストをそのまま取り込むと二次利用の可否が問題になる。
+# JPX の data_j.xls を使わないのと同じ理由で、一次ソースの利用条件を
+# 確認するまで有効化しないこと。
+id: jp-nikkei225
+label: 日経225構成銘柄
+country: JP
+enabled: false
+implemented: false
+blocked_by: 構成銘柄リストの利用条件が未確認（日本経済新聞社の編集著作物）
+
+source:
+  primary: manual_securities_code_list
+  manual_list: null
+  enrich: [houjin_bangou, gbizinfo]
+  industry:
+    primary_scheme: EDINET33
+    common_mapping: configs/industry/edinet33_to_common12.csv
+
+refresh:
+  cadence: monthly
+  method: manual

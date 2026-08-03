@@ -1,0 +1,57 @@
+# Fortune Global 500
+#
+# Sprint 1.5 で実装する。Sprint 1 では実行するとその旨のエラーになる。
+id: global500
+label: Fortune Global 500
+country: MULTI                 # 単一国に紐づかない
+enabled: true
+implemented: false
+blocked_by: Sprint 1.5（P1 米国・グローバル）で実装
+
+source:
+  primary: wikidata
+  wikidata_query: configs/populations/_sparql/global500.rq
+  fallback: wikipedia
+
+  # 重要: SEC EDGAR は米国提出者しかカバーしない。
+  # Global 500 は2025年版で米国138社・大中華圏130社という構成のため、
+  # 全世界をカバーする GLEIF LEI を identity の主キーにする。
+  identity_primary_key: lei
+
+  enrich:
+    - gleif                      # 全世界。主キー
+    - sec_edgar_cik              # 米国企業のみ。あれば付与
+    - houjin_bangou              # 日本企業のみ。あれば付与
+    - edinet_code                # 日本企業のみ
+
+  industry:
+    # 国ごとに一次分類が異なる。共通12分類で吸収する
+    primary_scheme_by_country:
+      US: SIC
+      JP: EDINET33
+      default: none              # 一次分類なし。common12 のみ
+    common_mapping_fallback: manual   # 手動マッピングCSV
+
+refresh:
+  # Global 500 は7月下旬〜8月上旬発表
+  # ランキングは3月31日までに終了する各社の会計年度の総収益ベース
+  cadence: annual
+  announce_month: 7
+  recheck_only_on_announce: true
+
+constraints:
+  exclude_fields: [rank, revenue]
+
+dedup:
+  # 日本企業は jp-prime と、米国企業は us-fortune500 と重複する。
+  # entity_id を LEI ベースで統一し、population_ids を配列で持つ。
+  strategy: merge_by_lei
+  fallback_keys: [houjin_bangou, cik, name_normalized]
+
+acceptance:
+  expected_count_min: 480
+  expected_count_max: 500
+
+attribution:
+  - "Source: Wikidata (CC0)"
+  - "Source: GLEIF"

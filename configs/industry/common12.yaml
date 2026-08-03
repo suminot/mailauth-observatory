@@ -1,0 +1,68 @@
+# 日米横断の共通中間分類（12分類）
+#
+# 出所: リサーチ統合ドシエ DR-12「日米横断の共通中間分類（12分類の推奨案）」。
+# ISIC Rev.4 を中間ハブとし、日米両国で1分類あたり十分な企業数（n>=5）が
+# 確保できる粒度に丸めたもの。
+#
+# この表と写像 CSV のバージョンを合わせて entities.parquet の
+# industry_map_version に記録する。改定時は version を上げること
+# （時系列比較は同一バージョンで再集計する）。
+version: 2026-08-01
+
+classes:
+  - code: "1"
+    label: 農林水産・鉱業
+    label_en: Agriculture, Forestry, Fishing and Mining
+    isic: [A, B]
+  - code: "2"
+    label: 建設
+    label_en: Construction
+    isic: [F]
+  - code: "3"
+    label: 素材・化学
+    label_en: Materials and Chemicals
+    isic_note: C の素材系（化学・医薬品・鉄鋼・非鉄・紙パ・窯業・石油石炭・ゴム・金属製品）
+  - code: "4"
+    label: 機械・電機・精密
+    label_en: Machinery, Electrical and Precision Equipment
+    isic_note: C の機械電機系
+  - code: "5"
+    label: 輸送用機器
+    label_en: Transportation Equipment
+    isic: [C29, C30]
+  - code: "6"
+    label: その他製造・消費財
+    label_en: Other Manufacturing and Consumer Goods
+    isic_note: C の消費財系（食品・繊維・その他製品）
+  - code: "7"
+    label: エネルギー・公益
+    label_en: Energy and Utilities
+    isic: [D, E]
+  - code: "8"
+    label: 商社・卸売・小売
+    label_en: Trading, Wholesale and Retail
+    isic: [G]
+  - code: "9"
+    label: 運輸・物流
+    label_en: Transportation and Logistics
+    isic: [H]
+  - code: "10"
+    label: 情報通信・IT・メディア
+    label_en: Information, Communication and Media
+    isic: [J]
+  - code: "11"
+    label: 金融・保険・不動産
+    label_en: Finance, Insurance and Real Estate
+    isic: [K, L]
+  - code: "12"
+    label: サービス・その他
+    label_en: Services and Other
+    isic_note: M〜U（専門サービス・ヘルスケア・教育・持株会社等）
+
+# 集計時の扱い
+aggregation:
+  # コングロマリットは主分類方式。原典コードが単一なので二重計上が起きない。
+  # 有報セグメントに基づく副分類は将来別テーブルで持つ（DR-12）。
+  method: primary_only
+  # セル秘匿の閾値（DESIGN.md P7）
+  min_cell_size: 5

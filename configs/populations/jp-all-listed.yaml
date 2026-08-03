@@ -1,0 +1,65 @@
+# 東証全上場企業（市場区分によらず、証券コードを持つ EDINET 提出者すべて）
+#
+# jp-prime との違いは acceptance の想定件数のみ。
+# segment_source: none である以上、EDINET 単独で実際に取得できるのはこの母集団である。
+# 市場区分による絞り込みができるようになるまでの実質的な既定値として用意している。
+id: jp-all-listed
+label: 国内上場企業（市場区分によらず）
+country: JP
+enabled: true
+implemented: true
+
+source:
+  primary: edinet_code_list
+  edinet_code_list:
+    url: https://disclosure2dl.edinet-fsa.go.jp/searchdocument/codelist/Edinetcode.zip
+    send_subscription_key: true
+    subscription_key_param: Subscription-Key
+    encoding: cp932
+    header_row: 1
+    columns:
+      edinet_code: 0
+      submitter_type: 1
+      listing_status: 2
+      consolidated: 3
+      capital: 4
+      fiscal_year_end: 5
+      name: 6
+      name_en: 7
+      name_kana: 8
+      address: 9
+      industry: 10
+      securities_code: 11
+      houjin_bangou: 12
+
+  market_filter:
+    method: securities_code_presence
+    segment_source: none
+    segment_allowlist: null
+
+  enrich:
+    - houjin_bangou
+    - gbizinfo
+
+  industry:
+    primary_scheme: EDINET33
+    common_mapping: configs/industry/edinet33_to_common12.csv
+
+refresh:
+  cadence: monthly
+  method: api
+  cache_ttl_hours: 24
+
+acceptance:
+  # 東証全市場で約3,900社、他市場・上場投資法人等を含めて幅を取る
+  expected_count_min: 3500
+  expected_count_max: 4600
+  max_missing_rate:
+    houjin_bangou: 0.01
+    official_url: 0.10
+    common12: 0.05
+
+attribution:
+  - "出典：EDINET（金融庁）"
+  - "出典：国税庁法人番号公表サイト（国税庁）"
+  - "出典：経済産業省gBizINFO"
