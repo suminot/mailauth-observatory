@@ -63,37 +63,37 @@ def test_status_reports_not_run_phases(edinet_sample, jp_config):
     assert "not_run" in result.stdout  # P2 以降
 
 
-@pytest.mark.parametrize("cmd", ["p8-publish"])
-def test_unimplemented_phases_exit_with_code_2(cmd):
-    result = runner.invoke(app, [cmd, "--run", "2026-08"])
-    assert result.exit_code == 2
-    assert "未実装" in result.output
+def test_stub_writes_a_manifest_before_stopping(monkeypatch):
+    """未実装でも manifest は残す。コンソールで「未実装」と見えるようにするため。
 
-
-def test_stub_writes_a_manifest_before_stopping():
-    """未実装でも manifest は残す。コンソールで「未実装」と見えるようにするため。"""
+    現在は全フェーズが実装済みなので、仕組み自体が生きていることを確認する。
+    フェーズを追加したときに「何もせず成功したふりをする」実装が入り込むのを
+    防ぐための機構なので、使われていなくても壊さない。
+    """
+    import mailauth.stubs as stubs_mod
     from mailauth.manifest import read_manifest
     from mailauth.paths import phase_dir
 
+    monkeypatch.setitem(stubs_mod.PLANNED_SPRINT, "p9_future", "Sprint 99")
     with pytest.raises(PhaseNotImplementedError):
-        not_implemented("p8_publish", "2026-08")
-    manifest = read_manifest(phase_dir("2026-08", "p8_publish"))
+        not_implemented("p9_future", "2026-08")
+    manifest = read_manifest(phase_dir("2026-08", "p9_future"))
     assert manifest["status"] == "failed"
-    assert manifest["breakdown"]["planned_sprint"] == "Sprint 7"
+    assert manifest["breakdown"]["planned_sprint"] == "Sprint 99"
+    # 空の出力を作らない。下流が「0件だった」と解釈しないように
+    assert manifest["outputs"] == []
 
 
-def test_every_unimplemented_phase_declares_its_sprint():
-    """実装済みのフェーズはスタブ表から外れていること。"""
-    assert set(PLANNED_SPRINT) == {"p8_publish"}
+def test_every_phase_is_implemented():
+    """八工程すべてが実装済みで、スタブ表は空であること。"""
+    assert PLANNED_SPRINT == {}
 
 
 def test_implemented_phases_are_not_stubs():
+    from mailauth import PHASES
     from mailauth.cli import IMPLEMENTED
 
-    assert IMPLEMENTED == {
-        "p1_population", "p2_candidates", "p3_domains", "p4_measure", "p5_parse",
-        "p6_infer", "p7_aggregate",
-    }
+    assert IMPLEMENTED == set(PHASES)
     assert not (IMPLEMENTED & set(PLANNED_SPRINT))
 
 

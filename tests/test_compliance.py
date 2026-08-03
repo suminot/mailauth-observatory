@@ -12,8 +12,17 @@ import pytest
 from mailauth.paths import repo_root
 
 #: 検査対象。テスト自身と、方針を説明している文書は除く。
-SEARCH_GLOBS = ["src/**/*.py", "console/**/*.py", "console/frontend/src/**/*.ts*", "configs/**/*"]
-EXCLUDE_PARTS = {"node_modules", "dist", ".venv", "__pycache__"}
+SEARCH_GLOBS = [
+    "src/**/*.py",
+    "console/**/*.py",
+    "console/frontend/src/**/*.ts*",
+    "configs/**/*",
+    # 公開サイトのページ。ここが外向きの文面そのものなので必ず含める
+    "site/src/**/*.md",
+    "site/src/**/*.js",
+    "site/*.js",
+]
+EXCLUDE_PARTS = {"node_modules", "dist", ".venv", "__pycache__", ".observablehq"}
 
 
 def _files():
@@ -183,3 +192,68 @@ def test_bronze_and_silver_are_not_committed():
     """git-scraping の履歴肥大化を避けるため data/runs/ は .gitignore に入れる。"""
     gitignore = (repo_root() / ".gitignore").read_text(encoding="utf-8")
     assert "data/runs/" in gitignore
+
+
+# -- 公開サイトの表現上の規約（DESIGN.md P8） --------------------------------
+#
+# 断定的な語彙や順位付けは、実在企業の設定状態を名指しで公開する以上、
+# 名誉毀損のリスクに直結する。文面はコードと同じ扱いで CI に通す。
+
+
+def _site_pages():
+    site = repo_root() / "site" / "src"
+    if not site.is_dir():
+        return []
+    return [
+        p
+        for p in sorted(site.rglob("*.md"))
+        if not EXCLUDE_PARTS & set(p.parts)
+    ]
+
+
+def test_site_pages_avoid_assertive_vocabulary():
+    """「危険」「脆弱」等の断定と、A〜F グレードを使わない。"""
+    from mailauth.p8_publish import vocabulary
+
+    problems = []
+    for path in _site_pages():
+        for v in vocabulary.check(path.read_text(encoding="utf-8")):
+            problems.append(
+                f"{path.relative_to(repo_root())}: 「{v.term}」── {v.advice}"
+            )
+    assert problems == [], "公開ページの表現が規約に反している:\n  " + "\n  ".join(problems)
+
+
+def test_site_shows_the_disclaimer_on_every_page():
+    """限界の明示を常時表示する。フッタに入れて全ページに出す。"""
+    from mailauth.p8_publish import vocabulary
+
+    config = repo_root() / "site" / "observablehq.config.js"
+    assert config.is_file(), "site/observablehq.config.js が無い"
+    assert vocabulary.has_disclaimer(config.read_text(encoding="utf-8")), (
+        f"フッタに「{vocabulary.DISCLAIMER}」が無い"
+    )
+
+
+def test_publish_config_keeps_tier2_disabled():
+    """第2層は既定で無効。訂正期間を経ていない個社明細を出さない。"""
+    from mailauth.config import load_yaml
+
+    tier2 = load_yaml("configs/publish.yaml")["tier2"]
+    assert tier2["enabled"] is False
+    assert tier2["notified_on"] is None
+    assert tier2["access_control_configured"] is False
+
+
+def test_required_public_pages_exist():
+    """DESIGN.md P8 の必須ページ。"""
+    names = {p.stem for p in _site_pages()}
+    required = {"index", "methodology", "terms", "corrections", "changelog", "data"}
+    assert required <= names, f"必須ページが足りない: {sorted(required - names)}"
+
+
+def test_site_data_is_not_committed():
+    """gold を正本にする。同じ数字を二重に持つと片方だけ古くなる。"""
+    gitignore = (repo_root() / ".gitignore").read_text(encoding="utf-8")
+    assert "site/src/data/*.json" in gitignore
+    assert "site/src/data/*.csv" in gitignore

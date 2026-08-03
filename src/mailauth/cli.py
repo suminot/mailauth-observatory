@@ -262,6 +262,42 @@ def p7_aggregate(
         raise typer.Exit(code=1)
 
 
+@app.command("p8-publish")
+def p8_publish(
+    run: RunOption = "",
+    dry_run: DryRunOption = False,
+    config: Annotated[
+        str, typer.Option("--config", help="公開の設定")
+    ] = "configs/publish.yaml",
+    any_month: Annotated[
+        bool,
+        typer.Option(
+            "--any-month",
+            help="gold にある月をそのまま出す。指定月が無くてもエラーにしない（CI 用）",
+        ),
+    ] = False,
+) -> None:
+    """P8 公開 ── gold を公開サイトのデータに書き出し表現規約を検査する。"""
+    from .p8_publish import MissingInputError, PublishBlockedError
+    from .p8_publish import run as run_p8
+
+    run_id = validate_run_id(run or default_run_id())
+    try:
+        result = run_p8(
+            run_id=run_id, dry_run=dry_run, config=config, require_month=not any_month
+        )
+    except MissingInputError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(code=2) from exc
+    except PublishBlockedError as exc:
+        # 公開してはいけないものが混ざっている。警告では済ませない
+        typer.secho(f"公開を中止しました: {exc}", fg="red", err=True)
+        raise typer.Exit(code=3) from exc
+    _echo_summary(result)
+    if result.get("status") == "failed":
+        raise typer.Exit(code=1)
+
+
 def _stub_command(phase: str):
     def command(run: RunOption = "") -> None:
         run_id = validate_run_id(run or default_run_id())
@@ -284,6 +320,7 @@ IMPLEMENTED = {
     "p5_parse",
     "p6_infer",
     "p7_aggregate",
+    "p8_publish",
 }
 
 for _phase in PHASES:
