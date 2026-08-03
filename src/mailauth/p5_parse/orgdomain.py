@@ -13,6 +13,7 @@ Tree Walk（RFC 9989）の手順
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 from ..records import find_dmarc_records
 from ..resolver import Resolver
@@ -36,7 +37,13 @@ class OrgDomainResult:
     notes: list[str] = field(default_factory=list)
 
 
+@lru_cache(maxsize=1)
 def _psl():
+    """PSL の読み込みは重い。プロセス内で1回だけにする。
+
+    P6 が MX ホストの登録ドメインを数万回引くので、毎回構築すると
+    そこだけで実行時間が桁で変わる。
+    """
     from publicsuffixlist import PublicSuffixList
 
     return PublicSuffixList()

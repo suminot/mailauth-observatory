@@ -18,7 +18,7 @@
 
 ## 現在の実装状況
 
-Sprint 1（骨格と P1・日本側）まで実装済み。
+P1〜P6 まで実装済み。
 
 | フェーズ | 内容 | 状態 |
 |---|---|---|
@@ -27,14 +27,15 @@ Sprint 1（骨格と P1・日本側）まで実装済み。
 | P3 メールドメイン確定 | 候補から送信ドメインを絞り確度付与 | **実装済** |
 | P4 DNS計測 | MX/TXT/SPF/DKIM/DMARC 等の生取得 | **実装済** |
 | P5 パース | 生レスポンスの構造化と仕様準拠の解釈 | **実装済** |
-| P6 推察 | メール基盤・製品の推定、パーク分類 | 未実装（Sprint 5） |
+| P6 推察 | メール基盤・製品の推定、パーク分類 | **実装済** |
 | P7 集計 | 全社統計・業種別集計・前月差分 | 未実装（Sprint 6） |
 | P8 公開 | 静的サイト生成とデプロイ | 未実装（Sprint 7） |
 
 未実装のフェーズは、実行すると「どのスプリントで実装予定か」を添えて停止する。
 空の出力を作って下流に「0件だった」と誤解させないため。
 
-運用コンソールは画面1（パイプライン全景）と画面2（フェーズ実行）まで。
+運用コンソールは画面1（パイプライン全景）、画面2（フェーズ実行）、画面5（辞書メンテナンス）
+とビュー切り替えパネルまで。
 
 ## セットアップ
 
@@ -64,6 +65,7 @@ mailauth p4-measure    --run 2026-08 --tier A    # 階層を絞る
 mailauth p4-measure    --run 2026-08 --method zdns
 mailauth p5-parse      --run 2026-08   # bronze を解釈して facts.parquet を作る
 mailauth p5-parse      --run 2026-08 --no-dns   # Tree Walk と rua 検証をしない
+mailauth p6-infer      --run 2026-08   # 辞書と照合して基盤・製品を推定する
 
 # 実行状況
 mailauth status --run 2026-08
@@ -304,6 +306,95 @@ MTA-STS / BIMI / DANE はいずれも DMARC を事実上の前提とするため
 
 DANE は **DNSSEC 署名の有無を必ず併記**する。「TLSA はあるが親ゾーンが未署名で
 実効しない」という誤設定（`dane_orphan`）を検出できる。
+
+## 推察（P6）
+
+fact からメール基盤とセキュリティ製品を推定する。**推定には必ず confidence と
+evidence が付く**（原則2）。DNS は引かない。silver を読んで silver を書くので、
+辞書を更新したら P6 だけを再実行すればよい。
+
+規則は `configs/fingerprints/*.yaml` と `configs/vendors/dmarc_rua_vendors.yaml`
+にあり、**コードには規則を1つも書かない**（原則7）。読み込み時に正規表現の
+コンパイル、`record` 種別、`id` の一意性を検証する。壊れた規則を黙って無視すると
+「一致0件」と区別が付かなくなるため、例外にして止める。
+
+### 二段推定 ── 単一ベンダーに丸めない
+
+ゲートウェイ型製品は MX を自社に向けさせるので、MX だけでは背後の実基盤が
+見えない。MX が `security_gateway` に一致しても、SPF include や DKIM CNAME から
+導いた `mail_platform` を別カテゴリとして残す。
+
+| 観測 | 出力 |
+|---|---|
+| MX=`*.securemx.jp` + SPF `spf.protection.outlook.com` | security_gateway=IIJ、mail_platform=Microsoft |
+| MX=`*.iphmx.com` + TXT `MS=` + DKIM →`onmicrosoft.com` | security_gateway=Cisco、mail_platform=Microsoft（high） |
+
+確度は辞書の宣言値を出発点に、証拠の強さで上下する。
+
+- DKIM CNAME があれば high。署名基盤は最も実基盤に近い
+- 強い証拠（MX / SPF include）が2種類以上そろえば1段上げる
+- 所有権確認 TXT しか無ければ low
+
+IIJ セキュアMX の署名ドメイン `dxg.dox.jp` はアライメント不可のゲートウェイ独自
+ドメインなので、`security_gateway` の規則として登録している。これを
+`mail_platform` と読むと「IIJ がメール基盤」という誤った推定になる。
+
+### 所有権確認 TXT は3か月見てから降格する
+
+`MS=` や `google-site-verification=` は削除されずに残りやすい。対応する
+MX / SPF / DKIM の裏付けが無ければ「過去の痕跡」だが、**即座に stale にはしない**。
+月次差分での観測が最も確実な判別手段なので、3か月連続で裏付けが出なかった場合に
+降格する。連続月数は `stale_streak_months` に持ち、前月の出力から引き継ぐ。
+
+裏付け条件が辞書に書かれていない規則は「判定していない」として扱う。
+「裏付けが無い」と混ぜない（原則5）。
+
+### パークドメイン分類 ── 本システム固有の指標
+
+網羅展開したドメインの大半は送信に使われていない。その中で「適切に固められた
+もの」と「単に放置されたもの」を区別する。送信実績がなく監視もされていない
+ドメインは、なりすましの理想的な出発点になるため。
+
+| 分類 | MX | SPF | DMARC |
+|---|---|---|---|
+| `hardened_parked` | Null MX | `-all` | `p=reject` |
+| `defended_parked` | 無し / Null MX | `-all` / `~all` | reject / quarantine |
+| `intentional_no_send` | 無し | `-all` / `~all` | 何でも |
+| `neglected` | 無し | 無し | 無し |
+| `active_sending` | 有り | 有り | ─（分類対象外） |
+| `inconsistent` | 矛盾 | | |
+
+これで次の二つを分けて示せる。
+
+- **送信ドメインの強制率**: `active_sending` のうち enforcement に達している割合
+- **非送信ドメインの防御率**: パークドメインのうち `hardened_parked` + `defended_parked` の割合
+
+**観測できなかったドメインは分類しない。** SERVFAIL で何も取れなかったドメインを
+`neglected`（放置）と呼ぶのは事実の捏造である（原則5）。
+
+### 検出できない製品を「使っていない」と数えない
+
+Abnormal Security、Avanan、Darktrace EMAIL、Vade for M365、Perception Point、
+Agari は MX を変更せず API / OAuth で連携するため、**原理的に DNS に痕跡を
+残さない**。セキュリティ製品が1件も検出できなかったドメインには
+`undetectable_reason=api_mode_product` の行を1件出す。manifest の注記だけにすると
+P7 / P8 に渡った時点で消えてしまうため、データ側に残す。この番兵行はベンダー
+シェアの分母には入れない。
+
+### 未知 MX ホストが辞書を育てる
+
+国内ベンダーの固定ホスト名は公開情報から特定できないものが多い。実測データからの
+帰納的発見でしか埋まらないので、辞書に一致しなかった MX ホストを**登録ドメイン
+単位で頻度順に集約**して manifest に出す。顧客別ホスト名を1件ずつ数えても手がかりに
+ならないため。
+
+コンソールの画面5（辞書メンテナンス）からその一覧を見て、ベンダーを手入力して
+YAML に追記し、その場で P6 だけ再実行して効果を確認できる。追記は行単位の挿入で
+行い、既存のコメント（判定根拠・出典・注意書き）を消さない。書き戻した内容を
+読み直して検証し、通らなければ元に戻す。
+
+受け入れ基準は「推定が付かないドメインが 20% 未満」。超えると manifest に
+`NO_INFERENCE_RATE_HIGH` の警告が出る。
 
 ## 設計上の約束
 

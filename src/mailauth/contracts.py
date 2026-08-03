@@ -386,6 +386,9 @@ class RawResponse(_RawModel):
     record_present: bool | None = None
 
     answers: list[DnsAnswer] = Field(default_factory=list)
+    #: 辿った CNAME の先。求めた型の rrset ではないので answers には入れないが、
+    #: DKIM セレクタの委譲先はここにしか現れない（DESIGN.md P6 二段推定）
+    cname_chain: list[str] = Field(default_factory=list)
     authorities: list[dict] = Field(default_factory=list)
     additionals: list[dict] = Field(default_factory=list)
     authoritative_ns: str | None = None
@@ -429,6 +432,11 @@ class Fact(_Model):
     spf_void_count: int | None = None
     spf_exceeds_limit: bool | None = None
     spf_includes: list[str] = Field(default_factory=list)
+    #: include 以外のメカニズムも保持する。さくらインターネットのように
+    #: 専用 include を持たず `a:wwwNNNN.sakura.ne.jp` で表現する事業者があり、
+    #: include だけ見ていると取りこぼす（DESIGN.md P6 実装メモ）。
+    #: ip4/ip6/all は数が多く照合にも使わないので除く
+    spf_mechanisms: list[str] = Field(default_factory=list)
     spf_is_flattened: bool | None = None
     spf_is_dynamic: bool | None = None
 
@@ -467,10 +475,22 @@ class Fact(_Model):
     dkim_testing_flag: bool | None = None
     dkim_revoked: bool | None = None
     dkim_wildcard_suspect: bool | None = None
+    #: セレクタの委譲先。ゲートウェイが MX を握っていても署名基盤は
+    #: ここに出る。推定証拠として最も強い（DESIGN.md P6）
+    dkim_cname_targets: list[str] = Field(default_factory=list)
+    #: `*._domainkey` に失効鍵が置かれていた（M3AAWG のパーク推奨構成）
+    dkim_wildcard_revoked: bool | None = None
 
     # MX
     mx_present: bool | None = None
     mx_hosts: list[str] = Field(default_factory=list)
+    #: RFC 7505 の Null MX（`0 .`）。**「MX が無い」とは別の事実**である。
+    #: mx_present は Null MX を False にするので、区別にはこの列が必要
+    mx_null: bool | None = None
+
+    #: apex TXT のうち SPF 以外。所有権確認 TXT の照合に使う。
+    #: DKIM 鍵や DMARC は別の名前にあるのでここには入らない
+    verification_txt: list[str] = Field(default_factory=list)
 
     # 周辺プロトコル
     mta_sts_present: bool | None = None
@@ -507,6 +527,7 @@ FACT_ARROW_SCHEMA = pa.schema(
         ("spf_void_count", pa.int32()),
         ("spf_exceeds_limit", pa.bool_()),
         ("spf_includes", pa.list_(pa.string())),
+        ("spf_mechanisms", pa.list_(pa.string())),
         ("spf_is_flattened", pa.bool_()),
         ("spf_is_dynamic", pa.bool_()),
         ("dmarc_present", pa.bool_()),
@@ -538,8 +559,12 @@ FACT_ARROW_SCHEMA = pa.schema(
         ("dkim_testing_flag", pa.bool_()),
         ("dkim_revoked", pa.bool_()),
         ("dkim_wildcard_suspect", pa.bool_()),
+        ("dkim_cname_targets", pa.list_(pa.string())),
+        ("dkim_wildcard_revoked", pa.bool_()),
         ("mx_present", pa.bool_()),
         ("mx_hosts", pa.list_(pa.string())),
+        ("mx_null", pa.bool_()),
+        ("verification_txt", pa.list_(pa.string())),
         ("mta_sts_present", pa.bool_()),
         ("mta_sts_id", pa.string()),
         ("mta_sts_mode", pa.string()),
@@ -584,6 +609,10 @@ class Inference(_Model):
     product: str | None = None
     confidence: str
     is_stale: bool = False
+    #: 所有権確認 TXT の裏付けが取れなかった連続月数。
+    #: 3か月連続で is_stale に降格する（DESIGN.md P6）。
+    #: 判定対象でない推定では null
+    stale_streak_months: int | None = None
 
     evidence: str | None = None  # JSON 文字列
     rule_ids: list[str] = Field(default_factory=list)
@@ -611,6 +640,7 @@ INFERENCE_ARROW_SCHEMA = pa.schema(
         ("product", pa.string()),
         ("confidence", pa.string()),
         ("is_stale", pa.bool_()),
+        ("stale_streak_months", pa.int32()),
         ("evidence", pa.string()),
         ("rule_ids", pa.list_(pa.string())),
         ("fingerprint_version", pa.string()),
@@ -622,7 +652,10 @@ INFERENCE_ARROW_SCHEMA = pa.schema(
     ]
 )
 
-INFERENCE_SORT_KEYS = ["domain_id", "category", "vendor", "rule_ids"]
+#: rule_ids は list 列なのでソートキーにできない。
+#: (domain_id, category, vendor) が主キー相当で、inference_id はその
+#: ハッシュなので最後の同値解消に足りる
+INFERENCE_SORT_KEYS = ["domain_id", "category", "vendor", "inference_id"]
 
 
 # --------------------------------------------------------------------------

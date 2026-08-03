@@ -71,6 +71,7 @@ def to_raw_response(
         observed=answer.observed,
         record_present=answer.record_present,
         answers=answers,
+        cname_chain=answer.cname_chain,
         dnssec=DnssecFlags(
             do=True if answer.authenticated_data is not None else None,
             ad=answer.authenticated_data,

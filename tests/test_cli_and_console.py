@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime as dt
+
 import pytest
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
@@ -61,7 +63,7 @@ def test_status_reports_not_run_phases(edinet_sample, jp_config):
     assert "not_run" in result.stdout  # P2 以降
 
 
-@pytest.mark.parametrize("cmd", ["p6-infer", "p7-aggregate", "p8-publish"])
+@pytest.mark.parametrize("cmd", ["p7-aggregate", "p8-publish"])
 def test_unimplemented_phases_exit_with_code_2(cmd):
     result = runner.invoke(app, [cmd, "--run", "2026-08"])
     assert result.exit_code == 2
@@ -74,15 +76,15 @@ def test_stub_writes_a_manifest_before_stopping():
     from mailauth.paths import phase_dir
 
     with pytest.raises(PhaseNotImplementedError):
-        not_implemented("p6_infer", "2026-08")
-    manifest = read_manifest(phase_dir("2026-08", "p6_infer"))
+        not_implemented("p7_aggregate", "2026-08")
+    manifest = read_manifest(phase_dir("2026-08", "p7_aggregate"))
     assert manifest["status"] == "failed"
-    assert manifest["breakdown"]["planned_sprint"] == "Sprint 5"
+    assert manifest["breakdown"]["planned_sprint"] == "Sprint 6"
 
 
 def test_every_unimplemented_phase_declares_its_sprint():
     """実装済みのフェーズはスタブ表から外れていること。"""
-    assert set(PLANNED_SPRINT) == {"p6_infer", "p7_aggregate", "p8_publish"}
+    assert set(PLANNED_SPRINT) == {"p7_aggregate", "p8_publish"}
 
 
 def test_implemented_phases_are_not_stubs():
@@ -90,6 +92,7 @@ def test_implemented_phases_are_not_stubs():
 
     assert IMPLEMENTED == {
         "p1_population", "p2_candidates", "p3_domains", "p4_measure", "p5_parse",
+        "p6_infer",
     }
     assert not (IMPLEMENTED & set(PLANNED_SPRINT))
 
@@ -372,3 +375,143 @@ def test_run_view_endpoint_rejects_bad_axis(client, edinet_sample, jp_config):
     _run_p1(edinet_sample, jp_config)
     resp = client.get("/api/runs/2026-08/view", params={"view": "jp-all", "by": "bogus"})
     assert resp.status_code == 400
+
+
+# -- 画面5 辞書メンテナンス --------------------------------------------------
+
+
+@pytest.fixture
+def sandbox_configs(tmp_path, monkeypatch):
+    """辞書を書き換えるテストがリポジトリの configs/ を汚さないようにする。
+
+    MAILAUTH_ROOT を差し替えると config_path の解決先が移る。
+    """
+    import shutil
+
+    from mailauth.paths import repo_root
+
+    real = repo_root()
+    root = tmp_path / "sandbox"
+    (root / "configs").mkdir(parents=True)
+    for name in ("fingerprints", "vendors", "dkim_selectors"):
+        shutil.copytree(real / "configs" / name, root / "configs" / name)
+    shutil.copy(real / "configs" / "measure.yaml", root / "configs" / "measure.yaml")
+    monkeypatch.setenv("MAILAUTH_ROOT", str(root))
+    return root
+
+
+def test_unknown_hosts_requires_p6(client):
+    resp = client.get("/api/dict/unknown-hosts", params={"run": "2099-01"})
+    assert resp.status_code == 404
+    assert "p6-infer" in resp.json()["detail"]
+
+
+def test_unknown_hosts_are_returned_in_frequency_order(client):
+    """辞書を育てる主要な経路。頻度順に並んでいること。"""
+    from mailauth.contracts import FACT_ARROW_SCHEMA
+    from mailauth.io import write_parquet
+    from mailauth.p6_infer import run as run_p6
+    from mailauth.paths import phase_output
+
+    rows = []
+    for i in range(4):
+        rows.append(
+            {
+                "fact_id": f"f:{i}", "domain_id": f"d:{i}", "entity_id": "jp:1",
+                "run_id": "2026-08", "measured_month": dt.date(2026, 8, 1),
+                "observed": True,
+                "mx_hosts": ["mx1.unknown-a.example" if i < 3 else "mx1.unknown-b.example"],
+                "mx_present": True,
+            }
+        )
+    write_parquet(rows, phase_output("2026-08", "p5_parse", "facts.parquet"),
+                  FACT_ARROW_SCHEMA)
+    run_p6(run_id="2026-08")
+
+    body = client.get("/api/dict/unknown-hosts", params={"run": "2026-08"}).json()
+    assert [h["registered_domain"] for h in body["hosts"]] == [
+        "unknown-a.example", "unknown-b.example",
+    ]
+    assert body["hosts"][0]["count"] == 3
+
+
+def test_adding_a_rule_appends_to_the_dictionary(client, sandbox_configs):
+    """3クリックで辞書に足せること。コメントは消さないこと（DESIGN.md 7.2）。"""
+    target = sandbox_configs / "configs" / "fingerprints" / "security_gw.yaml"
+    before = target.read_text(encoding="utf-8")
+
+    resp = client.post(
+        "/api/dict/rules",
+        json={
+            "file": "configs/fingerprints/security_gw.yaml",
+            "id": "nri-mx-01",
+            "vendor": "NRIセキュアテクノロジーズ",
+            "record": "MX",
+            "pattern": r"\.nri-secure\.example\.?$",
+            "region": "JP",
+            "confidence": "high",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+
+    after = target.read_text(encoding="utf-8")
+    # 既存のコメントが1行も消えていないこと
+    for line in before.splitlines():
+        if line.strip().startswith("#"):
+            assert line in after
+    # 別のトップレベルキーの下に紛れ込んでいないこと
+    import yaml
+
+    data = yaml.safe_load(after)
+    assert data["rules"][-1]["id"] == "nri-mx-01"
+    assert len(data["undetectable_by_dns"]) == 6
+
+
+def test_adding_a_rule_rejects_a_broken_pattern(client, sandbox_configs):
+    resp = client.post(
+        "/api/dict/rules",
+        json={
+            "file": "configs/fingerprints/esp.yaml",
+            "id": "broken-01", "vendor": "V", "record": "MX", "pattern": "(",
+        },
+    )
+    assert resp.status_code == 400
+    assert "コンパイル" in resp.json()["detail"]
+
+
+def test_adding_a_rule_rejects_a_duplicate_id(client, sandbox_configs):
+    resp = client.post(
+        "/api/dict/rules",
+        json={
+            "file": "configs/fingerprints/esp.yaml",
+            "id": "pp-mx-01", "vendor": "V", "record": "MX", "pattern": "x",
+        },
+    )
+    assert resp.status_code == 409
+
+
+def test_adding_a_rule_refuses_paths_outside_the_dictionary(client, sandbox_configs):
+    """パスをそのまま書くと任意ファイルを書き換えられる。"""
+    for path in ("../../pyproject.toml", "configs/measure.yaml", "/etc/hosts"):
+        resp = client.post(
+            "/api/dict/rules",
+            json={"file": path, "id": "x-01", "vendor": "V",
+                  "record": "MX", "pattern": "x"},
+        )
+        assert resp.status_code == 400, path
+
+
+def test_vendor_names_that_break_yaml_are_quoted(client, sandbox_configs):
+    """`@` で始まる値は plain scalar として書けない。"""
+    resp = client.post(
+        "/api/dict/rules",
+        json={
+            "file": "configs/fingerprints/platforms.yaml",
+            "id": "atmark-01", "vendor": "ニフティ", "product": "@nifty メール2",
+            "record": "SPF_INCLUDE", "pattern": r"^spf2\.nifty\.example$",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    # 読み直せている（endpoint が検証している）ので YAML として妥当
+    body = client.get("/api/dict/fingerprints").json()
+    assert any(d["rule_count"] == 12 for d in body["dictionaries"])

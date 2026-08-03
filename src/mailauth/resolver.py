@@ -50,6 +50,11 @@ class DnsAnswer:
     authenticated_data: bool | None = None
     #: 応答が truncated だったため TCP に切り替えたか
     used_tcp: bool = False
+    #: 辿った CNAME の先。DKIM セレクタの委譲先を知るために保存する。
+    #: `selector._domainkey.example.com CNAME selector.example.dkim.amazonses.com`
+    #: のような委譲は **最も強い推定証拠** になる（DESIGN.md P6 二段推定）。
+    #: 値だけ見ていると委譲先が分からず、P6 の DKIM_CNAME 照合ができない
+    cname_chain: list[str] = field(default_factory=list)
 
     @property
     def failed(self) -> bool:
@@ -229,9 +234,16 @@ class DnsResolver:
 
         values: list[str] = []
         txt_strings: list[list[str]] = []
+        cname_chain: list[str] = []
         for rrset in resp.answer:
+            if rrset.rdtype == dns.rdatatype.CNAME and rdtype != dns.rdatatype.CNAME:
+                # 辿った途中の CNAME。record_present には数えないが捨てない。
+                # DKIM の委譲先はここにしか現れない
+                for rdata in rrset:
+                    cname_chain.append(str(rdata.target).rstrip(".").lower())
+                continue
             if rrset.rdtype != rdtype:
-                continue  # CNAME を辿った途中の rrset は数えない
+                continue  # 求めた型でも CNAME でもない rrset は数えない
             for rdata in rrset:
                 if rtype == "TXT":
                     chunks = [b.decode("utf-8", errors="replace") for b in rdata.strings]
@@ -250,6 +262,7 @@ class DnsResolver:
             rcode="NOERROR" if values else "NODATA",
             values=values,
             txt_strings=txt_strings,
+            cname_chain=cname_chain,
             duration_ms=_ms(started),
             authenticated_data=ad,
             used_tcp=used_tcp,
@@ -290,10 +303,12 @@ def make_answer(
     *,
     observed: bool = True,
     rcode: str | None = None,
+    cname_chain: list[str] | None = None,
 ) -> DnsAnswer:
     """テスト用のヘルパ。"""
     vals = values or []
     return DnsAnswer(
+        cname_chain=cname_chain or [],
         name=name.rstrip(".").lower(),
         rtype=rtype.upper(),
         observed=observed,
