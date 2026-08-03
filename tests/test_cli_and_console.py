@@ -61,7 +61,7 @@ def test_status_reports_not_run_phases(edinet_sample, jp_config):
     assert "not_run" in result.stdout  # P2 以降
 
 
-@pytest.mark.parametrize("cmd", ["p2-candidates", "p4-measure", "p8-publish"])
+@pytest.mark.parametrize("cmd", ["p4-measure", "p6-infer", "p8-publish"])
 def test_unimplemented_phases_exit_with_code_2(cmd):
     result = runner.invoke(app, [cmd, "--run", "2026-08"])
     assert result.exit_code == 2
@@ -81,10 +81,17 @@ def test_stub_writes_a_manifest_before_stopping():
 
 
 def test_every_unimplemented_phase_declares_its_sprint():
+    """実装済みのフェーズはスタブ表から外れていること。"""
     assert set(PLANNED_SPRINT) == {
-        "p2_candidates", "p3_domains", "p4_measure", "p5_parse",
-        "p6_infer", "p7_aggregate", "p8_publish",
+        "p4_measure", "p5_parse", "p6_infer", "p7_aggregate", "p8_publish",
     }
+
+
+def test_implemented_phases_are_not_stubs():
+    from mailauth.cli import IMPLEMENTED
+
+    assert IMPLEMENTED == {"p1_population", "p2_candidates", "p3_domains"}
+    assert not (IMPLEMENTED & set(PLANNED_SPRINT))
 
 
 def test_invalid_run_id_is_rejected_by_cli(jp_config):
@@ -218,6 +225,42 @@ def test_job_runs_p1_and_streams_output(edinet_sample, jp_config):
         assert job["status"] == "success", job["lines"]
         assert any("entities.parquet" in ln for ln in job["lines"])
         assert c.get("/api/runs/2026-08").json()["phases"][0]["status"] == "success"
+
+
+def test_p2_p3_run_from_cli(edinet_sample, jp_config, monkeypatch):
+    """P2/P3 が CLI から動くこと。DNS には出ないので候補ゼロで成功する。"""
+    _run_p1(edinet_sample, jp_config)
+    # 起点ドメインが無いので DNS も CT も引かれない。ネットワーク非依存
+    r2 = runner.invoke(app, ["p2-candidates", "--run", "2026-08"])
+    assert r2.exit_code == 0, r2.output
+    assert "NO_SEED_DOMAINS" in r2.output
+
+    r3 = runner.invoke(app, ["p3-domains", "--run", "2026-08"])
+    assert r3.exit_code == 0, r3.output
+    assert "domains.parquet" in r3.output
+
+
+def test_p2_without_p1_exits_with_code_2():
+    result = runner.invoke(app, ["p2-candidates", "--run", "2026-08"])
+    assert result.exit_code == 2
+    assert "p1-population" in result.output
+
+
+def test_p3_without_p2_exits_with_code_2(edinet_sample, jp_config):
+    _run_p1(edinet_sample, jp_config)
+    result = runner.invoke(app, ["p3-domains", "--run", "2026-08"])
+    assert result.exit_code == 2
+    assert "p2-candidates" in result.output
+
+
+def test_console_shows_p2_p3_as_run(client, edinet_sample, jp_config):
+    """画面1 に P2/P3 の結果が出ること。"""
+    _run_p1(edinet_sample, jp_config)
+    runner.invoke(app, ["p2-candidates", "--run", "2026-08"])
+    phases = client.get("/api/runs/2026-08").json()["phases"]
+    by_id = {p["phase"]: p for p in phases}
+    assert by_id["p2_candidates"]["status"] in ("success", "partial")
+    assert by_id["p3_domains"]["status"] == "not_run"
 
 
 def test_job_reports_failure_for_unimplemented_phase():

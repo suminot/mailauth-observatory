@@ -23,8 +23,8 @@ Sprint 1（骨格と P1・日本側）まで実装済み。
 | フェーズ | 内容 | 状態 |
 |---|---|---|
 | P1 母集団確定 | 企業リストの取得と identity 付与 | **実装済**（日本・EDINET 経路） |
-| P2 ドメイン候補生成 | 企業から関連ドメイン群を展開 | 未実装（Sprint 2） |
-| P3 メールドメイン確定 | 候補から送信ドメインを絞り確度付与 | 未実装（Sprint 2） |
+| P2 ドメイン候補生成 | 企業から関連ドメイン群を展開 | **実装済** |
+| P3 メールドメイン確定 | 候補から送信ドメインを絞り確度付与 | **実装済** |
 | P4 DNS計測 | MX/TXT/SPF/DKIM/DMARC 等の生取得 | 未実装（Sprint 3） |
 | P5 パース | 生レスポンスの構造化と仕様準拠の解釈 | 未実装（Sprint 4） |
 | P6 推察 | メール基盤・製品の推定、パーク分類 | 未実装（Sprint 5） |
@@ -55,6 +55,9 @@ mailauth p1-population --run 2026-08 --limit 100 --dry-run
 
 # ネットワークに出ずにローカルのコードリストで動かす
 mailauth p1-population --run 2026-08 --source-file path/to/Edinetcode.zip
+
+mailauth p2-candidates --run 2026-08   # 候補ドメインを展開（再現率優先）
+mailauth p3-domains    --run 2026-08   # 送信ドメインを絞り確度を付ける
 
 # 実行状況
 mailauth status --run 2026-08
@@ -131,6 +134,55 @@ source:
 
 なお `market_segment` 列は**内部の集計軸専用**であり、公開成果物には出さない
 （DESIGN.md P1「市場区分は内部フィルタに留め、成果物には出さない」）。
+
+## ドメイン同定（P2・P3）
+
+DESIGN.md が「本プロジェクト最大の難所」「システムの中核」とする部分。
+
+**P2 は広く拾う。** 四つの経路で候補を展開し、ここでは絞らない。絞ると P3 で
+拾い直せないため、再現率を優先する。
+
+| 経路 | 内容 |
+|---|---|
+| `official_url` | P1 が gBizINFO から取った公式サイトのドメイン |
+| `ct_log` | crt.sh の SAN から eTLD+1 を抽出。1ドメインに数千件返るので apex に丸めて重複排除 |
+| `spf_redirect` | SPF の `redirect=` が別ドメインを指していれば候補に |
+| `dmarc_rua` | `_dmarc` の rua 宛先が自社ドメインなら候補に |
+| `manual` | 手動辞書。グループ会社・事業ブランド用（`configs/domains/`） |
+
+rua が第三者のレポート処理サービス（`dmarc25.jp` 等）を指している場合は候補にしない。
+入れると1つのベンダードメインが数百社に紐づき、他社のドメインを計測してしまう。
+判定は `configs/vendors/dmarc_rua_vendors.yaml` を使う。
+
+**P3 は絞って確度を付ける。**
+
+| 確度 | 条件 |
+|---|---|
+| `confirmed` | MX 実在 + From整合する SPF か DKIM + 独立ソースの裏付け1件以上 |
+| `likely` | MX 実在で SPF/DMARC はあるが独立裏付けが不足 |
+| `parked` | MX 不在 + SPF で `-all`（送信全否定）を宣言 |
+| `unknown` | MX 不在、または一次実証なし |
+
+「独立した裏付け」は DNS 由来でない発見経路（`official_url` / `ct_log` / `manual`）を
+数える。`spf_redirect` と `dmarc_rua` は DNS 由来なので、DNS 一次実証からは独立でない。
+定義は `configs/candidates.yaml` の `confidence.independent_methods`。
+
+**MX が無くても SPF がある場合を正しく扱う。** Czybik et al.（IMC 2023）は MX の無い
+ドメインの 10.4% が SPF を持ち、うち 53.1% が `-all`/`~all` だと報告している。これは
+設定漏れではなく意図的な送信禁止宣言なので、`parked` として分離する。Null MX
+（RFC 7505 の `0 .`）も同様に「受け取らない」の明示的な宣言であり、`mx_exists` には数えない。
+
+確度に応じて P4 の計測の深さ（`measure_tier`）を決める。A がフル計測、C が簡易計測。
+送信していないドメインに DKIM セレクタを50個投げても検出されないし、権威DNSへの
+負荷という点で作法が悪い。
+
+### TCP/53 が必要
+
+TXT レコードが多いドメインでは UDP 応答が 512 バイトを超えて truncated になり、
+TCP/53 への切り替えが必要になる。**TCP/53 を通さない経路では大企業の SPF を
+一切観測できない。** その場合 P3 は該当ドメインを `observed=false`（取れなかった）
+として計測対象から外し、`TCP53_UNAVAILABLE` を警告する。「SPF が無い」と
+読まないこと。
 
 ## 設計上の約束
 

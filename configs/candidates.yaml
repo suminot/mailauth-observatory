@@ -1,0 +1,52 @@
+# P2 ドメイン候補生成 / P3 メールドメイン確定のパラメータ
+#
+# P2 は再現率を優先する。ここで絞ると P3 で拾い直せない。
+
+discovery:
+  # 四つの経路（DESIGN.md P2）。個別に切れるようにしてある
+  official_url: true      # P1 の official_domain を起点にする
+  ct_log: true            # crt.sh。重いので qps を絞る
+  spf_redirect: true      # SPF の redirect= が別組織を指していれば候補に
+  dmarc_rua: true         # rua 宛先が自社ドメインなら候補に
+  manual: true            # 手動辞書。グループ会社・事業ブランド用
+
+manual_domains: configs/domains/manual_domains.csv
+
+ct:
+  # crt.sh は重い。1ドメインあたり数百〜数千の証明書を返すことがある
+  qps: 0.5
+  timeout_sec: 60
+  retries: 2
+  # 1社あたり CT から採る候補の上限。爆発を抑える
+  max_per_entity: 200
+
+limits:
+  # 網羅展開の上限（DESIGN.md 1.3）。超えたら打ち切って manifest に記録する
+  max_candidates_total: 30000
+  # 1社あたりの候補上限。p90 が 50 以下という受け入れ基準に対する安全弁
+  max_per_entity: 500
+
+resolver:
+  # P2/P3 の軽量問い合わせ用。本格計測（P4）の設定は measure.yaml
+  nameservers: []          # 空ならシステム既定
+  timeout_sec: 5
+  retries: 2
+  qps: 20
+  shuffle: true            # 同一権威への連続クエリを避ける
+  shuffle_seed: 20260801   # 再現性のため固定。原則6
+
+confidence:
+  # 独立した裏付けと見なす発見経路。
+  # spf_redirect と dmarc_rua は DNS 由来なので、DNS 一次実証からは独立でない
+  independent_methods: [official_url, ct_log, manual]
+
+acceptance:
+  # DESIGN.md P2 / P3 の受け入れ基準。満たさなくても止めず manifest に記録する
+  p2:
+    median_per_entity_min: 1
+    median_per_entity_max: 5
+    p90_per_entity_max: 50
+    max_zero_candidate_rate: 0.05
+  p3:
+    min_confirmed_rate: 0.30
+    max_entities_without_confirmed_rate: 0.15

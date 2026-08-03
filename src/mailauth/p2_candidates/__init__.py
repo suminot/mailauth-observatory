@@ -1,7 +1,9 @@
-"""P2_CANDIDATES ドメイン候補生成 ── 未実装（Sprint 2 で実装予定）。
+"""P2 ドメイン候補生成。
 
-仕様は DESIGN.md 第6章。実装するときは p1_population と同じ形にすること。
-  - runner.run(run_id, ...) を公開する
-  - RunManifest をコンテキストマネージャで使う
-  - 出力は contracts.py のスキーマで Parquet / JSON Lines に書く
+企業1社に対し、その企業が保有している可能性のあるドメイン群を展開する。
+ここではまだ絞らない。再現率を優先する。
 """
+
+from .runner import OUTPUT_FILENAME, PHASE, MissingInputError, run
+
+__all__ = ["run", "PHASE", "OUTPUT_FILENAME", "MissingInputError"]
