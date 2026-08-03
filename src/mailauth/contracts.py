@@ -97,6 +97,12 @@ class PolicyLabel(StrEnum):
     NOMINAL_REJECT_WEAK_PCT = "nominal_reject_weak_pct"
     NOMINAL_REJECT_TESTING = "nominal_reject_testing"
     BLIND_REJECT = "blind_reject"
+    #: p=quarantine で pct/t/rua がそろっている状態。
+    #: **reject と同じラベルにしてはいけない。** P7 の
+    #: `enforced_reject_domains`（DESIGN.md P7）が quarantine を巻き込むと、
+    #: 「reject を実効させている企業数」という指標の意味が変わってしまう
+    ENFORCED_QUARANTINE = "enforced_quarantine"
+    BLIND_QUARANTINE = "blind_quarantine"
     NOMINAL_QUARANTINE_WEAK_PCT = "nominal_quarantine_weak_pct"
     MONITORING = "monitoring"
     INEFFECTIVE = "ineffective"
@@ -502,6 +508,9 @@ class Fact(_Model):
     bimi_has_vmc: bool | None = None
     dnssec_signed: bool | None = None
     dane_present: bool | None = None
+    #: TLSA はあるが DNSSEC 署名が確認できない誤設定。DANE は実効しない。
+    #: 「DANE 導入済み」と数えると実態を取り違えるので列で持つ
+    dane_orphan: bool | None = None
 
     spec_version: str | None = None
     parser_version: str | None = None
@@ -574,6 +583,7 @@ FACT_ARROW_SCHEMA = pa.schema(
         ("bimi_has_vmc", pa.bool_()),
         ("dnssec_signed", pa.bool_()),
         ("dane_present", pa.bool_()),
+        ("dane_orphan", pa.bool_()),
         ("spec_version", pa.string()),
         ("parser_version", pa.string()),
     ]
@@ -668,6 +678,10 @@ class StatsOverall(_Model):
     population_id: str
     total_entities: int
     total_domains: int
+    #: **採用率の分母はこれを使う。** total_domains には SERVFAIL 等で
+    #: 何も取れなかったドメインが含まれる。それを分母に入れると
+    #: 「取れなかった」が「未対応」として集計され、原則5 が公開物で破れる
+    observed_domains: int = 0
 
     # 企業数ベースとドメインベースの両方を必ず出す（DESIGN.md P7 受け入れ基準）
     spf_adopted_entities: int = 0
@@ -719,7 +733,74 @@ class StatsBySector(StatsOverall):
 
 
 #: 業種別集計の公開閾値。これを下回るセルは「その他」に統合するか非公開にする。
+#: 総務省統計局は n=1/2 を1次秘匿、米欧の多くの機関は3または5未満を秘匿する。
+#: k-匿名性の実務では k=5 が広く採用されているので保守的に 5 を採る。
 MIN_CELL_SIZE = 5
+
+#: n<5 のセルを束ねる先。個別の業種名は出さない
+SUPPRESSED_SECTOR_CODE = "other"
+SUPPRESSED_SECTOR_LABEL = "その他（秘匿）"
+
+
+#: stats_overall と stats_by_sector で共通の指標列。
+#: StatsBySector は StatsOverall を継承しているので、列定義も共有する
+_STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
+    ("total_entities", pa.int32()),
+    ("total_domains", pa.int32()),
+    ("observed_domains", pa.int32()),
+    ("spf_adopted_entities", pa.int32()),
+    ("spf_adopted_domains", pa.int32()),
+    ("dmarc_adopted_entities", pa.int32()),
+    ("dmarc_adopted_domains", pa.int32()),
+    ("dmarc_enforced_entities", pa.int32()),
+    ("dmarc_enforced_domains", pa.int32()),
+    ("nominal_reject_domains", pa.int32()),
+    ("enforced_reject_domains", pa.int32()),
+    ("blind_reject_domains", pa.int32()),
+    ("dkim_detected_domains", pa.int32()),
+    ("dkim_not_found_domains", pa.int32()),
+    ("mta_sts_domains", pa.int32()),
+    ("tls_rpt_domains", pa.int32()),
+    ("bimi_domains", pa.int32()),
+    ("dnssec_domains", pa.int32()),
+    ("maturity_stage_dist", pa.string()),
+    ("sending_domains", pa.int32()),
+    ("sending_enforced", pa.int32()),
+    ("parked_domains", pa.int32()),
+    ("parked_hardened", pa.int32()),
+    ("parked_defended", pa.int32()),
+    ("parked_intentional", pa.int32()),
+    ("parked_neglected", pa.int32()),
+    ("park_defense_rate", pa.float64()),
+    ("dane_domains", pa.int32()),
+    ("dane_dnssec_valid", pa.int32()),
+    ("dane_orphan", pa.int32()),
+    ("delta_prev_month", pa.string()),
+    ("spec_version", pa.string()),
+]
+
+STATS_OVERALL_ARROW_SCHEMA = pa.schema(
+    [
+        ("measured_month", pa.date32()),
+        ("population_id", pa.string()),
+        *_STATS_METRIC_FIELDS,
+    ]
+)
+
+STATS_BY_SECTOR_ARROW_SCHEMA = pa.schema(
+    [
+        ("measured_month", pa.date32()),
+        ("population_id", pa.string()),
+        ("common12_code", pa.string()),
+        ("common12_label", pa.string()),
+        ("n_entities", pa.int32()),
+        ("suppressed", pa.bool_()),
+        *_STATS_METRIC_FIELDS,
+    ]
+)
+
+STATS_OVERALL_SORT_KEYS = ["population_id"]
+STATS_BY_SECTOR_SORT_KEYS = ["population_id", "common12_code"]
 
 
 # --------------------------------------------------------------------------

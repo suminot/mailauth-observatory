@@ -129,6 +129,26 @@ def test_split_spf_is_joined_before_parsing():
             "quarantine",
             PolicyLabel.NOMINAL_QUARANTINE_WEAK_PCT,
         ),
+        # quarantine には reject のラベルを流用しない。P7 の
+        # enforced_reject_domains に quarantine が混ざると指標が別物になる
+        (
+            "quarantine",
+            None,
+            None,
+            True,
+            "quarantine",
+            "quarantine",
+            PolicyLabel.ENFORCED_QUARANTINE,
+        ),
+        (
+            "quarantine",
+            None,
+            None,
+            False,
+            "quarantine",
+            "quarantine",
+            PolicyLabel.BLIND_QUARANTINE,
+        ),
         ("none", None, None, True, "none", "none", PolicyLabel.MONITORING),
         ("none", None, None, False, "none", "none", PolicyLabel.INEFFECTIVE),
         # pct=0 は実質 none

@@ -113,6 +113,71 @@ export interface UnknownHostsResult {
   fingerprint_version: string | null;
 }
 
+export interface GoldStats {
+  measured_month: string;
+  population_id: string;
+  total_entities: number;
+  total_domains: number;
+  observed_domains: number;
+  spf_adopted_entities: number;
+  spf_adopted_domains: number;
+  dmarc_adopted_entities: number;
+  dmarc_adopted_domains: number;
+  dmarc_enforced_entities: number;
+  dmarc_enforced_domains: number;
+  nominal_reject_domains: number;
+  enforced_reject_domains: number;
+  blind_reject_domains: number;
+  dkim_detected_domains: number;
+  dkim_not_found_domains: number;
+  mta_sts_domains: number;
+  tls_rpt_domains: number;
+  bimi_domains: number;
+  dnssec_domains: number;
+  maturity_stage_dist: Record<string, number> | null;
+  sending_domains: number;
+  sending_enforced: number;
+  parked_domains: number;
+  parked_hardened: number;
+  parked_defended: number;
+  parked_intentional: number;
+  parked_neglected: number;
+  park_defense_rate: number | null;
+  dane_domains: number;
+  dane_dnssec_valid: number;
+  dane_orphan: number;
+  delta_prev_month: GoldDelta | null;
+  diff_prev_month: Record<string, number> | null;
+  previous_month: string | null;
+}
+
+export interface GoldDelta {
+  entities_new: number;
+  entities_removed: number;
+  domains_new: number;
+  domains_disappeared: number;
+  policy_upgraded: number;
+  policy_downgraded: number;
+  domains_unobserved_this_month: number;
+  skipped: boolean;
+  notes: string[];
+}
+
+export interface GoldSector extends GoldStats {
+  common12_code: string;
+  common12_label: string;
+  n_entities: number;
+  suppressed: boolean;
+}
+
+export interface GoldMonth {
+  month: string;
+  previous_month: string;
+  overall: GoldStats[];
+  by_sector: GoldSector[];
+  suppressed_sectors: string[];
+}
+
 export interface DictionaryFile {
   file: string;
   editable: boolean;
@@ -164,6 +229,8 @@ export const api = {
     ),
   job: (id: string) => get<Job>(`/api/jobs/${id}`),
   fingerprints: () => get<FingerprintsResult>("/api/dict/fingerprints"),
+  goldMonths: () => get<{ months: string[] }>("/api/gold/months"),
+  goldMonth: (month: string) => get<GoldMonth>(`/api/gold/${encodeURIComponent(month)}`),
   unknownHosts: (runId: string) =>
     get<UnknownHostsResult>(`/api/dict/unknown-hosts?run=${encodeURIComponent(runId)}`),
 

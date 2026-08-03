@@ -120,11 +120,16 @@ def build_label(p: str | None, pct: int | None, t: str | None, has_rua: bool) ->
         return PolicyLabel.ENFORCED_REJECT
 
     if p == "quarantine":
+        # **reject のラベルを流用しない。** quarantine を enforced_reject と
+        # 呼ぶと、P7 の enforced_reject_domains に quarantine が混ざり、
+        # 「reject を実効させている」という指標が別物になる
         if weak_pct:
             return PolicyLabel.NOMINAL_QUARANTINE_WEAK_PCT
+        if testing:
+            return PolicyLabel.NOMINAL_REJECT_TESTING
         if not has_rua:
-            return PolicyLabel.BLIND_REJECT
-        return PolicyLabel.ENFORCED_REJECT if not testing else PolicyLabel.NOMINAL_REJECT_TESTING
+            return PolicyLabel.BLIND_QUARANTINE
+        return PolicyLabel.ENFORCED_QUARANTINE
 
     if p == "none":
         return PolicyLabel.MONITORING if has_rua else PolicyLabel.INEFFECTIVE

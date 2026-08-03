@@ -491,3 +491,66 @@ ul.plain li {
 .dict .log {
   height: 220px;
 }
+
+/* --- 画面6 月次差分 --- */
+
+.gold section {
+  margin-top: 24px;
+}
+
+.gold h2 {
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+
+.gold h3 {
+  font-size: 13px;
+  margin: 18px 0 6px;
+  color: var(--muted);
+}
+
+.gold-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  font-size: 13px;
+}
+
+.gold-table th,
+.gold-table td {
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-weight: normal;
+}
+
+.gold-table thead th {
+  font-weight: 600;
+  background: #f2f4f6;
+}
+
+.gold-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gold-table .bar-cell {
+  width: 30%;
+}
+
+/* 「取れなかった」「秘匿した」の行。断定を避けた注意喚起にとどめる */
+.gold-table tr.caution td {
+  background: #fdf8ef;
+}
+
+.up {
+  color: var(--ok, #227a3d);
+}
+
+.down {
+  color: var(--warn, #b06a00);
+}

@@ -235,6 +235,33 @@ def p6_infer(
         raise typer.Exit(code=1)
 
 
+@app.command("p7-aggregate")
+def p7_aggregate(
+    run: RunOption = "",
+    dry_run: DryRunOption = False,
+    min_cell_size: Annotated[
+        int | None,
+        typer.Option(
+            "--min-cell-size",
+            help="業種別集計のセル秘匿の閾値。既定は5（k-匿名性の実務値）",
+        ),
+    ] = None,
+) -> None:
+    """P7 集計 ── 公開用の統計を gold に生成し前月差分を計算する。"""
+    from .p7_aggregate import MissingInputError
+    from .p7_aggregate import run as run_p7
+
+    run_id = validate_run_id(run or default_run_id())
+    try:
+        result = run_p7(run_id=run_id, dry_run=dry_run, threshold=min_cell_size)
+    except MissingInputError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(code=2) from exc
+    _echo_summary(result)
+    if result.get("status") == "failed":
+        raise typer.Exit(code=1)
+
+
 def _stub_command(phase: str):
     def command(run: RunOption = "") -> None:
         run_id = validate_run_id(run or default_run_id())
@@ -256,6 +283,7 @@ IMPLEMENTED = {
     "p4_measure",
     "p5_parse",
     "p6_infer",
+    "p7_aggregate",
 }
 
 for _phase in PHASES:
