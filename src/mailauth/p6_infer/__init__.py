@@ -1,7 +1,24 @@
-"""P6_INFER 推察 ── 未実装（Sprint 5 で実装予定）。
+"""P6 推察。
 
-仕様は DESIGN.md 第6章。実装するときは p1_population と同じ形にすること。
-  - runner.run(run_id, ...) を公開する
-  - RunManifest をコンテキストマネージャで使う
-  - 出力は contracts.py のスキーマで Parquet / JSON Lines に書く
+fact からメール基盤とセキュリティ製品を推定する。**必ず confidence と
+evidence を伴う**（原則2）。DNS は引かない。silver を読んで silver を書く。
+
+辞書は `configs/fingerprints/*.yaml` にあり、コードには規則を1つも
+書かない（原則7）。辞書を更新したら P6 だけを再実行すればよい。
 """
+
+from .runner import (
+    INFERENCE_VERSION,
+    OUTPUT_FILENAME,
+    PHASE,
+    MissingInputError,
+    run,
+)
+
+__all__ = [
+    "run",
+    "PHASE",
+    "OUTPUT_FILENAME",
+    "INFERENCE_VERSION",
+    "MissingInputError",
+]

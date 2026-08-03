@@ -14,9 +14,22 @@ rules:
     product: Proofpoint Enterprise Protection
     match:
       record: MX
-      pattern: '^mx0[ab]-[0-9a-f]{8}\.pphosted\.com\.?$'
+      # 実測で確認した形は `mxa-00512b01.gslb.pphosted.com`。
+      # `mx0a-` 固定・`.gslb` 無しを前提にすると取りこぼす（実データで発見）
+      pattern: '^mx0?[ab]-[0-9a-f]{8}(\.gslb)?\.pphosted\.com\.?$'
     confidence: high
     source: dmarc.mx
+
+  - id: pp-mx-03
+    vendor: Proofpoint
+    match:
+      # 系列を特定できない pphosted.com の受け皿。テナント別ホスト名の
+      # 命名は変わりうるので、上の詳細な規則から漏れても
+      # 「未知ホスト」に落とさないようにしておく
+      record: MX
+      pattern: '\.pphosted\.com\.?$'
+    confidence: medium
+    note: 製品系列は特定できていない。pp-mx-01 / pp-mx-02 に一致すればそちらが product を決める
 
   - id: pp-mx-02
     vendor: Proofpoint
@@ -85,6 +98,20 @@ rules:
       record: MX
       pattern: '\.securemx\.jp\.?$'
     confidence: high
+
+  - id: iij-dkim-01
+    vendor: IIJ
+    product: IIJ セキュアMXサービス
+    region: JP
+    match:
+      # ゲートウェイ独自の署名ドメイン。**実基盤ではない。**
+      # dxg.dox.jp はアライメント不可で、これを mail_platform と読むと
+      # 「IIJ がメール基盤」という誤った推定になる（DESIGN.md P6 実装メモ）。
+      # security_gateway として登録することで前段として正しく扱われる
+      record: DKIM_CNAME
+      pattern: '(^|\.)d(x|k)g\.dox\.jp\.?$'
+    confidence: high
+    note: 署名ドメインはゲートウェイのもの。背後の実基盤は SPF include から別途推定する
 
   - id: hennge-mx-01
     vendor: HENNGE

@@ -62,6 +62,9 @@ class SpfResult:
     ip4_count: int = 0
     ip6_count: int = 0
     has_ptr: bool = False
+    #: ip4/ip6/all を除いたメカニズム（修飾子は付けない形）。
+    #: 専用 include を持たない事業者を拾うために保持する（DESIGN.md P6）
+    mechanisms: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
 
@@ -78,6 +81,23 @@ def count_lookups(record: str) -> int:
         if name in LOOKUP_MECHANISMS or name in LOOKUP_MODIFIERS:
             count += 1
     return count
+
+
+def match_mechanisms(terms: list[str]) -> list[str]:
+    """照合対象になるメカニズムを取り出す。
+
+    修飾子（`+-~?`）は落とす。フィンガープリントの正規表現は
+    `^a:www\\d+\\.sakura\\.ne\\.jp$` のように素の形を前提にしている。
+    ip4/ip6/all は数百件になることがあり、照合にも使わないので除く。
+    """
+    out: list[str] = []
+    for term in terms:
+        bare = term.lstrip("+-~?")
+        name = bare.split(":", 1)[0].split("=", 1)[0].split("/", 1)[0].lower()
+        if name in NON_LOOKUP_MECHANISMS:
+            continue
+        out.append(bare)
+    return out
 
 
 def detect_flattening(ip4_count: int, ip6_count: int, include_count: int) -> bool:
@@ -133,6 +153,7 @@ def parse(txt_records: list[str]) -> SpfResult:
         ip4_count=ip4,
         ip6_count=ip6,
         has_ptr=has_ptr,
+        mechanisms=match_mechanisms(terms),
     )
 
     if result.exceeds_limit:

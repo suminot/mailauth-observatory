@@ -12,7 +12,6 @@ from .paths import phase_dir
 
 #: フェーズ -> 実装予定スプリント（DESIGN.md 第8章）
 PLANNED_SPRINT = {
-    "p6_infer": "Sprint 5",
     "p7_aggregate": "Sprint 6",
     "p8_publish": "Sprint 7",
 }

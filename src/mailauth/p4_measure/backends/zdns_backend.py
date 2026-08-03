@@ -144,11 +144,17 @@ class ZdnsBackend:
 
         values: list[str] = []
         txt_strings: list[list[str]] = []
+        cname_chain: list[str] = []
         for a in answers:
-            if str(a.get("type", "")).upper() != rtype:
-                continue
+            atype = str(a.get("type", "")).upper()
             value = a.get("answer")
             if value is None:
+                continue
+            if atype == "CNAME" and rtype != "CNAME":
+                # 辿った途中の CNAME。DKIM の委譲先はここにしか現れない
+                cname_chain.append(str(value).rstrip(".").lower())
+                continue
+            if atype != rtype:
                 continue
             if rtype == "TXT":
                 txt_strings.append([str(value)])
@@ -164,6 +170,7 @@ class ZdnsBackend:
             rcode=status or "UNKNOWN",
             values=values,
             txt_strings=txt_strings,
+            cname_chain=cname_chain,
             error=None if observed else str(row.get("error") or status)[:200],
             duration_ms=int(float(row.get("duration", 0)) * 1000) or None,
         )

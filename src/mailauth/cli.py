@@ -213,6 +213,28 @@ def p5_parse(
         raise typer.Exit(code=1)
 
 
+@app.command("p6-infer")
+def p6_infer(
+    run: RunOption = "",
+    limit: LimitOption = None,
+    dry_run: DryRunOption = False,
+) -> None:
+    """P6 推察 ── fact からメール基盤とセキュリティ製品を推定する。"""
+    from .p6_infer import MissingInputError
+    from .p6_infer import run as run_p6
+    from .p6_infer.fingerprints import FingerprintError
+
+    run_id = validate_run_id(run or default_run_id())
+    try:
+        result = run_p6(run_id=run_id, limit=limit, dry_run=dry_run)
+    except (MissingInputError, FingerprintError) as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(code=2) from exc
+    _echo_summary(result)
+    if result.get("status") == "failed":
+        raise typer.Exit(code=1)
+
+
 def _stub_command(phase: str):
     def command(run: RunOption = "") -> None:
         run_id = validate_run_id(run or default_run_id())
@@ -233,6 +255,7 @@ IMPLEMENTED = {
     "p3_domains",
     "p4_measure",
     "p5_parse",
+    "p6_infer",
 }
 
 for _phase in PHASES:

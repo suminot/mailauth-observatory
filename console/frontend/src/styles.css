@@ -392,3 +392,102 @@ footer {
   opacity: 0.55;
   border-radius: 2px;
 }
+
+/* --- 画面5 辞書メンテナンス --- */
+
+.dict section {
+  margin-top: 24px;
+}
+
+.dict h2 {
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+
+.dict table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.dict th,
+.dict td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-weight: normal;
+  vertical-align: middle;
+}
+
+.dict thead th {
+  font-weight: 600;
+  background: #f2f4f6;
+}
+
+.dict .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.notice {
+  margin-top: 8px;
+  color: var(--ok, #227a3d);
+  font-size: 12px;
+}
+
+.panel {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  padding: 14px 16px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px 16px;
+  margin: 10px 0;
+}
+
+.form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.form-grid label.wide {
+  grid-column: 1 / -1;
+}
+
+.form-grid input,
+.form-grid select {
+  font-size: 13px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: inherit;
+}
+
+.form-grid input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+ul.plain {
+  list-style: none;
+  padding: 0;
+  font-size: 13px;
+}
+
+ul.plain li {
+  padding: 3px 0;
+}
+
+.dict .log {
+  height: 220px;
+}

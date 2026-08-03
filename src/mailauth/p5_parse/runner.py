@@ -25,7 +25,7 @@ from ..io import read_parquet, write_parquet
 from ..manifest import RunManifest
 from ..p4_measure.bronze import iter_bronze_files, read_bronze
 from ..paths import bronze_dir, month_date, phase_dir, phase_output
-from ..records import is_null_mx, join_txt_strings
+from ..records import find_spf_records, is_null_mx, join_txt_strings
 from ..records import mx_hosts as extract_mx_hosts
 from ..resolver import Resolver
 from . import dkim as dkim_mod
@@ -111,6 +111,8 @@ def parse_domain(
     hosts = extract_mx_hosts(mx_values)
     out["mx_present"] = bool(hosts) and not null_mx
     out["mx_hosts"] = hosts
+    # Null MX は「MX が無い」とは別の事実。パーク分類で両者を分ける（P6）
+    out["mx_null"] = null_mx if mx_records else None
 
     # -- SPF ---------------------------------------------------------------
     spf_txts = [v for r in by_purpose.get(QueryPurpose.SPF, []) if r.get("observed")
@@ -126,8 +128,16 @@ def parse_domain(
         spf_void_count=spf.void_count,
         spf_exceeds_limit=spf.exceeds_limit,
         spf_includes=spf.includes,
+        spf_mechanisms=spf.mechanisms,
         spf_is_flattened=spf.is_flattened,
         spf_is_dynamic=spf.is_dynamic,
+    )
+
+    # apex TXT のうち SPF 以外。所有権確認 TXT の照合に使う（P6）。
+    # SPF は専用フィールドがあるので重複させない
+    spf_set = set(find_spf_records(spf_txts))
+    out["verification_txt"] = sorted(
+        {t for t in spf_txts if t and t not in spf_set}
     )
 
     # -- DMARC -------------------------------------------------------------
@@ -188,11 +198,16 @@ def parse_domain(
 
     # -- DKIM（三値表現） --------------------------------------------------
     found: dict[str, str] = {}
+    cnames: dict[str, str] = {}
     selectors_tried = 0
     for record in by_purpose.get(QueryPurpose.DKIM, []):
         selectors_tried += 1
+        selector = str(record.get("query_name", "")).split("._domainkey.")[0]
+        # CNAME は鍵が読めたかに関わらず拾う。委譲先そのものが証拠になる
+        for target in record.get("cname_chain") or []:
+            if target:
+                cnames[selector] = str(target)
         if record.get("observed") and record.get("record_present"):
-            selector = str(record.get("query_name", "")).split("._domainkey.")[0]
             values = _txt_values(record)
             if values:
                 found[selector] = values[0]
@@ -212,6 +227,7 @@ def parse_domain(
         selectors_tried=selectors_tried,
         control_responded=control_responded,
         wildcard_record=wildcard_txt,
+        cnames=cnames,
         applicable=selectors_tried > 0,
     )
     out.update(
@@ -221,6 +237,8 @@ def parse_domain(
         dkim_testing_flag=dkim.testing_flag,
         dkim_revoked=dkim.revoked,
         dkim_wildcard_suspect=dkim.wildcard_suspect,
+        dkim_cname_targets=dkim.cname_targets,
+        dkim_wildcard_revoked=dkim.wildcard_revoked_key,
     )
 
     # -- 周辺プロトコル ----------------------------------------------------

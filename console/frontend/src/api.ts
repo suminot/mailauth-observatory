@@ -99,6 +99,49 @@ export interface ViewResult {
   };
 }
 
+export interface UnknownHost {
+  registered_domain: string;
+  count: number;
+  examples: string[];
+}
+
+export interface UnknownHostsResult {
+  run_id: string;
+  hosts: UnknownHost[];
+  domains_with_no_inference: number | null;
+  no_inference_rate: number | null;
+  fingerprint_version: string | null;
+}
+
+export interface DictionaryFile {
+  file: string;
+  editable: boolean;
+  category: string | null;
+  version: string | null;
+  rule_count: number;
+  jp_rule_count: number;
+}
+
+export interface FingerprintsResult {
+  dictionaries: DictionaryFile[];
+  total_rules: number;
+  version: string;
+  record_types: string[];
+  undetectable_by_dns: { vendor: string; product: string | null }[];
+}
+
+export interface NewRule {
+  file: string;
+  id: string;
+  vendor: string;
+  record: string;
+  pattern: string;
+  product?: string | null;
+  confidence?: string;
+  region?: string | null;
+  note?: string | null;
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(path);
   if (!res.ok) {
@@ -120,6 +163,23 @@ export const api = {
       `/api/runs/${runId}/view?view=${encodeURIComponent(view)}&by=${encodeURIComponent(by)}`,
     ),
   job: (id: string) => get<Job>(`/api/jobs/${id}`),
+  fingerprints: () => get<FingerprintsResult>("/api/dict/fingerprints"),
+  unknownHosts: (runId: string) =>
+    get<UnknownHostsResult>(`/api/dict/unknown-hosts?run=${encodeURIComponent(runId)}`),
+
+  async addRule(body: NewRule): Promise<{ rule_id: string; rule_count: number }> {
+    const res = await fetch("/api/dict/rules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      // detail に理由が入る。壊れた正規表現や id 重複をそのまま見せる
+      const body = await res.json().catch(() => null);
+      throw new Error(body?.detail ?? `${res.status}`);
+    }
+    return await res.json();
+  },
 
   async createJob(body: {
     phases: string[];

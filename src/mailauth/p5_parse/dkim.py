@@ -46,6 +46,8 @@ class DkimResult:
     #: ワイルドカードセレクタに失効鍵が置かれていた（M3AAWG 推奨構成）
     wildcard_revoked_key: bool = False
     selectors_tried: int = 0
+    #: セレクタの委譲先（重複除去済み）。署名基盤の推定に使う
+    cname_targets: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
 
@@ -134,6 +136,15 @@ def build_result(
     """
     result = DkimResult(selectors_tried=selectors_tried)
     cname_map = cnames or {}
+    # **CNAME は鍵が読めなくても記録する。** SERVFAIL 等で TXT が取れなくても
+    # 委譲先が分かっていれば署名基盤の推定はできる（DESIGN.md P6）
+    seen: set[str] = set()
+    for target in cname_map.values():
+        normalized = (target or "").strip().rstrip(".").lower()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            result.cname_targets.append(normalized)
+    result.cname_targets.sort()
 
     if control_responded:
         # 実在しないセレクタに応答した。検出結果は偽陽性の可能性がある
