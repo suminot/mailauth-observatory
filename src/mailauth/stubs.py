@@ -12,8 +12,6 @@ from .paths import phase_dir
 
 #: フェーズ -> 実装予定スプリント（DESIGN.md 第8章）
 PLANNED_SPRINT = {
-    "p2_candidates": "Sprint 2",
-    "p3_domains": "Sprint 2",
     "p4_measure": "Sprint 3",
     "p5_parse": "Sprint 4",
     "p6_infer": "Sprint 5",

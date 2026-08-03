@@ -100,6 +100,54 @@ def p1_population(
         raise typer.Exit(code=1)
 
 
+@app.command("p2-candidates")
+def p2_candidates(
+    run: RunOption = "",
+    limit: LimitOption = None,
+    dry_run: DryRunOption = False,
+    config: Annotated[
+        str, typer.Option("--config", help="候補生成のパラメータ")
+    ] = "configs/candidates.yaml",
+) -> None:
+    """P2 ドメイン候補生成 ── 企業から関連ドメイン群を展開（再現率優先）。"""
+    from .p2_candidates import MissingInputError
+    from .p2_candidates import run as run_p2
+
+    run_id = validate_run_id(run or default_run_id())
+    try:
+        result = run_p2(run_id=run_id, limit=limit, dry_run=dry_run, config=config)
+    except MissingInputError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(code=2) from exc
+    _echo_summary(result)
+    if result.get("status") == "failed":
+        raise typer.Exit(code=1)
+
+
+@app.command("p3-domains")
+def p3_domains(
+    run: RunOption = "",
+    limit: LimitOption = None,
+    dry_run: DryRunOption = False,
+    config: Annotated[
+        str, typer.Option("--config", help="確度判定のパラメータ")
+    ] = "configs/candidates.yaml",
+) -> None:
+    """P3 メールドメイン確定 ── 候補を絞り三段の確度フラグを付ける。"""
+    from .p3_domains import MissingInputError
+    from .p3_domains import run as run_p3
+
+    run_id = validate_run_id(run or default_run_id())
+    try:
+        result = run_p3(run_id=run_id, limit=limit, dry_run=dry_run, config=config)
+    except MissingInputError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(code=2) from exc
+    _echo_summary(result)
+    if result.get("status") == "failed":
+        raise typer.Exit(code=1)
+
+
 def _stub_command(phase: str):
     def command(run: RunOption = "") -> None:
         run_id = validate_run_id(run or default_run_id())
@@ -113,7 +161,12 @@ def _stub_command(phase: str):
     return command
 
 
-for _phase in PHASES[1:]:
+#: 実装済みのフェーズ。残りはスタブとして登録する
+IMPLEMENTED = {"p1_population", "p2_candidates", "p3_domains"}
+
+for _phase in PHASES:
+    if _phase in IMPLEMENTED:
+        continue
     # p4_measure -> p4-measure
     _cmd_name = _phase.replace("_", "-", 1).replace("_", "-")
     app.command(_cmd_name, help=f"{_phase.upper()} {PHASE_LABELS[_phase]} ── 未実装")(

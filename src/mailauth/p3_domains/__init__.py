@@ -1,7 +1,9 @@
-"""P3_DOMAINS メールドメイン確定 ── 未実装（Sprint 2 で実装予定）。
+"""P3 メールドメイン確定。
 
-仕様は DESIGN.md 第6章。実装するときは p1_population と同じ形にすること。
-  - runner.run(run_id, ...) を公開する
-  - RunManifest をコンテキストマネージャで使う
-  - 出力は contracts.py のスキーマで Parquet / JSON Lines に書く
+候補ドメインのうち実際にメール送信に使われているものを絞り込み、
+三段の確度フラグを付ける。本システムの中核。
 """
+
+from .runner import OUTPUT_FILENAME, PHASE, MissingInputError, run
+
+__all__ = ["run", "PHASE", "OUTPUT_FILENAME", "MissingInputError"]
