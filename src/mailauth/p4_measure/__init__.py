@@ -1,7 +1,9 @@
-"""P4_MEASURE DNS計測 ── 未実装（Sprint 3 で実装予定）。
+"""P4 DNS計測。
 
-仕様は DESIGN.md 第6章。実装するときは p1_population と同じ形にすること。
-  - runner.run(run_id, ...) を公開する
-  - RunManifest をコンテキストマネージャで使う
-  - 出力は contracts.py のスキーマで Parquet / JSON Lines に書く
+確定したドメインについてメール認証に関わる全レコードを取得し、
+生のまま bronze に保存する（原則1 ── 生データは不変）。
 """
+
+from .runner import PHASE, MissingInputError, UnknownBackendError, run
+
+__all__ = ["run", "PHASE", "MissingInputError", "UnknownBackendError"]

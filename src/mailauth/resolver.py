@@ -45,6 +45,11 @@ class DnsAnswer:
     txt_strings: list[list[str]] = field(default_factory=list)
     error: str | None = None
     duration_ms: int | None = None
+    #: DNSSEC の AD フラグ。上流リゾルバが検証済みと示したか。
+    #: DO を立てて引いた場合のみ意味を持つ。取れなければ None
+    authenticated_data: bool | None = None
+    #: 応答が truncated だったため TCP に切り替えたか
+    used_tcp: bool = False
 
     @property
     def failed(self) -> bool:
@@ -74,6 +79,7 @@ class DnsResolver:
         backoff: tuple[float, ...] = (1.0, 3.0),
         qps: float = 20.0,
         cache: bool = True,
+        want_dnssec: bool = True,
     ) -> None:
         system = dns.resolver.Resolver(configure=True)
         self.nameservers = [str(n) for n in (nameservers or system.nameservers)]
@@ -83,6 +89,8 @@ class DnsResolver:
         self.retries = retries
         self.backoff = backoff
         self.min_interval = 1.0 / qps if qps > 0 else 0.0
+        #: DO を立てて引く。DNSSEC の観測は他のクエリに相乗りできる
+        self.want_dnssec = want_dnssec
         self._cache: dict[tuple[str, str], DnsAnswer] | None = {} if cache else None
         self._last_call = 0.0
         self.stats: dict[str, int] = {
@@ -135,7 +143,7 @@ class DnsResolver:
             while True:
                 self._throttle()
                 self.stats["queries"] += 1
-                query = dns.message.make_query(name, rdtype)
+                query = dns.message.make_query(name, rdtype, want_dnssec=self.want_dnssec)
                 try:
                     resp = dns.query.udp(query, nameserver, timeout=self.timeout)
                 except dns.exception.Timeout as exc:
@@ -145,11 +153,13 @@ class DnsResolver:
                 except dns.exception.DNSException as exc:
                     last_rcode, last_error = "ERROR", f"{type(exc).__name__}: {exc}"[:200]
                 else:
+                    used_tcp = False
                     if resp.flags & dns.flags.TC:
                         # 512バイトを超える応答。TXT が多いドメインで普通に起きる
                         self.stats["tcp_fallback"] += 1
                         try:
                             resp = dns.query.tcp(query, nameserver, timeout=self.tcp_timeout)
+                            used_tcp = True
                         except (dns.exception.DNSException, OSError) as exc:
                             self.stats["tcp_failed"] += 1
                             self.stats["failures"] += 1
@@ -166,7 +176,9 @@ class DnsResolver:
                                 duration_ms=_ms(started),
                             )
 
-                    return self._from_response(name, rtype, rdtype, resp, started)
+                    return self._from_response(
+                        name, rtype, rdtype, resp, started, used_tcp=used_tcp
+                    )
 
                 # ここに来たのは一時的失敗。リトライするか次のリゾルバへ
                 if attempt < self.retries:
@@ -189,9 +201,10 @@ class DnsResolver:
         )
 
     def _from_response(
-        self, name: str, rtype: str, rdtype: int, resp, started: float
+        self, name: str, rtype: str, rdtype: int, resp, started: float, used_tcp: bool = False
     ) -> DnsAnswer:
         rcode = dns.rcode.to_text(resp.rcode())
+        ad = bool(resp.flags & dns.flags.AD) if self.want_dnssec else None
         if rcode == "NXDOMAIN":
             return DnsAnswer(
                 name=name,
@@ -200,6 +213,8 @@ class DnsResolver:
                 record_present=False,
                 rcode="NXDOMAIN",
                 duration_ms=_ms(started),
+                authenticated_data=ad,
+                used_tcp=used_tcp,
             )
         if rcode not in ("NOERROR",):
             # SERVFAIL / REFUSED は「取れなかった」。無かったのではない
@@ -236,6 +251,8 @@ class DnsResolver:
             values=values,
             txt_strings=txt_strings,
             duration_ms=_ms(started),
+            authenticated_data=ad,
+            used_tcp=used_tcp,
         )
 
 
