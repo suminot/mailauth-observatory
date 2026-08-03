@@ -26,7 +26,7 @@ Sprint 1（骨格と P1・日本側）まで実装済み。
 | P2 ドメイン候補生成 | 企業から関連ドメイン群を展開 | **実装済** |
 | P3 メールドメイン確定 | 候補から送信ドメインを絞り確度付与 | **実装済** |
 | P4 DNS計測 | MX/TXT/SPF/DKIM/DMARC 等の生取得 | **実装済** |
-| P5 パース | 生レスポンスの構造化と仕様準拠の解釈 | 未実装（Sprint 4） |
+| P5 パース | 生レスポンスの構造化と仕様準拠の解釈 | **実装済** |
 | P6 推察 | メール基盤・製品の推定、パーク分類 | 未実装（Sprint 5） |
 | P7 集計 | 全社統計・業種別集計・前月差分 | 未実装（Sprint 6） |
 | P8 公開 | 静的サイト生成とデプロイ | 未実装（Sprint 7） |
@@ -62,6 +62,8 @@ mailauth p4-measure    --run 2026-08   # 認証レコードを取得し bronze �
 mailauth p4-measure    --run 2026-08 --dry-run   # クエリ量の見積りだけ出す
 mailauth p4-measure    --run 2026-08 --tier A    # 階層を絞る
 mailauth p4-measure    --run 2026-08 --method zdns
+mailauth p5-parse      --run 2026-08   # bronze を解釈して facts.parquet を作る
+mailauth p5-parse      --run 2026-08 --no-dns   # Tree Walk と rua 検証をしない
 
 # 実行状況
 mailauth status --run 2026-08
@@ -236,6 +238,72 @@ TCP/53 への切り替えが必要になる。**TCP/53 を通さない経路で�
 一切観測できない。** その場合 P3 は該当ドメインを `observed=false`（取れなかった）
 として計測対象から外し、`TCP53_UNAVAILABLE` を警告する。「SPF が無い」と
 読まないこと。
+
+## パース（P5）
+
+bronze を構造化し、仕様に照らして解釈する。**このフェーズは何度でも作り直せる。**
+パーサにバグが見つかったら bronze から再実行する（原則1 の実質的な意味）。
+bronze には触らない。
+
+### SPF
+
+- 複数の `v=spf1` は PermError（RFC 7208 §4.5）。どちらを採るかの問題ではない
+- 10ルックアップ制限。カウント対象は `include` / `a` / `mx` / `ptr` / `exists` / `redirect`。
+  `all` / `ip4` / `ip6` は対象外。「ルックアップを行うメカニズムの数」であり
+  生成されるクエリ総数ではない
+- `all` が存在すると `redirect` は無視される（RFC 7208 §6.1）
+- フラット化の検出（ip4/ip6 が20件以上で include がほぼ無い）
+- 動的SPF（Valimail のマクロ）の検出。静的にルックアップ数を数えても実効を表さない
+
+### DMARC の二重計算
+
+**受信側は依然として RFC 7489 のまま**（RFC 9990 形式で送っている大手は
+United Internet のみ、全レポーターの0.6%）。したがって RFC 7489 準拠の判定が
+「実際に効いている強度」に最も近い。しかし Tree Walk 差分は将来必ず顕在化するため、
+**両方を計算して保持する。**
+
+| 名目 | 修飾子 | RFC 7489実効 | RFC 9989実効 | ラベル |
+|---|---|---|---|---|
+| `p=reject` | rua有 | reject | reject | `enforced_reject` |
+| `p=reject` | `pct=10` | quarantine | reject | `nominal_reject_weak_pct` |
+| `p=reject` | `t=y` | reject | quarantine | `nominal_reject_testing` |
+| `p=reject` | rua無 | reject（可視性ゼロ） | reject | `blind_reject` |
+| `p=none` | rua有 | 監視のみ | 監視のみ | `monitoring` |
+| `p=none` | rua無 | 実質無効 | 実質無効 | `ineffective` |
+
+未知タグは評価しないが**生値は保持する**（round-trip のため）。
+`rua` はドメイン部だけを保存する（個人情報を集めないため）。
+
+### Organizational Domain の二重解決
+
+PSL と Tree Walk の両方を計算し、`org_domain_divergence` を保存する。
+
+**Tree Walk は `psd=y` / `psd=n` を含むレコードでしか停止しない**（RFC 9989）。
+psd を持たないレコードで停止させると Author Domain 自身が常に Organizational
+Domain になり、PSL とほぼ全件で食い違って差分の指標が意味を失う。
+psd が見つからなければ判定不能とし、差分としては報告しない。
+
+PSL の PRIVATE セクション（`s3.amazonaws.com` 等）では実際に差分が出る。
+
+### DKIM は三値
+
+| 状態 | 意味 |
+|---|---|
+| `detected` | 既知セレクタで検出できた |
+| `not_found_in_known_selectors` | 既知セレクタでは見つからなかった。**「未設定」ではない** |
+| `not_applicable` | そもそもセレクタを投げていない（階層C） |
+
+セレクタは DNS 上で列挙できないので、検出できなかったことは「無い」の証明に
+ならない。`p=` が空なら失効（RFC 6376 §3.6.1）。対照クエリが応答したら
+`dkim_wildcard_suspect` を立て、検出結果を信用しない。
+
+### 成熟度ステージ
+
+MTA-STS / BIMI / DANE はいずれも DMARC を事実上の前提とするため、単純加算すると
+下位項目を二重評価する。順序性を反映した階層で表す（Stage 0〜4）。
+
+DANE は **DNSSEC 署名の有無を必ず併記**する。「TLSA はあるが親ゾーンが未署名で
+実効しない」という誤設定（`dane_orphan`）を検出できる。
 
 ## 設計上の約束
 

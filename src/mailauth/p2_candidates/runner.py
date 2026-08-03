@@ -33,7 +33,7 @@ from ..ctlog import CrtShClient, CtSource, DisabledCtSource
 from ..io import read_parquet, write_parquet
 from ..manifest import RunManifest, config_hash
 from ..normalize import etld_plus_one
-from ..paths import cache_root, config_path, phase_dir, phase_output
+from ..paths import cache_root, config_path, month_date, phase_dir, phase_output
 from ..records import (
     dmarc_report_domains,
     find_dmarc_records,
@@ -322,7 +322,13 @@ def run(
 
         # 候補レコードの組み立て
         candidates: list[DomainCandidate] = []
-        now = dt.datetime.now(dt.UTC).replace(microsecond=0)
+        # discovered_at は実行時刻ではなく run の月initialにする。
+        # 壁時計を埋めると同じ入力でも出力のバイト列が変わり、原則6（冪等）が
+        # 壊れる。月次計測なので「いつ発見したか」の粒度は月で足りる。
+        # 実行時刻そのものは manifest の started_at に残る。
+        discovered_at = dt.datetime.combine(
+            month_date(run_id), dt.time(0, 0), tzinfo=dt.UTC
+        )
         per_entity: list[int] = []
         domain_to_entities: dict[str, set[str]] = {}
 
@@ -339,7 +345,7 @@ def run(
                             run_id=run_id,
                             domain=domain,
                             discovery_method=method,
-                            discovered_at=now,
+                            discovered_at=discovered_at,
                             source_detail=detail or None,
                             is_apex=True,
                         )

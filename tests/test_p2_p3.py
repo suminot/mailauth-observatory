@@ -607,3 +607,24 @@ def test_resolver_caches_repeated_names(monkeypatch):
     r.query("A.EXAMPLE.", "MX")  # 大文字・末尾ドットでも同一視する
     assert calls["n"] == 1
     assert r.stats["cache_hits"] == 1
+
+
+def test_p2_discovered_at_is_derived_from_the_run_not_the_clock(seeded_run):
+    """壁時計を埋めると同じ入力でも出力が変わり、原則6（冪等）が壊れる。
+
+    秒境界をまたいでも出力がバイト単位で一致すること。
+    """
+    import time
+
+    _run_p2()
+    path = phase_output(RUN, "p2_candidates", "domain_candidates.parquet")
+    first = path.read_bytes()
+    time.sleep(1.1)  # 秒境界を確実にまたぐ
+    _run_p2()
+    assert path.read_bytes() == first
+
+    # discovered_at は run の月initialになっている
+    df = candidates()
+    stamps = {str(v) for v in df["discovered_at"]}
+    assert len(stamps) == 1
+    assert stamps.pop().startswith("2026-08-01 00:00:00")

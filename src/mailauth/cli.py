@@ -175,6 +175,44 @@ def p4_measure(
         raise typer.Exit(code=1)
 
 
+@app.command("p5-parse")
+def p5_parse(
+    run: RunOption = "",
+    limit: LimitOption = None,
+    dry_run: DryRunOption = False,
+    no_dns: Annotated[
+        bool,
+        typer.Option(
+            "--no-dns",
+            help="Tree Walk と rua 宛先検証を行わない（DNS に出ない）",
+        ),
+    ] = False,
+) -> None:
+    """P5 パース ── bronze を構造化し仕様に照らして解釈する。"""
+    from .config import load_measure_config
+    from .p5_parse import MissingInputError
+    from .p5_parse import run as run_p5
+    from .resolver import DnsResolver
+
+    run_id = validate_run_id(run or default_run_id())
+    resolver = None
+    if not no_dns:
+        rate = load_measure_config().get("rate", {})
+        resolver = DnsResolver(
+            timeout=float(rate.get("timeout_sec", 5)),
+            retries=int(rate.get("retries", 3)),
+            qps=float(rate.get("qps", 20)),
+        )
+    try:
+        result = run_p5(run_id=run_id, limit=limit, dry_run=dry_run, resolver=resolver)
+    except MissingInputError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(code=2) from exc
+    _echo_summary(result)
+    if result.get("status") == "failed":
+        raise typer.Exit(code=1)
+
+
 def _stub_command(phase: str):
     def command(run: RunOption = "") -> None:
         run_id = validate_run_id(run or default_run_id())
@@ -189,7 +227,13 @@ def _stub_command(phase: str):
 
 
 #: 実装済みのフェーズ。残りはスタブとして登録する
-IMPLEMENTED = {"p1_population", "p2_candidates", "p3_domains", "p4_measure"}
+IMPLEMENTED = {
+    "p1_population",
+    "p2_candidates",
+    "p3_domains",
+    "p4_measure",
+    "p5_parse",
+}
 
 for _phase in PHASES:
     if _phase in IMPLEMENTED:
