@@ -554,3 +554,153 @@ ul.plain li {
 .down {
   color: var(--warn, #b06a00);
 }
+
+/* --- 画面3 レコード検査 --- */
+
+.trace section {
+  margin-top: 24px;
+}
+
+.trace h2 {
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+
+/* 事実（bronze / fact）と推察（inference）を視覚的に分ける。
+   混ぜて見せると、どこまでが DNS から読めたことなのかが分からなくなる。 */
+.trace .observed,
+.trace .inferred {
+  border-left: 3px solid var(--border);
+  padding-left: 14px;
+}
+
+.trace .observed {
+  border-left-color: #2f7d4f;
+}
+
+.trace .inferred {
+  border-left-color: #8a9099;
+  border-left-style: dashed;
+}
+
+.trace .observed > h2::after {
+  content: " ── 事実";
+  font-weight: normal;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.trace .inferred > h2::after {
+  content: " ── 推定（確度と根拠を併記）";
+  font-weight: normal;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.domain-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  min-width: 260px;
+}
+
+.trace-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  font-size: 13px;
+}
+
+.trace-table th,
+.trace-table td {
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-weight: normal;
+  vertical-align: top;
+}
+
+.trace-table thead th {
+  font-weight: 600;
+  background: #f2f4f6;
+}
+
+.trace-table tbody th {
+  width: 220px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.trace-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.trace-table tr.caution td {
+  background: #fdf8ef;
+}
+
+.raw {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  max-height: 360px;
+  overflow: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.inference-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  padding: 10px 14px;
+  margin-bottom: 10px;
+}
+
+.inference-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.inference-head .cat {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.conf {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+
+.conf-high { color: #2f7d4f; border-color: #2f7d4f; }
+.conf-medium { color: #b8791f; border-color: #b8791f; }
+.conf-low { color: var(--muted); }
+
+.stale {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #fdf8ef;
+  color: #b8791f;
+}
+
+.trace-table.evidence {
+  margin-top: 6px;
+}
