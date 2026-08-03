@@ -1,7 +1,10 @@
-"""P5_PARSE パース ── 未実装（Sprint 4 で実装予定）。
+"""P5 パース。
 
-仕様は DESIGN.md 第6章。実装するときは p1_population と同じ形にすること。
-  - runner.run(run_id, ...) を公開する
-  - RunManifest をコンテキストマネージャで使う
-  - 出力は contracts.py のスキーマで Parquet / JSON Lines に書く
+bronze の生レスポンスを構造化し、仕様に照らして解釈する。
+**このフェーズは何度でも作り直せる。** パーサにバグが見つかったら
+bronze から再実行する。bronze には触らない。
 """
+
+from .runner import OUTPUT_FILENAME, PARSER_VERSION, PHASE, MissingInputError, run
+
+__all__ = ["run", "PHASE", "OUTPUT_FILENAME", "PARSER_VERSION", "MissingInputError"]

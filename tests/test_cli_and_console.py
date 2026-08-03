@@ -61,7 +61,7 @@ def test_status_reports_not_run_phases(edinet_sample, jp_config):
     assert "not_run" in result.stdout  # P2 以降
 
 
-@pytest.mark.parametrize("cmd", ["p5-parse", "p6-infer", "p8-publish"])
+@pytest.mark.parametrize("cmd", ["p6-infer", "p7-aggregate", "p8-publish"])
 def test_unimplemented_phases_exit_with_code_2(cmd):
     result = runner.invoke(app, [cmd, "--run", "2026-08"])
     assert result.exit_code == 2
@@ -74,23 +74,23 @@ def test_stub_writes_a_manifest_before_stopping():
     from mailauth.paths import phase_dir
 
     with pytest.raises(PhaseNotImplementedError):
-        not_implemented("p5_parse", "2026-08")
-    manifest = read_manifest(phase_dir("2026-08", "p5_parse"))
+        not_implemented("p6_infer", "2026-08")
+    manifest = read_manifest(phase_dir("2026-08", "p6_infer"))
     assert manifest["status"] == "failed"
-    assert manifest["breakdown"]["planned_sprint"] == "Sprint 4"
+    assert manifest["breakdown"]["planned_sprint"] == "Sprint 5"
 
 
 def test_every_unimplemented_phase_declares_its_sprint():
     """実装済みのフェーズはスタブ表から外れていること。"""
-    assert set(PLANNED_SPRINT) == {
-        "p5_parse", "p6_infer", "p7_aggregate", "p8_publish",
-    }
+    assert set(PLANNED_SPRINT) == {"p6_infer", "p7_aggregate", "p8_publish"}
 
 
 def test_implemented_phases_are_not_stubs():
     from mailauth.cli import IMPLEMENTED
 
-    assert IMPLEMENTED == {"p1_population", "p2_candidates", "p3_domains", "p4_measure"}
+    assert IMPLEMENTED == {
+        "p1_population", "p2_candidates", "p3_domains", "p4_measure", "p5_parse",
+    }
     assert not (IMPLEMENTED & set(PLANNED_SPRINT))
 
 

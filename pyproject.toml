@@ -22,6 +22,8 @@ dependencies = [
     "dnspython>=2.6",
     # bronze の JSON Lines を固める
     "zstandard>=0.22",
+    # PSL 解決。Tree Walk との差分検出に使う
+    "publicsuffixlist>=0.10",
 ]
 
 [project.optional-dependencies]
