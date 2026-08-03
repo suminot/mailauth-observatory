@@ -113,6 +113,60 @@ export interface UnknownHostsResult {
   fingerprint_version: string | null;
 }
 
+export interface TraceEvidence {
+  record_type: string;
+  matched_value: string;
+  rule_id: string;
+}
+
+export interface TraceInference {
+  category: string;
+  vendor: string;
+  product: string | null;
+  confidence: string;
+  is_stale: boolean;
+  stale_streak_months: number | null;
+  evidence: TraceEvidence[] | string | null;
+  rule_ids: string[];
+  note: string | null;
+  park_class: string | null;
+  undetectable_reason: string | null;
+}
+
+export interface TraceGoldCell {
+  population_id: string;
+  common12_code: string | null;
+  common12_label?: string | null;
+  suppressed: boolean | null;
+  n_entities?: number;
+  note?: string;
+}
+
+export interface TraceResult {
+  run_id: string;
+  domain: string;
+  entity: Record<string, unknown> | null;
+  candidates: Record<string, unknown>[];
+  domain_row: Record<string, unknown> | null;
+  bronze: {
+    files: string[];
+    total: number;
+    truncated: boolean;
+    not_observed: number;
+    by_purpose: Record<string, Record<string, unknown>[]>;
+  };
+  fact: Record<string, unknown> | null;
+  inferences: TraceInference[];
+  gold: {
+    month: string;
+    populations?: string[];
+    common12_code?: string | null;
+    cells: TraceGoldCell[];
+    note?: string;
+    reason?: string;
+  };
+}
+
 export interface GoldStats {
   measured_month: string;
   population_id: string;
@@ -229,6 +283,8 @@ export const api = {
     ),
   job: (id: string) => get<Job>(`/api/jobs/${id}`),
   fingerprints: () => get<FingerprintsResult>("/api/dict/fingerprints"),
+  trace: (runId: string, domain: string) =>
+    get<TraceResult>(`/api/trace/${runId}?domain=${encodeURIComponent(domain)}`),
   goldMonths: () => get<{ months: string[] }>("/api/gold/months"),
   goldMonth: (month: string) => get<GoldMonth>(`/api/gold/${encodeURIComponent(month)}`),
   unknownHosts: (runId: string) =>

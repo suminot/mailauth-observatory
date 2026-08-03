@@ -4,9 +4,10 @@ import { DictView } from "./DictView";
 import { ExecuteView } from "./ExecuteView";
 import { GoldView } from "./GoldView";
 import { PipelineView } from "./PipelineView";
+import { TraceView } from "./TraceView";
 import { ViewsPanel } from "./ViewsPanel";
 
-type Tab = "pipeline" | "execute" | "views" | "dict" | "gold";
+type Tab = "pipeline" | "execute" | "views" | "dict" | "gold" | "trace";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("pipeline");
@@ -44,6 +45,9 @@ export default function App() {
           <button className={tab === "execute" ? "active" : ""} onClick={() => setTab("execute")}>
             画面2 フェーズ実行
           </button>
+          <button className={tab === "trace" ? "active" : ""} onClick={() => setTab("trace")}>
+            画面3 レコード検査
+          </button>
           <button className={tab === "dict" ? "active" : ""} onClick={() => setTab("dict")}>
             画面5 辞書メンテナンス
           </button>
@@ -72,13 +76,14 @@ export default function App() {
             }}
           />
         )}
+        {tab === "trace" && <TraceView runId={runId} />}
         {tab === "dict" && <DictView runId={runId} />}
         {tab === "gold" && <GoldView />}
         {tab === "views" && <ViewsPanel runId={runId} />}
       </main>
 
       <footer className="muted small">
-        画面3（レコード検査）は Sprint 2、画面4（手法比較）は Sprint 6 で実装予定。
+        画面4（手法比較）は Sprint 6 で実装予定。
       </footer>
     </div>
   );

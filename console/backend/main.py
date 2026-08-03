@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from mailauth import PHASE_LABELS, PHASES, __version__
 from mailauth.paths import data_root, gold_root, repo_root
 
-from . import dict_edit, execute, gold_api, inspect, runs, views_api
+from . import dict_edit, execute, gold_api, inspect, runs, trace, views_api
 
 app = FastAPI(
     title="mailauth-observatory 運用コンソール",
@@ -44,6 +44,7 @@ app.include_router(inspect.router)
 app.include_router(dict_edit.router)
 app.include_router(views_api.router)
 app.include_router(gold_api.router)
+app.include_router(trace.router)
 
 
 @app.get("/api/health")

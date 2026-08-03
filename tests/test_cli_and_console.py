@@ -603,3 +603,160 @@ def test_gold_month_can_filter_by_population(client):
     assert ok.status_code == 200
     missing = client.get("/api/gold/2026-08", params={"population": "nope"})
     assert missing.status_code == 404
+
+
+# -- 画面3 レコード検査 ------------------------------------------------------
+#
+# コンソールの受け入れ基準「任意のドメインについて bronze から gold までの
+# 経路を追跡できること」を確認する。
+
+
+def _run_pipeline_to_p7(monkeypatch) -> None:
+    """StaticResolver で P2〜P7 を通す。ネットワークには出ない。"""
+    from mailauth.contracts import ENTITY_ARROW_SCHEMA
+    from mailauth.io import write_parquet
+    from mailauth.p4_measure import run as run_p4
+    from mailauth.p5_parse import run as run_p5
+    from mailauth.p6_infer import run as run_p6
+    from mailauth.p7_aggregate import run as run_p7
+    from mailauth.paths import phase_output
+    from mailauth.resolver import StaticResolver, make_answer
+
+    entities = [
+        {
+            "entity_id": f"jp:{i}", "run_id": "2026-08", "country": "JP",
+            "population_ids": ["jp-all-listed"], "name": f"社{i}",
+            "name_normalized": f"{i}", "common12_code": "1",
+            "common12_label": "業種1", "status": "active",
+        }
+        for i in range(6)
+    ]
+    write_parquet(entities, phase_output("2026-08", "p1_population", "entities.parquet"),
+                  ENTITY_ARROW_SCHEMA)
+
+    manual = tmp_manual_csv(monkeypatch)
+    from mailauth.p2_candidates import run as run_p2
+    from mailauth.p3_domains import run as run_p3
+
+    answers = {
+        ("traced-example.jp", "MX"): make_answer(
+            "traced-example.jp", "MX", ["a.mail.protection.outlook.com."]
+        ),
+        ("traced-example.jp", "TXT"): make_answer(
+            "traced-example.jp", "TXT",
+            ["v=spf1 include:spf.protection.outlook.com -all", "MS=ms12345678"],
+        ),
+        ("_dmarc.traced-example.jp", "TXT"): make_answer(
+            "_dmarc.traced-example.jp", "TXT",
+            ["v=DMARC1; p=reject; rua=mailto:a@traced-example.jp"],
+        ),
+    }
+    resolver = StaticResolver(answers)
+
+    class Backend:
+        name = "fake"
+        version = "test"
+        resolver_label = "fake"
+
+        def __init__(self):
+            self.stats = {"queries": 0, "cache_hits": 0, "tcp_failed": 0}
+
+        def query(self, query):
+            self.stats["queries"] += 1
+            return resolver.query(query.name, query.rtype)
+
+    run_p2(run_id="2026-08", config=manual, resolver=resolver)
+    run_p3(run_id="2026-08", config=manual, resolver=resolver)
+    run_p4(run_id="2026-08", backend=Backend())
+    run_p5(run_id="2026-08", resolver=resolver)
+    run_p6(run_id="2026-08")
+    run_p7(run_id="2026-08")
+
+
+def tmp_manual_csv(monkeypatch) -> str:
+    """手動ドメイン辞書だけを差し替えた candidates.yaml を作る。"""
+    import tempfile
+    from pathlib import Path
+
+    import yaml
+
+    from mailauth.paths import repo_root
+
+    tmp = Path(tempfile.mkdtemp())
+    (tmp / "manual.csv").write_text(
+        "entity_id,domain,note,added\njp:0,traced-example.jp,テスト,2026-08-01\n",
+        encoding="utf-8",
+    )
+    cfg = yaml.safe_load(
+        (repo_root() / "configs" / "candidates.yaml").read_text(encoding="utf-8")
+    )
+    cfg["manual_domains"] = str(tmp / "manual.csv")
+    # ネットワークに出る経路を切る。手動辞書だけを起点にする
+    cfg["discovery"] = {
+        "official_url": False,
+        "ct_log": False,
+        "spf_redirect": False,
+        "dmarc_rua": False,
+        "manual": True,
+    }
+    path = tmp / "candidates.yaml"
+    path.write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding="utf-8")
+    return str(path)
+
+
+def test_trace_requires_an_existing_run(client):
+    resp = client.get("/api/trace/2099-01", params={"domain": "x.example"})
+    assert resp.status_code == 404
+
+
+def test_trace_reports_an_unknown_domain(client, monkeypatch):
+    _run_pipeline_to_p7(monkeypatch)
+    resp = client.get("/api/trace/2026-08", params={"domain": "nope.example"})
+    assert resp.status_code == 404
+    assert "候補" in resp.json()["detail"]
+
+
+def test_trace_walks_bronze_to_gold(client, monkeypatch):
+    """受け入れ基準そのもの。全工程の記録が1回の照会で並ぶこと。"""
+    _run_pipeline_to_p7(monkeypatch)
+    body = client.get(
+        "/api/trace/2026-08", params={"domain": "traced-example.jp"}
+    ).json()
+
+    assert body["entity"]["entity_id"] == "jp:0"
+    assert [c["discovery_method"] for c in body["candidates"]] == ["manual"]
+    assert body["domain_row"]["confidence"]
+
+    # bronze は加工せずに purpose 別で並ぶ
+    assert body["bronze"]["total"] > 0
+    assert "mx" in body["bronze"]["by_purpose"]
+    assert "spf" in body["bronze"]["by_purpose"]
+
+    # fact は仕様に照らした解釈
+    assert body["fact"]["effective_7489"] == "reject"
+    assert body["fact"]["spf_all_qualifier"] == "-"
+
+    # inference は evidence を構造で返す。画面で組み立て直させない
+    microsoft = next(i for i in body["inferences"] if i["vendor"] == "Microsoft")
+    assert isinstance(microsoft["evidence"], list)
+    assert microsoft["evidence"][0]["rule_id"]
+
+    # gold への寄与はセルまで
+    assert body["gold"]["populations"] == ["jp-all-listed"]
+    assert body["gold"]["cells"]
+
+
+def test_trace_does_not_expose_per_company_gold_numbers(client, monkeypatch):
+    """gold から個社を逆算できるとセル秘匿の意味が無くなる。"""
+    _run_pipeline_to_p7(monkeypatch)
+    gold = client.get(
+        "/api/trace/2026-08", params={"domain": "traced-example.jp"}
+    ).json()["gold"]
+
+    # セルの識別と規模だけ。指標そのものは返さない
+    for cell in gold["cells"]:
+        assert set(cell) <= {
+            "population_id", "common12_code", "common12_label",
+            "suppressed", "n_entities", "note",
+        }
+    assert "個社の数字は出していない" in gold["note"]
