@@ -272,9 +272,9 @@ def parse_domain(
         bimi_has_vmc=bimi.has_vmc,
         dnssec_signed=dnssec_signed,
         dane_present=dane.present,
+        dane_orphan=dane.orphan,
     )
 
-    out["_dane_orphan"] = dane.orphan
     out["_null_mx"] = null_mx
     out["_notes"] = (
         spf.notes + dmarc.notes + org.notes + dkim.notes
@@ -350,7 +350,7 @@ def run(
                 continue
 
             domain_id, entity_id = ids.get(domain, (f"d:unknown:{domain}", "unknown"))
-            dane_orphan = parsed.pop("_dane_orphan", False)
+            dane_orphan = parsed.get("dane_orphan", False)
             parsed.pop("_null_mx", None)
             notes = parsed.pop("_notes", [])
 

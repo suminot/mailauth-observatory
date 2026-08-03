@@ -63,7 +63,7 @@ def test_status_reports_not_run_phases(edinet_sample, jp_config):
     assert "not_run" in result.stdout  # P2 以降
 
 
-@pytest.mark.parametrize("cmd", ["p7-aggregate", "p8-publish"])
+@pytest.mark.parametrize("cmd", ["p8-publish"])
 def test_unimplemented_phases_exit_with_code_2(cmd):
     result = runner.invoke(app, [cmd, "--run", "2026-08"])
     assert result.exit_code == 2
@@ -76,15 +76,15 @@ def test_stub_writes_a_manifest_before_stopping():
     from mailauth.paths import phase_dir
 
     with pytest.raises(PhaseNotImplementedError):
-        not_implemented("p7_aggregate", "2026-08")
-    manifest = read_manifest(phase_dir("2026-08", "p7_aggregate"))
+        not_implemented("p8_publish", "2026-08")
+    manifest = read_manifest(phase_dir("2026-08", "p8_publish"))
     assert manifest["status"] == "failed"
-    assert manifest["breakdown"]["planned_sprint"] == "Sprint 6"
+    assert manifest["breakdown"]["planned_sprint"] == "Sprint 7"
 
 
 def test_every_unimplemented_phase_declares_its_sprint():
     """実装済みのフェーズはスタブ表から外れていること。"""
-    assert set(PLANNED_SPRINT) == {"p7_aggregate", "p8_publish"}
+    assert set(PLANNED_SPRINT) == {"p8_publish"}
 
 
 def test_implemented_phases_are_not_stubs():
@@ -92,7 +92,7 @@ def test_implemented_phases_are_not_stubs():
 
     assert IMPLEMENTED == {
         "p1_population", "p2_candidates", "p3_domains", "p4_measure", "p5_parse",
-        "p6_infer",
+        "p6_infer", "p7_aggregate",
     }
     assert not (IMPLEMENTED & set(PLANNED_SPRINT))
 
@@ -515,3 +515,91 @@ def test_vendor_names_that_break_yaml_are_quoted(client, sandbox_configs):
     # 読み直せている（endpoint が検証している）ので YAML として妥当
     body = client.get("/api/dict/fingerprints").json()
     assert any(d["rule_count"] == 12 for d in body["dictionaries"])
+
+
+# -- 画面6 月次差分 ----------------------------------------------------------
+
+
+def _make_gold(run_id: str = "2026-08", policy: str = "reject") -> None:
+    from mailauth.contracts import (
+        ENTITY_ARROW_SCHEMA,
+        FACT_ARROW_SCHEMA,
+        DkimStatus,
+        PolicyLabel,
+    )
+    from mailauth.io import write_parquet
+    from mailauth.p7_aggregate import run as run_p7
+    from mailauth.paths import phase_output
+
+    month = dt.date(int(run_id[:4]), int(run_id[5:7]), 1)
+    entities = [
+        {
+            "entity_id": f"jp:{i}", "run_id": run_id, "country": "JP",
+            "population_ids": ["jp-all-listed"], "name": f"社{i}",
+            "name_normalized": f"{i}", "common12_code": "1",
+            "common12_label": "業種1", "status": "active",
+        }
+        for i in range(6)
+    ]
+    write_parquet(entities, phase_output(run_id, "p1_population", "entities.parquet"),
+                  ENTITY_ARROW_SCHEMA)
+    facts = [
+        {
+            "fact_id": f"f:{i}", "domain_id": f"d:{i}", "entity_id": f"jp:{i}",
+            "run_id": run_id, "measured_month": month,
+            "observed": True, "record_present": True,
+            "spf_present": True, "dmarc_present": True, "dmarc_p": policy,
+            "effective_7489": policy, "dkim_status": DkimStatus.DETECTED,
+            "policy_label": (
+                PolicyLabel.ENFORCED_REJECT if policy == "reject" else PolicyLabel.MONITORING
+            ),
+        }
+        for i in range(6)
+    ]
+    write_parquet(facts, phase_output(run_id, "p5_parse", "facts.parquet"),
+                  FACT_ARROW_SCHEMA)
+    run_p7(run_id=run_id)
+
+
+def test_gold_months_are_empty_before_p7(client):
+    assert client.get("/api/gold/months").json()["months"] == []
+
+
+def test_gold_month_requires_p7(client):
+    resp = client.get("/api/gold/2099-01")
+    assert resp.status_code == 404
+    assert "p7-aggregate" in resp.json()["detail"]
+
+
+def test_gold_month_shows_the_stats_p7_wrote(client):
+    """コンソールが gold を再計算しないこと。数字が食い違うと信用できない。"""
+    _make_gold()
+    body = client.get("/api/gold/2026-08").json()
+
+    assert body["month"] == "2026-08"
+    assert body["previous_month"] == "2026-07"
+    stats = body["overall"][0]
+    assert stats["observed_domains"] == 6
+    assert stats["enforced_reject_domains"] == 6
+    # JSON 文字列ではなく構造として返す
+    assert stats["maturity_stage_dist"]["2"] == 6
+    assert stats["delta_prev_month"]["skipped"] is True
+    assert stats["diff_prev_month"] is None
+
+
+def test_gold_month_reports_the_previous_month_diff(client):
+    _make_gold("2026-07", policy="none")
+    _make_gold("2026-08", policy="reject")
+
+    stats = client.get("/api/gold/2026-08").json()["overall"][0]
+    assert stats["previous_month"] == "2026-07"
+    assert stats["diff_prev_month"]["enforced_reject_domains"] == 6
+    assert stats["delta_prev_month"]["policy_upgraded"] == 6
+
+
+def test_gold_month_can_filter_by_population(client):
+    _make_gold()
+    ok = client.get("/api/gold/2026-08", params={"population": "jp-all-listed"})
+    assert ok.status_code == 200
+    missing = client.get("/api/gold/2026-08", params={"population": "nope"})
+    assert missing.status_code == 404
