@@ -486,6 +486,73 @@ def changelog_cmd(
         )
 
 
+@app.command("corrections")
+def corrections_cmd(
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", help="書き出し先。既定は site/src/corrections-log.md"),
+    ] = None,
+    as_json: Annotated[bool, typer.Option("--json", help="JSON で出す")] = False,
+    stdout: Annotated[
+        bool, typer.Option("--stdout", help="ファイルに書かず標準出力へ")
+    ] = False,
+    fail_on_overdue: Annotated[
+        bool,
+        typer.Option(
+            "--fail-on-overdue",
+            help="審査の上限を超えた申告があれば exit code 1 で終わる",
+        ),
+    ] = False,
+) -> None:
+    """訂正申告の登録簿から訂正履歴ページを作る。
+
+    **審査中のものも、訂正しなかったものも載せる。** 訂正した分だけを載せると、
+    申告が何件あってどう扱われたのかが読み手に分からない。
+
+    審査は受付から48時間以内を目標、72時間を上限とする（DESIGN.md Sprint 10）。
+    超過を機械的に検出する。**書いただけでは守られない。**
+    """
+    from . import corrections as mod
+    from .paths import config_path
+
+    registry = mod.load()
+
+    if as_json:
+        typer.echo(mod.to_json(registry))
+        return
+
+    text = mod.to_markdown(registry)
+    if stdout:
+        typer.echo(text)
+    else:
+        target = out or config_path("site/src/corrections-log.md")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+        typer.echo(f"→ {target}（{len(registry.entries)} 件）")
+
+    if not registry.available:
+        # **「読めなかった」を「申告0件」として通さない**
+        typer.secho(
+            "  ⚠ 登録簿を読めていない。**「申告0件」ではない**", fg="red", err=True
+        )
+        for problem in registry.problems + registry.notes:
+            typer.secho(f"    - {problem}", fg="red", err=True)
+        raise typer.Exit(code=2)
+
+    open_entries = registry.open_entries()
+    if open_entries:
+        typer.echo(f"  審査中/受付: {', '.join(e.id for e in open_entries)}")
+    overdue = registry.overdue()
+    if overdue:
+        typer.secho(
+            f"  ⚠ 審査の上限（{mod.SLA_LIMIT_HOURS} 時間）を超過: "
+            f"{', '.join(e.id for e in overdue)}",
+            fg="red",
+        )
+        if fail_on_overdue:
+            raise typer.Exit(code=1)
+
+
 @app.command("notify-plan")
 def notify_plan_cmd(
     run: RunOption = "",

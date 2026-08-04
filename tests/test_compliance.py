@@ -248,7 +248,15 @@ def test_publish_config_keeps_tier2_disabled():
 def test_required_public_pages_exist():
     """DESIGN.md P8 の必須ページ。"""
     names = {p.stem for p in _site_pages()}
-    required = {"index", "methodology", "terms", "corrections", "changelog", "data"}
+    required = {
+        "index",
+        "methodology",
+        "terms",
+        "corrections",
+        "corrections-log",
+        "changelog",
+        "data",
+    }
     assert required <= names, f"必須ページが足りない: {sorted(required - names)}"
 
 
