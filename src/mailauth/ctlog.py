@@ -5,6 +5,21 @@ crt.sh は重い。レート制限とリトライを必ず入れ、結果は run
 
 CT ログは1ドメインあたり数百〜数千の証明書を返すことがある。
 eTLD+1 に正規化してから重複排除しないと候補が爆発する。
+
+## キャッシュは月で区切る
+
+**CT ログは追記されていく。** 先月の応答を今月の観測として使うと、
+その間に発行された証明書が永久に見えない。新しく作られたドメインは
+CT 経由でしか見つからないことがあるので、**候補生成が初月の状態で
+凍結する。** しかも数字は動かないだけなので気付けない。
+
+そこでキャッシュを `month=YYYY-MM/` で区切る。
+
+  - 同じ月の再実行はキャッシュを使う（原則6 冪等、crt.sh に再負荷をかけない）
+  - 月が変われば取り直す（新しい証明書が入る）
+
+`month` を渡さない場合は月で区切らない。テストと単発の調査用で、
+**月次計測の経路では必ず渡す。**
 """
 
 from __future__ import annotations
@@ -31,6 +46,9 @@ class CtResult:
     #: 正規化前に見た FQDN の件数。爆発の度合いを記録する
     raw_names: int = 0
     from_cache: bool = False
+    #: キャッシュを使った場合、それがどの月のものか。
+    #: **当月以外なら「今月の観測」ではない**（原則5）
+    cache_month: str | None = None
     error: str | None = None
 
 
@@ -49,12 +67,16 @@ class CrtShClient:
         self,
         *,
         cache_dir: Path | None = None,
+        month: str | None = None,
         qps: float = 0.5,
         timeout: float = 60.0,
         retries: int = 2,
         client: httpx.Client | None = None,
     ) -> None:
         self.cache_dir = cache_dir
+        #: キャッシュを区切る月（`YYYY-MM`）。**月次計測では必ず渡す。**
+        #: 渡さないと先月の応答を今月の観測として使ってしまう
+        self.month = month
         self.min_interval = 1.0 / qps if qps > 0 else 0.0
         self.timeout = timeout
         self.retries = retries
@@ -70,10 +92,16 @@ class CrtShClient:
         self._last_call = time.monotonic()
 
     def _cache_path(self, domain: str) -> Path | None:
+        """キャッシュの置き場所。**月で区切る。**
+
+        月を跨いだ再利用は「先月の観測を今月として出す」ことになるので、
+        パスの階層で分けて物理的に起こらないようにする。
+        """
         if self.cache_dir is None:
             return None
         safe = domain.replace("/", "_")
-        return self.cache_dir / f"{safe}.json"
+        base = self.cache_dir / f"month={self.month}" if self.month else self.cache_dir
+        return base / f"{safe}.json"
 
     def search(self, domain: str) -> CtResult:
         cached = self._cache_path(domain)
@@ -85,6 +113,7 @@ class CrtShClient:
                     found=payload.get("found", []),
                     raw_names=payload.get("raw_names", 0),
                     from_cache=True,
+                    cache_month=payload.get("month"),
                 )
             except (json.JSONDecodeError, OSError):
                 pass
@@ -124,10 +153,19 @@ class CrtShClient:
                 client.close()
 
         result = _extract(domain, rows)
+        result.cache_month = self.month
         if cached:
             cached.parent.mkdir(parents=True, exist_ok=True)
             cached.write_text(
-                json.dumps({"found": result.found, "raw_names": result.raw_names}),
+                json.dumps(
+                    {
+                        "found": result.found,
+                        "raw_names": result.raw_names,
+                        # **どの月の観測かを payload にも書く。** パスだけに
+                        # 頼ると、ディレクトリを動かしたときに月が分からなくなる
+                        "month": self.month,
+                    }
+                ),
                 encoding="utf-8",
             )
         return result

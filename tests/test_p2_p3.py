@@ -628,3 +628,105 @@ def test_p2_discovered_at_is_derived_from_the_run_not_the_clock(seeded_run):
     stamps = {str(v) for v in df["discovered_at"]}
     assert len(stamps) == 1
     assert stamps.pop().startswith("2026-08-01 00:00:00")
+
+
+# ===========================================================================
+# CT ログのキャッシュは月で区切る
+# ===========================================================================
+
+
+class _CountingCtTransport:
+    """crt.sh を叩いた回数を数える。ネットワークには出ない。"""
+
+    def __init__(self, names: list[str]):
+        self.calls = 0
+        self._names = names
+
+    def handle(self, request):
+        import httpx as _httpx
+
+        self.calls += 1
+        return _httpx.Response(
+            200, json=[{"name_value": "\n".join(self._names)}]
+        )
+
+
+def _ct_client(tmp_path, month, transport):
+    import httpx as _httpx
+
+    from mailauth.ctlog import CrtShClient
+
+    return CrtShClient(
+        cache_dir=tmp_path / "crtsh",
+        month=month,
+        qps=0,
+        client=_httpx.Client(transport=_httpx.MockTransport(transport.handle)),
+    )
+
+
+def test_the_ct_cache_is_reused_within_the_same_month(tmp_path):
+    """同じ月の再実行はキャッシュを使う（原則6 冪等・crt.sh に再負荷をかけない）。"""
+    t = _CountingCtTransport(["mail.example.jp"])
+    first = _ct_client(tmp_path, "2026-08", t).search("example.jp")
+    second = _ct_client(tmp_path, "2026-08", t).search("example.jp")
+
+    assert t.calls == 1, "同じ月で2回叩いている"
+    assert first.from_cache is False
+    assert second.from_cache is True
+    assert second.cache_month == "2026-08"
+    assert second.found == first.found
+
+
+def test_the_ct_cache_is_not_reused_across_months(tmp_path):
+    """**先月の応答を今月の観測として使わない。**
+
+    CT ログは追記されていく。月を跨いで使い回すと、その間に発行された
+    証明書が永久に見えず、**候補生成が初月の状態で凍結する。**
+    しかも数字が動かないだけなので気付けない。
+    """
+    t = _CountingCtTransport(["mail.example.jp"])
+    _ct_client(tmp_path, "2026-08", t).search("example.jp")
+    assert t.calls == 1
+
+    # 翌月に新しい証明書が出たとする
+    t._names = ["mail.example.jp", "newbrand.example.net"]
+    later = _ct_client(tmp_path, "2026-09", t).search("example.jp")
+
+    assert t.calls == 2, "翌月なのに取り直していない"
+    assert later.from_cache is False
+    # found は eTLD+1 に畳まれているので newbrand.example.net は example.net になる
+    assert "example.net" in later.found, "翌月に出た証明書を拾えていない"
+
+
+def test_the_ct_cache_records_which_month_it_came_from(tmp_path):
+    """payload にも月を書く。ディレクトリを動かしても月が分かるように。"""
+    import json as _json
+
+    t = _CountingCtTransport(["mail.example.jp"])
+    _ct_client(tmp_path, "2026-08", t).search("example.jp")
+    path = tmp_path / "crtsh" / "month=2026-08" / "example.jp.json"
+    assert path.is_file(), "月ごとのディレクトリに置かれていない"
+    assert _json.loads(path.read_text(encoding="utf-8"))["month"] == "2026-08"
+
+
+def test_p2_scopes_the_ct_cache_to_the_run(seeded_run):
+    """**月次計測の経路では必ず月を渡す。** 渡さないと時系列が凍結する。"""
+    from mailauth.manifest import read_manifest
+    from mailauth.paths import phase_dir
+
+    _run_p2()
+    manifest = read_manifest(phase_dir(RUN, "p2_candidates"))
+    ct = manifest["breakdown"]["ct"]
+    assert ct["cache_month"] == RUN
+    # 当月以外のキャッシュを「今月の観測」として数えていない
+    assert ct["stale_cache"] == 0
+
+
+def test_p2_passes_the_run_id_as_the_cache_month():
+    """実装が month を渡していること（注入した ct_source では通らない経路）。"""
+    import inspect
+
+    from mailauth.p2_candidates import runner as p2
+
+    source = inspect.getsource(p2.run)
+    assert "month=run_id" in source, "CrtShClient に月を渡していない"

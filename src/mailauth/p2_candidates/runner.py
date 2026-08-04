@@ -249,6 +249,9 @@ def run(
             ct_source = (
                 CrtShClient(
                     cache_dir=cache_root() / "crtsh",
+                    # **月で区切る。** CT ログは追記されていくので、先月の応答を
+                    # 今月の観測として使うと候補生成が初月の状態で凍結する
+                    month=run_id,
                     qps=float(ct_cfg.get("qps", 0.5)),
                     timeout=float(ct_cfg.get("timeout_sec", 60)),
                     retries=int(ct_cfg.get("retries", 2)),
@@ -294,7 +297,16 @@ def run(
         rows = active.reset_index(drop=True)
         collectors: dict[str, _Collector] = {}
         method_counts: dict[str, int] = {}
-        ct_stats = {"searched": 0, "from_cache": 0, "errors": 0, "raw_names": 0, "truncated": 0}
+        ct_stats = {
+            "searched": 0,
+            "from_cache": 0,
+            # 当月以外のキャッシュを使った件数。**0 でなければ時系列が嘘になる**
+            "stale_cache": 0,
+            "cache_month": run_id,
+            "errors": 0,
+            "raw_names": 0,
+            "truncated": 0,
+        }
         total = 0
         hit_total_limit = False
 
@@ -321,6 +333,10 @@ def run(
                     ct_stats["raw_names"] += ct.raw_names
                     if ct.from_cache:
                         ct_stats["from_cache"] += 1
+                        # **当月以外のキャッシュを「今月の観測」として数えない。**
+                        # 月で区切っているので通常は起きないが、起きたら見える形にする
+                        if ct.cache_month != run_id:
+                            ct_stats["stale_cache"] += 1
                     if ct.error:
                         ct_stats["errors"] += 1
                         manifest.add_failure("ct_log_error")
