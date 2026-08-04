@@ -571,3 +571,116 @@ def test_p5_spec_version_is_set_on_every_fact():
     run_p4(run_id=RUN, backend=FakeBackend())
     run_p5(run_id=RUN, resolver=StaticResolver(ANSWERS))
     assert facts()["spec_version"].notna().all()
+
+
+# ===========================================================================
+# rua 宛先の「未登録」判定
+#
+# **「未登録」は強い主張である。** 「このドメインのレポートは第三者に
+# 奪われうる」と公開することになるので、断定できるときだけ True にする。
+# ===========================================================================
+
+
+def _rua_case(rua_host: str, ns_answers: dict) -> dict:
+    """rua が rua_host を指している fact を1件作る。"""
+    from mailauth.p5_parse.runner import parse_domain
+
+    domain = "example-co.jp"
+    answers = {
+        (domain, "TXT"): make_answer(domain, "TXT", ["v=spf1 -all"]),
+        (f"_dmarc.{domain}", "TXT"): make_answer(
+            f"_dmarc.{domain}", "TXT", [f"v=DMARC1; p=reject; rua=mailto:a@{rua_host}"]
+        ),
+        # 外部宛先の承認レコード（_report._dmarc）。あることにしておく
+        (f"{domain}._report._dmarc.{_registrable(rua_host)}", "TXT"): make_answer(
+            f"{domain}._report._dmarc.{_registrable(rua_host)}", "TXT", ["v=DMARC1"]
+        ),
+    }
+    answers.update(ns_answers)
+    by_purpose = {
+        "dmarc": [
+            {
+                "domain": domain,
+                "purpose": "dmarc",
+                "query_name": f"_dmarc.{domain}",
+                "observed": True,
+                "record_present": True,
+                # bronze は character-string の配列のまま持つ
+                "answers": [
+                    {"data": [f"v=DMARC1; p=reject; rua=mailto:a@{rua_host}"]}
+                ],
+            }
+        ]
+    }
+    return parse_domain(domain, by_purpose, resolver=StaticResolver(answers))
+
+
+def _registrable(host: str) -> str:
+    from mailauth.normalize import etld_plus_one
+
+    return etld_plus_one(host) or host
+
+
+def test_a_subdomain_rua_target_is_not_called_unregistered():
+    """**rua の宛先はサブドメインが普通。** NS が無いのはゾーンを切って
+    いないだけで、未登録ではない。
+
+    実測（2026-08）で rx.rakuten.co.jp と ml.tepco.co.jp が「未登録」と
+    判定されていた。楽天や東電のレポートが第三者に奪われうる、という
+    事実に反する主張を公開しかけていた。
+    """
+    out = _rua_case(
+        "rx.other-example.jp",
+        {
+            # サブドメインは NODATA（名前は在るが NS が無い）
+            ("rx.other-example.jp", "NS"): make_answer(
+                "rx.other-example.jp", "NS", [], rcode="NODATA"
+            ),
+            # 登録可能ドメインには NS がある
+            ("other-example.jp", "NS"): make_answer(
+                "other-example.jp", "NS", ["ns1.other-example.jp."]
+            ),
+        },
+    )
+    assert out["rua_external"] is True
+    assert out["rua_domain_unregistered"] is False
+
+
+def test_a_genuinely_nonexistent_rua_domain_is_flagged():
+    """名前自体が存在しない（NXDOMAIN）なら第三者が登録できる。
+
+    Hureau et al.（PAM 2024）が指摘した実害のある構成。
+    """
+    out = _rua_case(
+        "rua.gone-example.jp",
+        {
+            ("gone-example.jp", "NS"): make_answer(
+                "gone-example.jp", "NS", [], rcode="NXDOMAIN"
+            ),
+        },
+    )
+    assert out["rua_domain_unregistered"] is True
+
+
+def test_an_unobservable_rua_domain_is_not_called_unregistered():
+    """取れなかったものを「未登録」と言わない（原則5）。**False でもない。**"""
+    out = _rua_case(
+        "rua.unknown-example.jp",
+        {
+            ("unknown-example.jp", "NS"): make_answer(
+                "unknown-example.jp", "NS", [], observed=False, rcode="SERVFAIL"
+            ),
+        },
+    )
+    assert out["rua_domain_unregistered"] is None
+
+
+def test_the_registrable_domain_is_queried_not_the_rua_host():
+    """登録の有無は eTLD+1 で見る。ホスト名で見ると誤判定になる。"""
+    import inspect
+
+    from mailauth.p5_parse import runner as p5
+
+    source = inspect.getsource(p5.parse_domain)
+    assert "etld_plus_one(ext)" in source
+    assert 'ns.rcode == "NXDOMAIN"' in source
