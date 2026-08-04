@@ -269,17 +269,66 @@ def test_credentials_are_documented_with_where_to_get_them():
     assert env.count("取得:") + env.count("キー不要") >= 3
 
 
-@pytest.mark.skip(
-    reason=(
-        "運用の状態であってコードの性質ではない。bronze のバックアップを R2 以外に "
-        "持つこと（DESIGN.md 第9章「持続性」）は、R2 の認証情報と別系統の保管先を "
-        "運用者が用意して初めて満たされる。実装側でできるのは offload を"
-        "複数宛先に対応させることだが、宛先が1つでも設定されていない現状では"
-        "検査対象が無い"
+def test_offload_can_send_to_a_destination_outside_r2():
+    """bronze のバックアップを R2 以外に持てること（DESIGN.md 第9章「持続性」）。
+
+    **基準そのものは運用の状態だが、実装が1宛先しか送れないなら運用者が
+    第2の保管先を用意してもできない。** そこは実装の問題なので検査する。
+    ここで見るのは「複数宛先に送れる実装であること」まで。
+    """
+    from mailauth.offload import DESTINATION_ENV, REQUIRED_DESTINATIONS
+
+    assert REQUIRED_DESTINATIONS >= 2
+    assert len(DESTINATION_ENV) >= REQUIRED_DESTINATIONS, (
+        "退避先が1つしか定義されていない。R2 以外の保管先を設定できない"
     )
-)
-def test_bronze_has_a_backup_outside_r2():
-    raise AssertionError("未実施")
+    # **同じ事業者に2つ置いても持続性は上がらない。** 別系統を想定した
+    # 環境変数になっていること（R2_* の連番ではない）
+    assert "r2" in DESTINATION_ENV
+    assert any(name != "r2" for name in DESTINATION_ENV)
+
+
+def test_a_single_destination_is_not_reported_as_durable(tmp_path, monkeypatch):
+    """**送れたことと持続性の基準を満たしたことは別である。**
+
+    1宛先しか設定されていない状態を「成功」で終わらせると、R2 を失った
+    ときに気付く。送信が成功していても基準未達であることを言わせる。
+    """
+    from mailauth.offload import offload
+    from mailauth.paths import run_dir
+
+    for name in (
+        "R2_ENDPOINT",
+        "R2_BUCKET",
+        "R2_ACCESS_KEY_ID",
+        "R2_SECRET_ACCESS_KEY",
+        "BACKUP_ENDPOINT",
+        "BACKUP_BUCKET",
+        "BACKUP_ACCESS_KEY_ID",
+        "BACKUP_SECRET_ACCESS_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in (
+        ("R2_ENDPOINT", "https://r2.example"),
+        ("R2_BUCKET", "mailauth"),
+        ("R2_ACCESS_KEY_ID", "key"),
+        ("R2_SECRET_ACCESS_KEY", "secret"),
+    ):
+        monkeypatch.setenv(name, value)
+
+    root = run_dir("2026-08")
+    (root / "p5_parse").mkdir(parents=True)
+    (root / "p5_parse" / "facts.parquet").write_bytes(b"x" * 10)
+
+    class _Ok:
+        def upload_file(self, *a, **k):
+            return None
+
+    _, result = offload("2026-08", client=_Ok())
+    assert result.uploaded == 1
+    assert result.failed == 0
+    assert result.single_destination is True
+    assert any("持続性の基準は満たしていない" in n for n in result.notes)
 
 
 @pytest.mark.skip(
@@ -315,9 +364,11 @@ def test_the_checklist_is_covered_by_tests():
     skipped = sum(1 for ln in here.splitlines() if ln.startswith("@pytest.mark.skip"))
     # 1項目1テストではないが、桁が違ってはいけない
     assert checks >= 20, f"検査が {checks} 件しかない（基準は {len(items)} 項目）"
-    assert skipped == 2, (
-        "コードで検査できない項目は2つ（組織での認証情報管理、R2 以外のバックアップ）。"
-        "増えたなら理由を skip の reason に書くこと"
+    assert skipped == 1, (
+        "コードで検査できない項目は1つ（組織での認証情報管理）だけである。"
+        "R2 以外のバックアップは、**実装が複数宛先に送れるか**までを検査に"
+        "変えた（宛先を用意するのは運用だが、送れない実装なら運用でも"
+        "満たせない）。増えたなら理由を skip の reason に書くこと"
     )
 
 

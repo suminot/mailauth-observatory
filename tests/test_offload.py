@@ -130,3 +130,129 @@ def test_cli_exits_nonzero_when_uploads_fail(sample_run, monkeypatch):
     )
     result = runner.invoke(app, ["offload", "--run", RUN])
     assert result.exit_code == 1
+
+
+def _configure_backup(monkeypatch):
+    for name, value in (
+        ("BACKUP_ENDPOINT", "https://backup.example"),
+        ("BACKUP_BUCKET", "mailauth-backup"),
+        ("BACKUP_ACCESS_KEY_ID", "key2"),
+        ("BACKUP_SECRET_ACCESS_KEY", "secret2"),
+    ):
+        monkeypatch.setenv(name, value)
+
+
+def _clear_all(monkeypatch):
+    from mailauth.offload import DESTINATION_ENV
+
+    for env in DESTINATION_ENV.values():
+        for name in env:
+            monkeypatch.delenv(name, raising=False)
+
+
+def test_a_single_destination_is_not_called_durable(sample_run, monkeypatch):
+    """**送れたことと持続性の基準を満たしたことは別である**（DESIGN.md 第9章）。"""
+    _clear_all(monkeypatch)
+    _configure(monkeypatch)
+    _, result = offload(RUN, clients={"r2": _FakeS3()})
+    assert result.uploaded == 3
+    assert result.failed == 0
+    assert result.single_destination is True
+    assert any("持続性の基準は満たしていない" in n for n in result.notes)
+    assert result.destinations_used == ["r2"]
+
+
+def test_two_destinations_each_receive_every_file(sample_run, monkeypatch):
+    """R2 以外の保管先にも同じものを送る。片方だけでは基準を満たさない。"""
+    _clear_all(monkeypatch)
+    _configure(monkeypatch)
+    _configure_backup(monkeypatch)
+    primary, secondary = _FakeS3(), _FakeS3()
+    _, result = offload(RUN, clients={"r2": primary, "backup": secondary})
+
+    assert result.single_destination is False
+    assert result.notes == []
+    assert result.destinations_used == ["backup", "r2"]
+    assert len(primary.uploaded) == 3
+    assert len(secondary.uploaded) == 3
+    # **別のバケットに入っていること。** 同じ所に2回送っても意味がない
+    assert {b for b, _ in primary.uploaded} == {"mailauth"}
+    assert {b for b, _ in secondary.uploaded} == {"mailauth-backup"}
+    assert result.uploaded == 6
+
+
+def test_a_failure_on_one_destination_does_not_stop_the_other(sample_run, monkeypatch):
+    """**片方が落ちてももう片方は送る。** どちらを再実行すべきか分かる形で残す。"""
+    _clear_all(monkeypatch)
+    _configure(monkeypatch)
+    _configure_backup(monkeypatch)
+    _, result = offload(
+        RUN,
+        clients={"r2": _FakeS3(fail_on="facts.parquet"), "backup": _FakeS3()},
+    )
+    assert result.by_destination["r2"].failed == 1
+    assert result.by_destination["r2"].uploaded == 2
+    assert result.by_destination["backup"].failed == 0
+    assert result.by_destination["backup"].uploaded == 3
+    # 再実行すべき宛先が名前で分かる
+    assert "r2" in (result.reason or "")
+    assert all(e.startswith("[r2]") for e in result.errors)
+
+
+def test_only_the_backup_configured_still_works(sample_run, monkeypatch):
+    """R2 が無くても副だけで送れる。**R2 を特別扱いしない。**"""
+    _clear_all(monkeypatch)
+    _configure_backup(monkeypatch)
+    _, result = offload(RUN, clients={"backup": _FakeS3()})
+    assert result.uploaded == 3
+    assert result.destinations_used == ["backup"]
+    assert result.single_destination is True
+
+
+def test_no_destination_configured_reports_every_missing_key(sample_run, monkeypatch):
+    """どちらの宛先の何が足りないかを言う。片方だけ挙げると設定が進まない。"""
+    _clear_all(monkeypatch)
+    _, result = offload(RUN)
+    assert result.skipped is True
+    assert result.uploaded == 0
+    assert "r2=" in (result.reason or "")
+    assert "backup=" in (result.reason or "")
+
+
+def test_dry_run_counts_every_destination(sample_run, monkeypatch):
+    _clear_all(monkeypatch)
+    _configure(monkeypatch)
+    _configure_backup(monkeypatch)
+    _, result = offload(RUN, dry_run=True)
+    assert result.skipped is True
+    assert result.uploaded == 0
+    assert "2 宛先" in (result.reason or "")
+
+
+def test_the_result_dict_carries_the_durability_state(sample_run, monkeypatch):
+    _clear_all(monkeypatch)
+    _configure(monkeypatch)
+    payload = offload(RUN, clients={"r2": _FakeS3()})[1].to_dict()
+    assert payload["single_destination"] is True
+    assert payload["required_destinations"] == 2
+    assert payload["destinations_used"] == ["r2"]
+    assert "r2" in payload["by_destination"]
+
+
+def test_the_second_destination_is_not_just_another_r2_bucket():
+    """**同じ事業者に2つ置いても持続性は上がらない。**"""
+    from mailauth.offload import DESTINATION_ENV
+
+    assert set(DESTINATION_ENV) == {"r2", "backup"}
+    assert not any(k.startswith("R2_") for k in DESTINATION_ENV["backup"])
+
+
+def test_the_cli_reports_each_destination(sample_run, monkeypatch):
+    _clear_all(monkeypatch)
+    _configure(monkeypatch)
+    monkeypatch.setattr("mailauth.offload._client", lambda d: _FakeS3())
+    result = runner.invoke(app, ["offload", "--run", RUN])
+    assert result.exit_code == 0
+    assert "r2: 送信 3 件" in result.output
+    # 送信が成功していても基準未達は言う
+    assert "持続性の基準は満たしていない" in result.output
