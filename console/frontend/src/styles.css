@@ -756,3 +756,48 @@ ul.plain li {
 .compare-table code {
   word-break: break-all;
 }
+
+/* --- 画面5 飽和曲線 --- */
+
+.dict-summary,
+.dict-curve {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.dict-summary th,
+.dict-summary td,
+.dict-curve th,
+.dict-curve td {
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-weight: normal;
+}
+
+.dict-curve thead th {
+  font-weight: 600;
+  background: #f2f4f6;
+}
+
+.dict-summary th {
+  color: var(--muted);
+  width: 260px;
+}
+
+.dict-summary .num,
+.dict-curve .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dict-curve .bar-cell {
+  width: 35%;
+}

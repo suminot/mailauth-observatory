@@ -111,6 +111,36 @@ def fingerprints() -> dict[str, Any]:
     }
 
 
+@router.get("/saturation")
+def saturation(run: str = Query(..., description="実行ID")) -> dict[str, Any]:
+    """DKIM セレクタの飽和曲線（DESIGN.md 7.2 画面5）。
+
+    L1/L2 で足りているかを判断する材料。曲線が寝ていれば辞書を増やしても
+    新規発見はほとんど無い。L3（GPL-3.0 で無効）を有効化する価値が
+    あるかどうかもここで見る。
+
+    bronze から計算する。**DNS は引かない。**
+    """
+    from mailauth.p4_measure.saturation import from_bronze
+    from mailauth.paths import bronze_dir, run_dir
+
+    if not run_dir(run).is_dir():
+        raise HTTPException(status_code=404, detail=f"run {run} がありません")
+
+    curve = from_bronze(bronze_dir(run))
+    payload = curve.to_dict()
+    payload["run_id"] = run
+    # 辞書の現況を添える。L1 が何個あるかが分母の意味を決める
+    measure = load_measure_config().get("dkim", {})
+    payload["dictionary"] = {
+        "layers": measure.get("layers", []),
+        "l1_size": len(load_selector_list("configs/dkim_selectors/l1_core.txt")),
+        "l3_status": measure.get("l3_status", "planned"),
+        "l3_enabled": bool(measure.get("l3_on_miss", False)),
+    }
+    return payload
+
+
 @router.get("/unknown-hosts")
 def unknown_hosts(run: str = Query(..., description="実行ID")) -> dict[str, Any]:
     """P6 が見つけた未知 MX ホストを頻度順に返す。

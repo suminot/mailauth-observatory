@@ -829,3 +829,59 @@ def test_compare_api_returns_what_p4_compare_wrote(client):
     assert body["counts"]["values_differ"] == 1
     # 分類の意味を画面で取り違えないよう説明を添える
     assert "食い違いではない" in body["kind_labels"]["observation_differs"]
+
+
+def test_saturation_requires_a_run(client):
+    assert client.get("/api/dict/saturation", params={"run": "2099-01"}).status_code == 404
+
+
+def test_saturation_is_computed_from_bronze(client):
+    """画面5 の飽和曲線。DNS は引かない。"""
+    from mailauth.contracts import DOMAIN_ARROW_SCHEMA, MeasureTier
+    from mailauth.io import write_parquet
+    from mailauth.p4_measure import run as run_p4
+    from mailauth.paths import phase_output
+    from mailauth.resolver import StaticResolver, make_answer
+
+    write_parquet(
+        [
+            {
+                "domain_id": "d:1", "entity_id": "jp:1", "run_id": "2026-08",
+                "domain": "a.example.jp", "domain_role": "primary",
+                "confidence": "confirmed", "is_measured": True,
+                "measure_tier": MeasureTier.A, "evidence_count": 5,
+            }
+        ],
+        phase_output("2026-08", "p3_domains", "domains.parquet"),
+        DOMAIN_ARROW_SCHEMA,
+    )
+
+    answers = {
+        ("a.example.jp", "MX"): make_answer("a.example.jp", "MX", ["mx."]),
+        ("a.example.jp", "TXT"): make_answer("a.example.jp", "TXT", ["v=spf1 -all"]),
+        ("selector1._domainkey.a.example.jp", "TXT"): make_answer(
+            "selector1._domainkey.a.example.jp", "TXT", ["v=DKIM1; p=" + "A" * 392]
+        ),
+    }
+    resolver = StaticResolver(answers)
+
+    class Backend:
+        name = "fake"
+        version = "test"
+        resolver_label = "fake"
+
+        def __init__(self):
+            self.stats = {"queries": 0, "cache_hits": 0, "tcp_failed": 0}
+
+        def query(self, query):
+            return resolver.query(query.name, query.rtype)
+
+    run_p4(run_id="2026-08", backend=Backend())
+
+    body = client.get("/api/dict/saturation", params={"run": "2026-08"}).json()
+    assert body["detected_domains"] == 1
+    assert body["probed_domains"] == 1
+    assert body["points"][0]["selector"] == "selector1"
+    # 辞書の現況が添えられ、L3 は無効のままであること
+    assert body["dictionary"]["l3_enabled"] is False
+    assert body["dictionary"]["l1_size"] > 0

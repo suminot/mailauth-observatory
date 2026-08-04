@@ -263,6 +263,34 @@ export interface GoldMonth {
   suppressed_sectors: string[];
 }
 
+export interface SaturationPoint {
+  selectors_used: number;
+  selector: string;
+  new_domains: number;
+  cumulative_domains: number;
+  hits: number;
+}
+
+export interface SaturationResult {
+  run_id: string;
+  detected_domains: number;
+  probed_domains: number;
+  selectors_tried: number;
+  dead_selectors: string[];
+  coverage_at_10: number | null;
+  coverage_at_20: number | null;
+  selectors_for_90pct: number | null;
+  selectors_for_99pct: number | null;
+  points: SaturationPoint[];
+  notes: string[];
+  dictionary: {
+    layers: string[];
+    l1_size: number;
+    l3_status: string;
+    l3_enabled: boolean;
+  };
+}
+
 export interface DictionaryFile {
   file: string;
   editable: boolean;
@@ -315,6 +343,8 @@ export const api = {
   job: (id: string) => get<Job>(`/api/jobs/${id}`),
   fingerprints: () => get<FingerprintsResult>("/api/dict/fingerprints"),
   compare: (runId: string) => get<CompareResult>(`/api/compare/${runId}`),
+  saturation: (runId: string) =>
+    get<SaturationResult>(`/api/dict/saturation?run=${encodeURIComponent(runId)}`),
   trace: (runId: string, domain: string) =>
     get<TraceResult>(`/api/trace/${runId}?domain=${encodeURIComponent(domain)}`),
   goldMonths: () => get<{ months: string[] }>("/api/gold/months"),
