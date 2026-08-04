@@ -20,7 +20,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .. import corrections
+from .. import corrections, exclusions
 from ..config import load_yaml
 from ..io import read_parquet
 from ..manifest import RunManifest
@@ -226,6 +226,18 @@ def run(
                     + "; ".join(registry.notes + registry.problems)
                 ),
             )
+        # 計測対象からの除外。**件数を公開する。** 黙って分母から抜くと、
+        # 率が理由の説明できない形で動き、読み手には計測失敗と区別が付かない
+        exclusion_registry = exclusions.load()
+        if not exclusion_registry.available:
+            manifest.add_warning(
+                "EXCLUSIONS_REGISTRY_UNREADABLE",
+                message=(
+                    "計測対象の除外リストを読めていない。**「除外0件」ではない。** "
+                    + "; ".join(exclusion_registry.notes)
+                ),
+            )
+
         overdue = registry.overdue()
         if tier2_requested and (overdue or not registry.available):
             raise PublishBlockedError(
@@ -263,6 +275,7 @@ def run(
             sector_rows=len(sectors),
             pages_checked=pages,
             tier2_enabled=tier2_requested,
+            excluded_by_request=exclusion_registry.to_dict(),
             tier2_days_elapsed=decision.days_elapsed,
             formats=list((cfg.get("tier1") or {}).get("formats") or []),
         )
@@ -277,6 +290,14 @@ def run(
                 sectors=sectors,
                 months=months,
                 cfg=cfg,
+                excluded={
+                    "count": len(exclusion_registry.entries),
+                    "available": exclusion_registry.available,
+                    "note": (
+                        "計測対象からの除外の依頼に応じた件数。"
+                        "「観測できなかった」ではなく「測らないと決めた」分である"
+                    ),
+                },
             )
             manifest.counts.success = sum(n for _, n in written)
             for path, n in written:
@@ -323,6 +344,7 @@ def _write_site_data(
     sectors: list[dict],
     months: list[str],
     cfg: dict,
+    excluded: dict | None = None,
 ) -> list[tuple[Path, int]]:
     """サイトのデータディレクトリに書き出す。
 
@@ -364,6 +386,9 @@ def _write_site_data(
                 "観測できなかったドメインは率の分母から外している。"
                 "「取れなかった」と「無かった」は別の事実として扱う",
             ],
+            # **除外した件数を公開する。** 黙って分母から抜くと、率が理由の
+            # 説明できない形で動き、読み手には計測失敗と区別が付かない
+            "excluded": excluded or {"count": 0, "available": None},
         },
     )
     written.append((meta_path, 1))

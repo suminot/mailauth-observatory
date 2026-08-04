@@ -16,6 +16,8 @@ from typing import Any
 
 from ..config import load_measure_config
 from ..contracts import MeasureTier, QueryPurpose
+from ..exclusions import load as load_exclusions
+from ..exclusions import require_available
 from ..io import read_parquet
 from ..manifest import RunManifest, config_hash
 from ..paths import bronze_dir, config_path, phase_dir, phase_output
@@ -127,14 +129,26 @@ def run(
         if tier:
             measured = measured[measured["measure_tier"] == tier]
 
-        targets = [
-            {
-                "domain": str(r["domain"]),
-                "domain_id": str(r["domain_id"]),
-                "tier": str(r["measure_tier"] or MeasureTier.C),
-            }
-            for _, r in measured.iterrows()
-        ]
+        # 除外の最終確認。**ここが最後の砦である。** P3 の出力が古くても、
+        # DNS クエリを1本も出さないことをここで保証する
+        excluded = load_exclusions()
+        require_available(excluded)
+
+        targets = []
+        dropped_by_request = 0
+        for _, r in measured.iterrows():
+            domain = str(r["domain"])
+            if excluded.excludes(domain, entity_id=str(r.get("entity_id") or "") or None):
+                dropped_by_request += 1
+                excluded.record(domain)
+                continue
+            targets.append(
+                {
+                    "domain": domain,
+                    "domain_id": str(r["domain_id"]),
+                    "tier": str(r["measure_tier"] or MeasureTier.C),
+                }
+            )
         # 同一権威への連続クエリを避ける（倫理的な作法）
         if rate.get("shuffle_domains", True):
             order = shuffled([str(i) for i in range(len(targets))], 20260801)
@@ -153,7 +167,20 @@ def run(
             query_estimate=estimate,
             dkim_dictionary=selectors.state(),
             by_tier=dict(sorted(tier_counts.items())),
+            # **除外は黙って行わない。** 分母から抜いた分を記録する（原則4）
+            excluded=excluded.to_dict(),
         )
+        if dropped_by_request:
+            manifest.add_warning(
+                "EXCLUDED_BY_REQUEST",
+                count=dropped_by_request,
+                sample=sorted(d for d in excluded.domains if d)[:5],
+                message=(
+                    "計測対象からの除外の依頼により、DNS クエリを出していない"
+                    "ドメインがある。**「観測できなかった」ではなく"
+                    "「測らないと決めた」である**"
+                ),
+            )
 
         if backend is None:
             backend = make_backend(method, measure_cfg)
