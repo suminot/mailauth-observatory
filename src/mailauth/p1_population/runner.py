@@ -426,8 +426,14 @@ def run(
     limit: int | None = None,
     source_file: str | Path | None = None,
     dry_run: bool = False,
+    offline: bool = False,
+    rows: list[Any] | None = None,
 ) -> dict[str, Any]:
-    """P1 を実行し、manifest の内容を返す。"""
+    """P1 を実行し、manifest の内容を返す。
+
+    `offline=True` は外部 API に問い合わせない実行。補完しなかったことは
+    manifest に記録する。`rows` はテストで取得層を差し替えるためのもの。
+    """
     from ..config import load_population  # 循環 import を避けるため遅延
 
     cfg = load_population(config)
@@ -447,6 +453,7 @@ def run(
             "config": str(cfg.source_path),
             "limit": limit,
             "dry_run": dry_run,
+            "offline": offline,
             "source_file": str(source_file) if source_file else None,
         },
     ) as manifest:
@@ -460,10 +467,32 @@ def run(
             raise PopulationNotImplementedError(
                 f"母集団 {cfg.id} は未実装です。理由: {cfg.blocked_by or '未記載'}"
             )
+        if cfg.source.primary == "sec_edgar":
+            return _run_sec(
+                cfg,
+                run_id,
+                manifest=manifest,
+                out_dir=out_dir,
+                limit=limit,
+                dry_run=dry_run,
+                offline=offline,
+                rows=rows,
+            )
+        if cfg.source.primary == "wikidata":
+            return _run_foreign(
+                cfg,
+                run_id,
+                manifest=manifest,
+                out_dir=out_dir,
+                limit=limit,
+                dry_run=dry_run,
+                offline=offline,
+                rows=rows,
+            )
         if cfg.source.primary != "edinet_code_list":
             raise PopulationNotImplementedError(
-                f"source.primary={cfg.source.primary} は Sprint 1 では未実装です"
-                "（Sprint 1.5 で wikidata / SEC EDGAR / GLEIF を実装）"
+                f"source.primary={cfg.source.primary} は未実装です"
+                "（対応しているのは edinet_code_list / sec_edgar / wikidata）"
             )
         if cfg.source.edinet_code_list is None:
             raise EdinetError("source.edinet_code_list の設定がありません")
@@ -592,3 +621,286 @@ def run(
             manifest.add_output(OUTPUT_FILENAME, records=n)
 
         return manifest.to_dict()
+
+
+def _run_foreign(
+    cfg: PopulationConfig,
+    run_id: str,
+    *,
+    manifest: RunManifest,
+    out_dir: Path,
+    limit: int | None,
+    dry_run: bool,
+    offline: bool,
+    rows: list[Any] | None = None,
+) -> dict[str, Any]:
+    """米国・グローバル母集団（Wikidata 起点）。
+
+    国内側と分けてあるのは identity の主キーが違うためである。
+    国内は法人番号、こちらは LEI（DESIGN.md configs/populations/global500.yaml）。
+    """
+    from .foreign import build_entities, enrichment_summary, make_clients
+    from .foreign import report as report_foreign
+    from .industry import SicMapper
+    from .wikidata import WikidataError, fetch
+
+    query_path = getattr(cfg.source, "wikidata_query", None)
+    if not query_path:
+        raise PopulationNotImplementedError(
+            f"{cfg.id} に source.wikidata_query がありません"
+        )
+
+    if rows is None:
+        if offline:
+            raise WikidataError(
+                "offline のため Wikidata を引けません。"
+                "取得層を差し替えるか offline を外してください"
+            )
+        rows, fetch_stats = fetch(query_path)
+        manifest.set_breakdown(wikidata=fetch_stats)
+    else:
+        manifest.set_breakdown(wikidata={"injected_rows": len(rows)})
+
+    manifest.counts.input = len(rows)
+    if limit:
+        rows = rows[:limit]
+
+    mapping_path = cfg.source.industry.common_mapping
+    sic_mapper = SicMapper.load(mapping_path) if mapping_path else None
+    if sic_mapper is None:
+        manifest.add_warning(
+            "NO_INDUSTRY_MAPPING",
+            message=(
+                f"{cfg.id} に source.industry.common_mapping が無いため"
+                "共通12分類を付けていない。業種軸での集計ができない"
+            ),
+        )
+
+    sec, gleif, client_notes = make_clients(cfg, offline=offline)
+    for note in client_notes:
+        manifest.add_warning("ENRICH_SKIPPED", message=note)
+
+    try:
+        entities, stats = build_entities(
+            rows,
+            cfg,
+            run_id,
+            manifest=manifest,
+            sec=sec,
+            gleif=gleif,
+            sic_mapper=sic_mapper,
+        )
+    finally:
+        if sec is not None:
+            sec.close()
+        if gleif is not None:
+            gleif.close()
+
+    report_foreign(stats, manifest, cfg=cfg)
+    manifest.set_breakdown(enrichment=enrichment_summary(sec, gleif))
+
+    if limit:
+        manifest.add_warning(
+            "DIFF_SKIPPED_DUE_TO_LIMIT",
+            message=f"--limit {limit} が指定されているため前月差分を計算していない",
+        )
+        this_month = month_date(run_id)
+        for e in entities:
+            e.first_seen_month = e.first_seen_month or this_month
+            e.last_seen_month = this_month
+    else:
+        entities = _diff_with_previous(entities, run_id, manifest)
+
+    active = [e for e in entities if e.status != EntityStatus.DELISTED]
+    manifest.counts.success = len(active)
+    _check_acceptance(entities, cfg, manifest)
+
+    if dry_run:
+        manifest.add_warning("DRY_RUN", message="dry_run のため出力を書いていない")
+    else:
+        df = records_to_frame(entities, ENTITY_ARROW_SCHEMA)
+        n = write_parquet(
+            df,
+            out_dir / OUTPUT_FILENAME,
+            ENTITY_ARROW_SCHEMA,
+            sort_keys=ENTITY_SORT_KEYS,
+            metadata={
+                "mailauth.phase": PHASE,
+                "mailauth.run_id": run_id,
+                "mailauth.population_id": cfg.id,
+                "mailauth.attribution": " / ".join(cfg.attribution),
+            },
+        )
+        manifest.add_output(OUTPUT_FILENAME, records=n)
+
+    return manifest.to_dict()
+
+
+def _run_sec(
+    cfg: PopulationConfig,
+    run_id: str,
+    *,
+    manifest: RunManifest,
+    out_dir: Path,
+    limit: int | None,
+    dry_run: bool,
+    offline: bool,
+    rows: list[Any] | None = None,
+) -> dict[str, Any]:
+    """米国上場企業（SEC EDGAR 起点）。
+
+    **これは Fortune 500 ではない。** 所属リストは CC0 / CC BY-SA の
+    ソースから500社規模で再構築できないため、国内側と同じく
+    「全上場を測り、絞り込みはビューで行う」形にしてある。
+    """
+    from .foreign import make_lei_free_entity
+    from .industry import SicMapper
+    from .sec_edgar import (
+        DEFAULT_EXCHANGES,
+        SecEdgarClient,
+        SecEdgarError,
+        load_exchange_listing,
+    )
+
+    exchanges = getattr(cfg.source, "exchanges", None) or list(DEFAULT_EXCHANGES)
+
+    client: SecEdgarClient | None = None
+    if rows is None:
+        if offline:
+            raise SecEdgarError(
+                "offline のため SEC EDGAR を引けません。"
+                "取得層を差し替えるか offline を外してください"
+            )
+        client = SecEdgarClient()
+        rows, listing_stats = load_exchange_listing(client, exchanges=exchanges)
+        manifest.set_breakdown(sec_listing=listing_stats)
+    else:
+        manifest.set_breakdown(sec_listing={"injected_rows": len(rows)})
+
+    manifest.counts.input = len(rows)
+    if limit:
+        rows = rows[:limit]
+
+    mapping_path = cfg.source.industry.common_mapping
+    sic_mapper = SicMapper.load(mapping_path) if mapping_path else None
+
+    # submissions で website と SIC を埋める。1社1リクエストなので重い。
+    # 失敗しても止めない。件数は manifest に出る（原則4）
+    wants_submissions = any(
+        str(e) == "sec_edgar_submissions" for e in (cfg.source.enrich or [])
+    )
+    if client is not None and wants_submissions and not dry_run:
+        for row in rows:
+            facts = client.facts_for_cik(row.cik)
+            if facts.website and not row.website:
+                row.website = facts.website
+            if facts.sic and not row.sic:
+                row.sic, row.sic_label = facts.sic, facts.sic_label
+    elif wants_submissions:
+        manifest.add_warning(
+            "ENRICH_SKIPPED_SEC_SUBMISSIONS",
+            message=(
+                "submissions を引いていないため official_url と SIC が空になる。"
+                "「サイトが無い」のではなく「引いていない」（原則5）"
+            ),
+        )
+
+    # 公式サイトと LEI は Wikidata（CC0）から1クエリで補う。
+    # SEC の website 欄は実測でほぼ空だった（原則5 の観点では
+    # 「サイトが無い」ではなく「SEC が持っていない」）
+    identity: dict[str, dict[str, str]] = {}
+    wants_wikidata = any(
+        str(e) == "wikidata_identity" for e in (cfg.source.enrich or [])
+    )
+    identity_query = getattr(cfg.source, "wikidata_identity_query", None)
+    if wants_wikidata and identity_query and not offline:
+        from .wikidata import WikidataError, fetch_cik_identity
+
+        try:
+            identity, identity_stats = fetch_cik_identity(identity_query)
+            manifest.set_breakdown(wikidata_identity=identity_stats)
+        except WikidataError as exc:
+            manifest.add_warning("ENRICH_SKIPPED_WIKIDATA", message=str(exc))
+    elif wants_wikidata:
+        manifest.add_warning(
+            "ENRICH_SKIPPED_WIKIDATA",
+            message=(
+                "Wikidata を引いていないため official_url と LEI が空になる。"
+                "「無い」のではなく「引いていない」（原則5）"
+            ),
+        )
+
+    entities: list[Entity] = []
+    industry_missing = 0
+    matched_identity = 0
+    for row in rows:
+        extra = identity.get(row.cik) or {}
+        if extra.get("website") and not row.website:
+            row.website = extra["website"]
+            matched_identity += 1
+        entity = make_lei_free_entity(row, cfg, run_id, sic_mapper=sic_mapper)
+        if extra.get("lei"):
+            entity.lei = extra["lei"]
+        if entity.common12_code is None:
+            industry_missing += 1
+        entities.append(entity)
+
+    manifest.set_breakdown(
+        sec_enrichment={
+            "submissions_fetched": client.stats.submissions_fetched if client else 0,
+            "submissions_failed": client.stats.submissions_failed if client else 0,
+            "website_found": client.stats.website_found if client else 0,
+            "sic_found": client.stats.sic_found if client else 0,
+            "notes": (client.stats.notes[:5] if client else []),
+        },
+        industry_missing=industry_missing,
+        exchanges=list(exchanges),
+        wikidata_matched=matched_identity,
+        lei_present=sum(1 for e in entities if e.lei),
+    )
+    if client is not None:
+        client.close()
+
+    if industry_missing:
+        manifest.add_warning(
+            "INDUSTRY_UNMAPPED",
+            count=industry_missing,
+            sample=[c for c, _ in (sic_mapper.top_unmapped(5) if sic_mapper else [])],
+            message="SIC から共通12分類に写せなかった企業がある。写像CSVに追記すること",
+        )
+
+    if limit:
+        manifest.add_warning(
+            "DIFF_SKIPPED_DUE_TO_LIMIT",
+            message=f"--limit {limit} が指定されているため前月差分を計算していない",
+        )
+        this_month = month_date(run_id)
+        for e in entities:
+            e.first_seen_month = e.first_seen_month or this_month
+            e.last_seen_month = this_month
+    else:
+        entities = _diff_with_previous(entities, run_id, manifest)
+
+    active = [e for e in entities if e.status != EntityStatus.DELISTED]
+    manifest.counts.success = len(active)
+    _check_acceptance(entities, cfg, manifest)
+
+    if dry_run:
+        manifest.add_warning("DRY_RUN", message="dry_run のため出力を書いていない")
+    else:
+        df = records_to_frame(entities, ENTITY_ARROW_SCHEMA)
+        n = write_parquet(
+            df,
+            out_dir / OUTPUT_FILENAME,
+            ENTITY_ARROW_SCHEMA,
+            sort_keys=ENTITY_SORT_KEYS,
+            metadata={
+                "mailauth.phase": PHASE,
+                "mailauth.run_id": run_id,
+                "mailauth.population_id": cfg.id,
+                "mailauth.attribution": " / ".join(cfg.attribution),
+            },
+        )
+        manifest.add_output(OUTPUT_FILENAME, records=n)
+
+    return manifest.to_dict()

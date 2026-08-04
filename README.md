@@ -115,7 +115,41 @@ cd console/frontend && npm install && npm run dev   # http://localhost:5173
 | `jp-prime` | 東証プライム | 設定はあるが、**市場区分で絞れない**（下記） |
 | `jp-standard` / `jp-growth` | 東証スタンダード / グロース | 同上 |
 | `jp-nikkei225` | 日経225 | 構成銘柄リストの利用条件が未確認のため無効 |
-| `us-fortune500` / `global500` | Fortune 500 / Global 500 | Sprint 1.5 |
+| `us-all-listed` | NYSE / Nasdaq / CBOE 上場（実測 6,059社） | 実装済 |
+| `us-fortune500` / `global500` | Fortune 500 / Global 500 | **所属リストが再構築できない**（下記） |
+
+### Fortune 500 は母集団ではなくビューとして扱う
+
+実測した結果、所属リストが CC0 / CC BY-SA のソースから500社規模では
+再構築できないことが分かった。
+
+- **Wikidata**: Fortune 500 (Q76615) を参照する企業は5社しかない。DESIGN.md の
+  SPARQL が使う `P31448` は0件で、実質未整備
+- **Wikipedia**「List of largest companies in the United States by revenue」は
+  上位100社まで。CC BY-SA 4.0 なので使えるが500社に足りない
+- **fortune.com** はスクレイピングと二次利用を規約で禁止
+
+そこで国内側と同じ設計に揃えた。**全上場を測り、絞り込みはビューで行う。**
+所属リストが手に入ったら `configs/views/` に足せばよく、計測をやり直さずに済む。
+
+identity 側の仕組み（GLEIF 照会、LEI を主キーとする entity_id、母集団をまたぐ
+重複排除）は実装済みで、リストが入手できれば母集団として動かせる状態にしてある。
+
+### 米国側の identity
+
+主キーは LEI である。全世界を1つのキーで揃えられるのはこれだけで、SEC EDGAR は
+米国提出者しかカバーせず、法人番号も EDINET コードも日本にしかない。ただし
+**LEI は全社にあるわけではない**ので、欠損時は CIK → 法人番号 → 正規化した商号の
+順にフォールバックし、**どのキーで同定したかを必ず記録する。**
+
+商号一致は最も弱い根拠なので、**どちらかに LEI / CIK / 法人番号があれば商号では
+結合しない。** LEI が違う2社は別会社である。商号だけで結合したものは manifest に
+件数と例を出す。
+
+公式サイトの補完に注意点がある。**SEC の `submissions` は `website` 欄を持っているが
+実測ではほぼ空だった**（40社中0件）。`official_url` が無いと P2 の候補生成が起点を
+失うので、Wikidata の `P856` を CIK で突合して補っている。6,000社を1社ずつ引くと
+WDQS に不当な負荷をかけるので、**1クエリで全件取って手元で突合する。**
 
 ## ビュー ── 計測は一度、見方は切り替える
 

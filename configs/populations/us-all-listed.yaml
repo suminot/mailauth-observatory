@@ -1,0 +1,56 @@
+# 米国上場企業（取引所によらず）
+#
+# **これは Fortune 500 ではない。** Fortune の順位は編集著作物であり、
+# CC0 / CC BY-SA のソースからは500社規模で再構築できない
+# （Wikidata に所属情報が実質なく、Wikipedia の該当記事は上位100社まで）。
+#
+# 国内側と同じ設計にしてある。全上場を測っておけば、Fortune 500 の
+# 所属リストが手に入ったときにビューとして重ねられる。母集団を変えて
+# 計測し直すと月次の比較ができなくなる。
+id: us-all-listed
+label: 米国上場企業（NYSE / Nasdaq / CBOE）
+country: US
+enabled: true
+implemented: true
+
+source:
+  # SEC EDGAR の company_tickers_exchange.json。パブリックドメイン
+  primary: sec_edgar
+  exchanges: [NYSE, Nasdaq, CBOE]   # OTC は上場企業とは言えないので外す
+  # SEC の submissions は website 欄がほぼ空（実測 40社中0件）。
+  # 公式サイトは Wikidata（CC0）の P856 から補う
+  wikidata_identity_query: configs/populations/_sparql/us_cik_identity.rq
+  enrich:
+    - sec_edgar_submissions         # SIC（website はほぼ取れない）
+    - wikidata_identity             # official_url と LEI
+  industry:
+    primary_scheme: SIC
+    common_mapping: configs/industry/sic_to_common12.csv
+
+refresh:
+  cadence: monthly
+  method: api
+  cache_ttl_hours: 24
+
+acceptance:
+  # 2026-08 の実測で 6,065 社（CIK 重複除去後）
+  expected_count_min: 5000
+  expected_count_max: 7500
+  max_missing_rate:
+    # 2026-08 実測: official_url 被覆 25.6%（1,553 / 6,065）、LEI 20.1%。
+    # Wikidata に項目がある企業しか付かず、小型株ほど項目が無い。
+    # SEC の submissions は website 欄がほぼ空なので補えない。
+    #
+    # **この閾値は「これ以上悪くなったら気付く」ための線である。**
+    # 被覆率そのものが低いことは既知の制約で、P2 の候補生成が
+    # 手動辞書と CT ログに強く依存することを意味する
+    official_url: 0.80
+    common12: 0.05
+
+constraints:
+  # SEC は User-Agent 必須・10 req/s 未満。MAILAUTH_CONTACT_EMAIL を .env に置く
+  requires_contact_email: true
+
+attribution:
+  - "Source: U.S. SEC EDGAR (public domain)"
+  - "Source: Wikidata (CC0)"

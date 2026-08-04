@@ -1,12 +1,21 @@
 # Fortune Global 500
 #
-# Sprint 1.5 で実装する。Sprint 1 では実行するとその旨のエラーになる。
+# **母集団としては実装しない。** us-fortune500 と同じ理由で、所属リストが
+# CC0 / CC BY-SA のソースから500社規模で再構築できない。
+#
+# 加えて、米国以外の企業は SEC EDGAR の対象外なので公式サイトも一次分類も
+# 取れない。全世界を1つのキーで揃えられるのは LEI だけだが、LEI から
+# 「Global 500 に入っているか」は分からない。
+#
+# identity 側の仕組み（GLEIF 照会、LEI を主キーとする entity_id、
+# 母集団をまたぐ重複排除）は src/mailauth/p1_population/ に実装済みで、
+# 所属リストが手に入れば母集団として動かせる状態にしてある。
 id: global500
 label: Fortune Global 500
 country: MULTI                 # 単一国に紐づかない
 enabled: true
 implemented: false
-blocked_by: Sprint 1.5（P1 米国・グローバル）で実装
+blocked_by: 所属リストが CC0 / CC BY-SA のソースから再構築できない。identity 側の仕組みは実装済み
 
 source:
   primary: wikidata

@@ -1,0 +1,15 @@
+#+ CIK を持つ企業の公式サイトと LEI を Wikidata（CC0）から引く。
+#+
+#+ SEC EDGAR の submissions は website 欄を持っているが、実測では
+#+ ほぼ全件が空だった（40社中0件）。official_url が無いと P2 の候補生成が
+#+ 起点を失うので、CC0 のソースから補う。
+#+
+#+ **1クエリで全件取る。** 6,000社を1社ずつ引くと WDQS に不当な負荷をかける。
+#+ 2026-08 の実測で 4,199行、うち website 3,975件、LEI 2,664件。
+#+ endpoint: https://query.wikidata.org/sparql
+
+SELECT ?cik ?website ?lei WHERE {
+  ?company wdt:P5531 ?cik .                  # SEC Central Index Key
+  OPTIONAL { ?company wdt:P856  ?website }   # 公式サイト
+  OPTIONAL { ?company wdt:P1278 ?lei }       # Legal Entity Identifier
+}
