@@ -77,6 +77,25 @@ def load_manual_domains(path: str | Path) -> dict[str, list[tuple[str, str]]]:
     return out
 
 
+#: rua 宛先が何社に共用されていたらベンダーと見なすか。
+#: **1社では判断できない。** 2社以上が同じ宛先を使っていれば、
+#: その両方が所有しているはずがない
+SHARED_RUA_MIN_ENTITIES = 2
+
+#: DNS から辿っただけの経路。**所有の裏付けにはならない。**
+#: redirect 先も rua 宛先も、他社の基盤を指していることがある
+DNS_DERIVED_METHODS = frozenset({DiscoveryMethod.SPF_REDIRECT, DiscoveryMethod.DMARC_RUA})
+
+
+def _domain_entities(collectors: dict[str, _Collector]) -> dict[str, set[str]]:
+    """domain -> それを候補に持つ entity_id の集合。"""
+    out: dict[str, set[str]] = {}
+    for entity_id, collector in collectors.items():
+        for domain in collector.found:
+            out.setdefault(domain, set()).add(entity_id)
+    return out
+
+
 class _Collector:
     """1社ぶんの候補を集める。同じドメインが複数経路で出たら経路を足す。
 
@@ -155,6 +174,7 @@ def _discover_from_dns(
     use_rua: bool,
     vendor_patterns: list[tuple[str, re.Pattern[str]]],
     vendor_hits: dict[str, int],
+    unaligned_rua: dict[str, set[str]],
 ) -> None:
     """SPF redirect と DMARC rua から候補を足す。
 
@@ -181,6 +201,24 @@ def _discover_from_dns(
                         # 第三者のレポート処理サービス。その企業のドメインではない。
                         # P6 の dmarc_vendor 推定には有用なので件数だけ残す
                         vendor_hits[vendor] = vendor_hits.get(vendor, 0) + 1
+                        continue
+                    if etld_plus_one(domain) != etld_plus_one(apex):
+                        # **rua は自社ドメイン宛のときだけ候補にする。**
+                        #
+                        # 「example.co.jp の rua が vendor.jp を指している」が
+                        # 示すのは「vendor.jp が example のレポートを受け取る」
+                        # ことだけで、**example が vendor.jp を所有している証拠に
+                        # はならない。** 候補に入れると他社のドメインを
+                        # その企業の送信ドメインとして公開してしまう。
+                        #
+                        # 実測（2026-08）で securemx.jp が keyence.co.jp の
+                        # ドメインとして confidence=likely まで通っていた。
+                        # レポート処理サービス自身が MX/SPF/DMARC を持っている
+                        # ため、ドメイン単体の実証では見分けが付かない。
+                        #
+                        # 辞書に無いものはベンダー名が分からないだけなので、
+                        # 同定の作業リストとして件数を残す
+                        unaligned_rua.setdefault(etld_plus_one(domain) or domain, set()).add(apex)
                         continue
                     collector.add(domain, DiscoveryMethod.DMARC_RUA, f"rua of {apex}")
 
@@ -268,6 +306,9 @@ def run(
 
         vendor_patterns = load_report_vendor_patterns()
         vendor_hits: dict[str, int] = {}
+        # 辞書に無く、自社ドメインでもない rua 宛先。**候補にはしない。**
+        # ベンダー名が分からないだけなので、同定の作業リストとして残す
+        unaligned_rua: dict[str, set[str]] = {}
 
         per_entity_limit = int(limits.get("max_per_entity", 500))
         total_limit = int(limits.get("max_candidates_total", 30000))
@@ -354,6 +395,7 @@ def run(
                     bool(discovery.get("dmarc_rua")),
                     vendor_patterns,
                     vendor_hits,
+                    unaligned_rua,
                 )
 
             total += len(collector.found)
@@ -367,6 +409,50 @@ def run(
                 message=(
                     f"候補総数が上限 {total_limit} に達したため展開を打ち切った。"
                     "処理していない企業が残っている"
+                ),
+            )
+
+        # -- rua 由来のみの共用ドメインを落とす ------------------------------
+        # **1つのドメインが複数の無関係な企業の rua 宛先になっているなら、
+        # その全社が所有しているはずがない。** 第三者のレポート処理サービスである。
+        #
+        # 辞書（configs/vendors/dmarc_rua_vendors.yaml）でも弾いているが、
+        # 実測すると辞書に無いベンダーが出てくる（powerdmarc.com / smtps.jp /
+        # teams.ms を確認）。辞書は追いつかないので、**ベンダー名を知らなくても
+        # 効く構造的な判定**を併せて持つ。
+        #
+        # 落とすのは rua だけで見つかったものに限る。official_url や ct_log の
+        # 裏付けがあるドメインは、グループ共用の本物なので残す。
+        rua_only_shared: dict[str, list[str]] = {}
+        for domain, entity_ids in _domain_entities(collectors).items():
+            if len(entity_ids) < SHARED_RUA_MIN_ENTITIES:
+                continue
+            methods = {
+                m
+                for eid in entity_ids
+                for m in collectors[eid].found.get(domain, {})
+            }
+            # official_url / ct_log / manual は所有の裏付けなので、
+            # それが1つでもあれば本物のグループ共用ドメインとして残す。
+            # DNS 由来の経路（rua / redirect）だけで見つかったものは
+            # **他社の基盤である可能性が高い**（ESP の redirect 先など）
+            if methods and methods <= DNS_DERIVED_METHODS:
+                rua_only_shared[domain] = sorted(entity_ids)
+
+        for domain, entity_ids in rua_only_shared.items():
+            for entity_id in entity_ids:
+                collectors[entity_id].found.pop(domain, None)
+
+        if rua_only_shared:
+            manifest.add_warning(
+                "SHARED_RUA_DOMAIN_DROPPED",
+                count=len(rua_only_shared),
+                sample=sorted(rua_only_shared)[:5],
+                message=(
+                    "複数企業の rua 宛先になっているドメインを候補から落とした。"
+                    "**第三者のレポート処理サービスを企業のドメインとして計測しない。** "
+                    "ベンダー名が分かれば configs/vendors/dmarc_rua_vendors.yaml に、"
+                    "本当にグループ共用なら configs/domains/manual_domains.csv に足すこと"
                 ),
             )
 
@@ -417,6 +503,20 @@ def run(
                 message="同一ドメインが複数企業に紐づいている。持株会社・グループ共用の可能性",
             )
 
+        if unaligned_rua:
+            manifest.add_warning(
+                "UNALIGNED_RUA_TARGET",
+                count=len(unaligned_rua),
+                sample=sorted(unaligned_rua)[:5],
+                message=(
+                    "自社ドメインでない rua 宛先があった。**候補にしていない。** "
+                    "第三者のレポート処理サービスであり、その企業の送信ドメイン"
+                    "ではない。ベンダー名が分かれば "
+                    "configs/vendors/dmarc_rua_vendors.yaml に足すと "
+                    "P6 の dmarc_vendor 推定が埋まる"
+                ),
+            )
+
         zero = sum(1 for n in per_entity if n == 0)
         manifest.counts.success = len(collectors) - zero
         manifest.counts.skipped = zero
@@ -433,6 +533,14 @@ def run(
             shared_domains=len(shared),
             # rua が第三者サービスを指していた件数。P6 の dmarc_vendor 推定の材料
             dmarc_report_vendors=dict(sorted(vendor_hits.items())),
+            # 辞書に無いのに複数社で共用されていた rua 宛先。**同定の作業リスト。**
+            # ベンダー名が分かれば dmarc_rua_vendors.yaml に足す
+            shared_rua_dropped={d: v for d, v in sorted(rua_only_shared.items())},
+            # 自社ドメインでない rua 宛先。**候補にしていない。**
+            # ベンダー名が分かれば dmarc_rua_vendors.yaml に足す作業リスト
+            unaligned_rua_targets={
+                d: sorted(v) for d, v in sorted(unaligned_rua.items())
+            },
             # **除外は黙って行わない。** 分母から抜いた分を記録する（原則4）
             excluded=excluded.to_dict(),
         )

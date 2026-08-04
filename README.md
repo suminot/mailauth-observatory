@@ -253,12 +253,33 @@ DESIGN.md が「本プロジェクト最大の難所」「システムの中核�
 | `official_url` | P1 が gBizINFO から取った公式サイトのドメイン |
 | `ct_log` | crt.sh の SAN から eTLD+1 を抽出。1ドメインに数千件返るので apex に丸めて重複排除 |
 | `spf_redirect` | SPF の `redirect=` が別ドメインを指していれば候補に |
-| `dmarc_rua` | `_dmarc` の rua 宛先が自社ドメインなら候補に |
+| `dmarc_rua` | `_dmarc` の rua 宛先が**自社ドメインなら**候補に（下記） |
 | `manual` | 手動辞書。グループ会社・事業ブランド用（`configs/domains/`） |
 
-rua が第三者のレポート処理サービス（`dmarc25.jp` 等）を指している場合は候補にしない。
-入れると1つのベンダードメインが数百社に紐づき、他社のドメインを計測してしまう。
-判定は `configs/vendors/dmarc_rua_vendors.yaml` を使う。
+### rua 宛先は自社ドメインのときだけ候補にする
+
+「example.co.jp の rua が vendor.jp を指している」が示すのは「vendor.jp が example の
+レポートを受け取る」ことだけで、**example が vendor.jp を所有している証拠にはならない。**
+候補に入れると、他社のドメインをその企業の送信ドメインとして公開してしまう。
+
+判定は3段。**辞書だけに頼らない。**
+
+1. `configs/vendors/dmarc_rua_vendors.yaml` に載っているベンダーなら候補にしない
+   （件数は P6 の `dmarc_vendor` 推定の材料として残す）
+2. **辞書に無くても、rua 宛先が自社ドメインと不一致なら候補にしない。**
+   `unaligned_rua_targets` として manifest に出す（ベンダー同定の作業リスト）
+3. DNS から辿っただけの経路（`spf_redirect` / `dmarc_rua`）でしか見つからず、
+   かつ**複数社が同じドメインを指している**なら落とす。その全社が所有している
+   はずがない（ESP の redirect 先など）。`official_url` / `ct_log` / `manual` の
+   裏付けがあれば本物のグループ共用として残す
+
+実測（2026-08、日本の上場企業17社）で辞書に無いベンダーが3つ出た。**2 の判定が
+無ければ `securemx.jp` が KEYENCE のドメインとして `confidence=likely` まで通っていた。**
+レポート処理サービス自身が MX/SPF/DMARC を持っているため、ドメイン単体の実証では
+見分けが付かない。
+
+本当にグループ共用のドメインを落としてしまった場合は
+`configs/domains/manual_domains.csv` に足せば `manual` の裏付けが付いて残る。
 
 ### CT ログのキャッシュは月で区切る
 

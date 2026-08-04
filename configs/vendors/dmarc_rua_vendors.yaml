@@ -76,3 +76,30 @@ rules:
       record: DMARC_RUA_DOMAIN
       pattern: '(^|\.)dmarc\.postmarkapp\.com$'
     confidence: high
+
+  # 実測で確認したもの（2026-08、日本の上場企業17社）。
+  # sony.co.jp と fastretailing.com の rua が rua.powerdmarc.com を指していた
+  - id: rua-powerdmarc-01
+    vendor: PowerDMARC
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)powerdmarc\.com$'
+    confidence: high
+
+# 実測で見つかったが**ベンダー名を確認できていない** rua 宛先。
+#
+# 名前を書かないのは、確認できていないものを断定しないためである
+# （原則2 の延長。推察を事実として扱わない）。ベンダー名が分かった時点で
+# 上の rules に移し、ここから消す。
+#
+# ドメイン候補としては P2 が構造的に落としている（複数の無関係な企業が
+# 同じ rua 宛先を使っているなら、その全社が所有しているはずがない）。
+# つまり**名前が分からなくても他社ドメインの誤計測は起きない。**
+# ここに残すのは P6 の dmarc_vendor 推定を埋めるための作業リスト。
+unidentified_rua_domains:
+  - domain: smtps.jp
+    observed_for: [ajinomoto.com, mufg.jp]
+    note: 宛先は dmarc.smtps.jp / dp.smtps.jp。テナントごとの不透明なID形式
+  - domain: teams.ms
+    observed_for: [ajinomoto.com]
+    note: 宛先は 471eb9b4.ajinomoto.com@jp.teams.ms。ローカル部に顧客ドメインを含む

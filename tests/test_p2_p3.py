@@ -730,3 +730,126 @@ def test_p2_passes_the_run_id_as_the_cache_month():
 
     source = inspect.getsource(p2.run)
     assert "month=run_id" in source, "CrtShClient に月を渡していない"
+
+
+# ===========================================================================
+# rua 宛先は自社ドメインのときだけ候補にする
+# ===========================================================================
+
+
+def _rua_answers(company: str, rua_domain: str):
+    """company の _dmarc が rua_domain 宛のレポートを要求している状態。"""
+    from mailauth.resolver import make_answer
+
+    return {
+        (company, "TXT"): make_answer(company, "TXT", ["v=spf1 -all"]),
+        (f"_dmarc.{company}", "TXT"): make_answer(
+            f"_dmarc.{company}",
+            "TXT",
+            [f"v=DMARC1; p=none; rua=mailto:abc123@{rua_domain}"],
+        ),
+    }
+
+
+def test_a_third_party_rua_target_is_not_a_candidate(seeded_run):
+    """**他社のドメインをその企業の送信ドメインとして公開しない。**
+
+    「example の rua が vendor.jp を指している」が示すのは「vendor.jp が
+    example のレポートを受け取る」ことだけで、example が vendor.jp を
+    所有している証拠にはならない。
+
+    実測（2026-08）では securemx.jp が keyence.co.jp のドメインとして
+    confidence=likely まで通っていた。レポート処理サービス自身が
+    MX/SPF/DMARC を持っているため、ドメイン単体の実証では見分けが付かない。
+    """
+    from mailauth.resolver import StaticResolver
+
+    answers = _rua_answers("sample-info.co.jp", "reports.vendor-example.jp")
+    result = run_p2(run_id=RUN, resolver=StaticResolver(answers), ct_source=CT)
+
+    assert "vendor-example.jp" not in set(candidates()["domain"])
+    targets = result["breakdown"]["unaligned_rua_targets"]
+    assert "vendor-example.jp" in targets
+    assert "sample-info.co.jp" in targets["vendor-example.jp"]
+    assert any(w["code"] == "UNALIGNED_RUA_TARGET" for w in result["warnings"])
+
+
+def test_a_self_addressed_rua_target_is_still_a_candidate(seeded_run):
+    """自社ドメイン宛の rua は候補にする（仕様どおり）。"""
+    from mailauth.resolver import StaticResolver
+
+    answers = _rua_answers("sample-info.co.jp", "dmarc.sample-info.co.jp")
+    result = run_p2(run_id=RUN, resolver=StaticResolver(answers), ct_source=CT)
+
+    rows = candidates()
+    rua = rows[rows["discovery_method"] == "dmarc_rua"]
+    assert "sample-info.co.jp" in set(rua["domain"])
+    assert result["breakdown"]["unaligned_rua_targets"] == {}
+
+
+def test_a_known_vendor_is_counted_but_not_added(seeded_run):
+    """辞書にあるベンダーは候補にせず、P6 の材料として件数だけ残す。"""
+    from mailauth.resolver import StaticResolver
+
+    answers = _rua_answers("sample-info.co.jp", "rua.powerdmarc.com")
+    result = run_p2(run_id=RUN, resolver=StaticResolver(answers), ct_source=CT)
+
+    assert "powerdmarc.com" not in set(candidates()["domain"])
+    assert result["breakdown"]["dmarc_report_vendors"].get("PowerDMARC") == 1
+    # 辞書で判別できたものは同定の作業リストに出さない
+    assert "powerdmarc.com" not in result["breakdown"]["unaligned_rua_targets"]
+
+
+def test_a_dns_only_domain_shared_by_two_entities_is_dropped(seeded_run):
+    """**同じ基盤を複数社が指していたら、その全社の所有ではない。**
+
+    ESP の redirect 先のように、DNS から辿っただけの経路で複数社に
+    共用されているドメインは他社の基盤である。辞書に無くても落とせる。
+    """
+    from mailauth.resolver import StaticResolver, make_answer
+
+    shared = "esp-example.net"
+    answers = {}
+    for company in ("sample-info.co.jp", "sample-motor.co.jp"):
+        answers[(company, "TXT")] = make_answer(
+            company, "TXT", [f"v=spf1 redirect=_spf.{shared}"]
+        )
+    result = run_p2(run_id=RUN, resolver=StaticResolver(answers), ct_source=CT)
+
+    assert shared not in set(candidates()["domain"])
+    dropped = result["breakdown"]["shared_rua_dropped"]
+    assert shared in dropped
+    assert len(dropped[shared]) == 2
+    assert any(w["code"] == "SHARED_RUA_DOMAIN_DROPPED" for w in result["warnings"])
+
+
+def test_a_shared_domain_with_ownership_evidence_is_kept(seeded_run):
+    """official_url の裏付けがあるドメインは残す。本物のグループ共用がある。"""
+    from mailauth.resolver import StaticResolver, make_answer
+
+    # 2社の redirect 先が、1社目の公式ドメインそのものだった場合
+    answers = {
+        ("sample-motor.co.jp", "TXT"): make_answer(
+            "sample-motor.co.jp", "TXT", ["v=spf1 redirect=_spf.sample-info.co.jp"]
+        ),
+    }
+    run_p2(run_id=RUN, resolver=StaticResolver(answers), ct_source=CT)
+    rows = candidates()
+    methods = set(rows[rows["domain"] == "sample-info.co.jp"]["discovery_method"])
+    # official_url の裏付けがあるので落ちない
+    assert "official_url" in methods
+
+
+def test_the_docstring_rule_matches_the_implementation():
+    """仕様に「自社ドメインなら」と書いたなら、実装がそれを確かめること。
+
+    キャッシュの月スコープと同じで、**書いてあるのに実装が伴っていない**のが
+    この種のバグの入り口だった。
+    """
+    import inspect
+
+    from mailauth.p2_candidates import runner as p2
+
+    assert "rua 宛先が自社ドメインなら候補に" in (p2.__doc__ or "")
+    source = inspect.getsource(p2._discover_from_dns)
+    assert "etld_plus_one(domain) != etld_plus_one(apex)" in source
