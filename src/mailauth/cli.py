@@ -710,8 +710,18 @@ def offload_cmd(
         f"[offload] 対象 {plan.count} 件 / {plan.total_bytes} バイト → "
         f"送信 {result.uploaded} 件 失敗 {result.failed} 件"
     )
+    # **宛先ごとに分けて出す。** 片方だけ失敗したときにどちらを再実行すれば
+    # よいか分からないと、再実行が全宛先へのやり直しになる
+    for name, sent in sorted(result.by_destination.items()):
+        typer.echo(
+            f"  {name}: 送信 {sent.uploaded} 件 失敗 {sent.failed} 件"
+            + (f"（{sent.reason}）" if sent.reason else "")
+        )
     if result.reason:
         typer.secho(f"  ⚠ {result.reason}", fg="yellow")
+    for note in result.notes:
+        # 持続性の基準を満たしていないことは、送信が成功していても言う
+        typer.secho(f"  ⚠ {note}", fg="yellow")
     for error in result.errors:
         typer.secho(f"  ✗ {error}", fg="red", err=True)
     if result.failed:
