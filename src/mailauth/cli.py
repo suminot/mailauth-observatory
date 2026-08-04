@@ -175,6 +175,49 @@ def p4_measure(
         raise typer.Exit(code=1)
 
 
+@app.command("p4-compare")
+def p4_compare(
+    run: RunOption = "",
+    methods: Annotated[
+        str | None,
+        typer.Option("--methods", help="比べる手法。既定は bronze にある全部"),
+    ] = None,
+    resolvers: Annotated[
+        str | None,
+        typer.Option(
+            "--resolvers",
+            help="リゾルバ間のクロスチェック。指定すると抽出分だけ DNS に出る",
+        ),
+    ] = None,
+    sample: Annotated[
+        float | None,
+        typer.Option("--sample", help="クロスチェックの抽出率。既定は measure.yaml"),
+    ] = None,
+    limit: LimitOption = None,
+    dry_run: DryRunOption = False,
+) -> None:
+    """P4 手法比較 ── 複数手法・複数リゾルバの観測差分を出す。"""
+    from .p4_measure import MissingInputError, UnknownBackendError
+    from .p4_measure.compare_runner import run as run_compare
+
+    run_id = validate_run_id(run or default_run_id())
+    try:
+        result = run_compare(
+            run_id=run_id,
+            methods=[m.strip() for m in methods.split(",")] if methods else None,
+            resolvers=[r.strip() for r in resolvers.split(",")] if resolvers else None,
+            sample_rate=sample,
+            limit=limit,
+            dry_run=dry_run,
+        )
+    except (MissingInputError, UnknownBackendError) as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(code=2) from exc
+    _echo_summary(result)
+    if result.get("status") == "failed":
+        raise typer.Exit(code=1)
+
+
 @app.command("p5-parse")
 def p5_parse(
     run: RunOption = "",

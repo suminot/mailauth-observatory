@@ -167,6 +167,37 @@ export interface TraceResult {
   };
 }
 
+export interface CompareSample {
+  domain: string;
+  query_name: string;
+  query_type: string;
+  purpose: string;
+  detail: Record<string, unknown>;
+}
+
+export interface CompareResult {
+  run_id: string;
+  methods: string[];
+  bronze_methods: string[];
+  compared: number;
+  agreement_rate: number | null;
+  counts: Record<string, number>;
+  samples: Record<string, CompareSample[]>;
+  plan_differs: Record<string, Record<string, string[]>>;
+  stats: Record<
+    string,
+    {
+      records: number;
+      observed: number;
+      record_present: number;
+      by_rcode: Record<string, number>;
+    }
+  >;
+  crosscheck: Record<string, Record<string, unknown>>;
+  kind_labels: Record<string, string>;
+  notes: string[];
+}
+
 export interface GoldStats {
   measured_month: string;
   population_id: string;
@@ -283,6 +314,7 @@ export const api = {
     ),
   job: (id: string) => get<Job>(`/api/jobs/${id}`),
   fingerprints: () => get<FingerprintsResult>("/api/dict/fingerprints"),
+  compare: (runId: string) => get<CompareResult>(`/api/compare/${runId}`),
   trace: (runId: string, domain: string) =>
     get<TraceResult>(`/api/trace/${runId}?domain=${encodeURIComponent(domain)}`),
   goldMonths: () => get<{ months: string[] }>("/api/gold/months"),

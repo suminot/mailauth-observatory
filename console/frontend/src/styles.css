@@ -704,3 +704,55 @@ ul.plain li {
 .trace-table.evidence {
   margin-top: 6px;
 }
+
+/* --- 画面4 手法比較 --- */
+
+.compare section {
+  margin-top: 24px;
+}
+
+.compare h2 {
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.compare-table th,
+.compare-table td {
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-weight: normal;
+  vertical-align: top;
+}
+
+.compare-table thead th {
+  font-weight: 600;
+  background: #f2f4f6;
+}
+
+.compare-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 「両方観測できたのに食い違う」だけを重く見せる。
+   「片方が引けなかった」は手法の問題ですらないことが多い。 */
+.compare-table tr.kind-bad td { background: #fdf2f2; }
+.compare-table tr.kind-warn td { background: #fdf8ef; }
+.compare-table tr.kind-ok td { color: var(--muted); }
+
+.compare-table code {
+  word-break: break-all;
+}
