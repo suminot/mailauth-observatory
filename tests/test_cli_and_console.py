@@ -760,3 +760,72 @@ def test_trace_does_not_expose_per_company_gold_numbers(client, monkeypatch):
             "suppressed", "n_entities", "note",
         }
     assert "個社の数字は出していない" in gold["note"]
+
+
+# -- 画面4 手法比較 ----------------------------------------------------------
+
+
+def test_compare_api_requires_a_run(client):
+    assert client.get("/api/compare/2099-01").status_code == 404
+
+
+def test_compare_api_requires_p4_compare(client, edinet_sample, jp_config):
+    runner.invoke(
+        app,
+        ["p1-population", "--config", jp_config, "--run", "2026-08",
+         "--source-file", str(edinet_sample)],
+    )
+    resp = client.get("/api/compare/2026-08")
+    assert resp.status_code == 404
+    assert "p4-compare" in resp.json()["detail"]
+
+
+def test_compare_api_returns_what_p4_compare_wrote(client):
+    """コンソールで比較を再計算しない。CLI と数字が違うと信用できない。"""
+    from mailauth.contracts import DOMAIN_ARROW_SCHEMA, MeasureTier
+    from mailauth.io import write_parquet
+    from mailauth.p4_measure import run as run_p4
+    from mailauth.p4_measure.compare_runner import run as run_compare
+    from mailauth.paths import phase_output
+    from mailauth.resolver import StaticResolver, make_answer
+
+    write_parquet(
+        [
+            {
+                "domain_id": "d:1", "entity_id": "jp:1", "run_id": "2026-08",
+                "domain": "a.example.jp", "domain_role": "primary",
+                "confidence": "confirmed", "is_measured": True,
+                "measure_tier": MeasureTier.C, "evidence_count": 3,
+            }
+        ],
+        phase_output("2026-08", "p3_domains", "domains.parquet"),
+        DOMAIN_ARROW_SCHEMA,
+    )
+
+    class Backend:
+        version = "test"
+        resolver_label = "fake"
+
+        def __init__(self, spf):
+            self.name = "fake"
+            self.stats = {"queries": 0, "cache_hits": 0, "tcp_failed": 0}
+            self._r = StaticResolver(
+                {
+                    ("a.example.jp", "MX"): make_answer("a.example.jp", "MX", ["mx."]),
+                    ("a.example.jp", "TXT"): make_answer("a.example.jp", "TXT", [spf]),
+                }
+            )
+
+        def query(self, query):
+            return self._r.query(query.name, query.rtype)
+
+    run_p4(run_id="2026-08", method="alpha", backend=Backend("v=spf1 -all"))
+    run_p4(run_id="2026-08", method="beta", backend=Backend("v=spf1 ~all"))
+    run_compare(run_id="2026-08")
+
+    body = client.get("/api/compare/2026-08").json()
+    assert body["methods"] == ["alpha", "beta"]
+    assert body["bronze_methods"] == ["alpha", "beta"]
+    assert body["counts"]["values_differ"] == 1
+    # 分類の意味を画面で取り違えないよう説明を添える
+    assert "食い違いではない" in body["kind_labels"]["observation_differs"]

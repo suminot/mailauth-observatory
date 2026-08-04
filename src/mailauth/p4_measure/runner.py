@@ -45,6 +45,10 @@ def make_backend(method: str, measure_cfg: dict):
     """バックエンドを作る。無いものに黙って落ちない。
 
     どの手法で測ったかは成果物の意味を変えるため、暗黙の差し替えはしない。
+
+    `dnspython@1.1.1.1` の形でリゾルバを固定できる。リゾルバ間の差分を
+    見るためで、bronze のパーティションもこのラベルで分かれる
+    （DESIGN.md P4「リゾルバ戦略」のクロスチェック）。
     """
     res = measure_cfg.get("resolver", {})
     rate = measure_cfg.get("rate", {})
@@ -53,6 +57,14 @@ def make_backend(method: str, measure_cfg: dict):
         "timeout": float(rate.get("timeout_sec", 5)),
         "retries": int(rate.get("retries", 3)),
     }
+
+    if "@" in method:
+        method, _, nameserver = method.partition("@")
+        if method != "dnspython":
+            raise UnknownBackendError(
+                f"リゾルバの固定は dnspython のみ対応している: {method}@{nameserver}"
+            )
+        upstream = [nameserver]
 
     if method == "dnspython":
         return DnspythonBackend(
