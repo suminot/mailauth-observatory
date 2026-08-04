@@ -40,6 +40,9 @@ offload = [
 dev = [
     "pytest>=8.0",
     "ruff>=0.4",
+    # 独立実装との突合（Sprint 4 の完了条件）。Apache-2.0。
+    # 解釈が食い違ったときにどちらが正しいかを考える材料になる
+    "checkdmarc>=5.17",
 ]
 
 [project.scripts]
