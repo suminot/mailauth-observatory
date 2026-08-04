@@ -324,3 +324,15 @@ def test_monthly_workflow_reads_credentials_from_secrets():
     for line in text.splitlines():
         if _re.search(r"MAILAUTH_\w+:\s*\S", line):
             assert "secrets." in line, f"認証情報が直書きされている: {line.strip()}"
+
+
+def test_the_changelog_is_generated_before_the_publish_gate():
+    """changelog はサイトのページなので P8 の語彙検査を通る必要がある。
+
+    P8 のあとに書き換えると、検査を通っていない文面が公開される。
+    """
+    text = (repo_root() / ".github/workflows/monthly.yml").read_text(encoding="utf-8")
+    assert "mailauth changelog" in text
+    assert text.index("mailauth changelog") < text.index("p8-publish"), (
+        "changelog の生成が P8 より後になっている"
+    )
