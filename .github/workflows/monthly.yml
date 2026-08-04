@@ -123,6 +123,13 @@ jobs:
         continue-on-error: true
         run: mailauth p8-publish --run "${{ steps.run.outputs.id }}" --any-month
 
+      # 未知 MX ホストの作業リスト。**一覧が出るだけでは routine にならない。**
+      # 月をまたいで「何か月連続で未知のままか」を数えるので、生成物を
+      # runs/ に残してコミットする（翌月の連続month数の材料になる）
+      - name: 未知 MX ホストの作業リスト
+        continue-on-error: true
+        run: mailauth worklist --run "${{ steps.run.outputs.id }}"
+
       - name: 工程レポート
         id: report
         run: |
