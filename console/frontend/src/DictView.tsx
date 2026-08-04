@@ -10,6 +10,7 @@ import {
   streamJob,
   type DictionaryFile,
   type FingerprintsResult,
+  type SaturationResult,
   type UnknownHost,
   type UnknownHostsResult,
 } from "./api";
@@ -52,6 +53,7 @@ export function DictView({ runId }: { runId: string | null }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [rerunLog, setRerunLog] = useState<string[]>([]);
   const [rerunning, setRerunning] = useState(false);
+  const [curve, setCurve] = useState<SaturationResult | null>(null);
 
   const refresh = useCallback(() => {
     api.fingerprints().then(setDict).catch((e) => setError(String(e)));
@@ -59,6 +61,10 @@ export function DictView({ runId }: { runId: string | null }) {
       setUnknown(null);
       return;
     }
+    api
+      .saturation(runId)
+      .then(setCurve)
+      .catch(() => setCurve(null));
     api
       .unknownHosts(runId)
       .then((r) => {
@@ -301,6 +307,108 @@ export function DictView({ runId }: { runId: string | null }) {
           <pre className="log">{rerunLog.join("\n")}</pre>
         </section>
       )}
+
+      <section>
+        <h2>DKIM セレクタの飽和曲線</h2>
+        <p className="muted small">
+          セレクタ数と新規発見ドメイン数の関係。<strong>曲線が寝ていれば辞書を
+          増やしても新規発見はほとんど無い。</strong>
+          順序に依存する指標なので、「何個目で飽和したか」ではなく「最後の何割が
+          何件しか稼いでいないか」を見る。
+        </p>
+        {!curve || !curve.points.length ? (
+          <p className="muted">
+            DKIM を検出できたドメインがありません。階層A の計測をしていないか、
+            既知セレクタでは見つかりませんでした（未設定の証明ではありません）。
+          </p>
+        ) : (
+          <>
+            <table className="dict-summary">
+              <tbody>
+                <tr>
+                  <th>セレクタを投げたドメイン</th>
+                  <td className="num">{curve.probed_domains}</td>
+                </tr>
+                <tr>
+                  <th>DKIM を検出できたドメイン</th>
+                  <td className="num">{curve.detected_domains}</td>
+                </tr>
+                <tr>
+                  <th>上位10セレクタでの被覆</th>
+                  <td className="num">
+                    {curve.coverage_at_10 === null
+                      ? "—"
+                      : `${(curve.coverage_at_10 * 100).toFixed(1)}%`}
+                  </td>
+                </tr>
+                <tr>
+                  <th>9割に要したセレクタ数</th>
+                  <td className="num">{curve.selectors_for_90pct ?? "—"}</td>
+                </tr>
+                <tr>
+                  <th>新規を稼がなかったセレクタ</th>
+                  <td className="num">
+                    {curve.dead_selectors.length} / {curve.selectors_tried}
+                  </td>
+                </tr>
+                <tr>
+                  <th>L1 の登録数 / L3</th>
+                  <td className="num">
+                    {curve.dictionary.l1_size} / {curve.dictionary.l3_status}
+                    {curve.dictionary.l3_enabled ? "" : "（無効）"}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <table className="dict-curve">
+              <thead>
+                <tr>
+                  <th className="num">#</th>
+                  <th>セレクタ</th>
+                  <th className="num">新規</th>
+                  <th className="num">累積</th>
+                  <th>累積の伸び</th>
+                </tr>
+              </thead>
+              <tbody>
+                {curve.points.slice(0, 30).map((p) => (
+                  <tr key={p.selector} className={p.new_domains === 0 ? "muted" : ""}>
+                    <td className="num">{p.selectors_used}</td>
+                    <td>
+                      <code>{p.selector}</code>
+                    </td>
+                    <td className="num">{p.new_domains}</td>
+                    <td className="num">{p.cumulative_domains}</td>
+                    <td className="bar-cell">
+                      <span
+                        className="view-bar"
+                        style={{
+                          width: `${
+                            curve.detected_domains
+                              ? (p.cumulative_domains / curve.detected_domains) * 100
+                              : 0
+                          }%`,
+                        }}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {curve.points.length > 30 && (
+              <p className="muted small">
+                上位30件のみ表示（全 {curve.points.length} 件）。
+              </p>
+            )}
+            <ul className="plain muted small">
+              {curve.notes.map((n, i) => (
+                <li key={i}>{n}</li>
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
 
       <section>
         <h2>辞書の現況</h2>
