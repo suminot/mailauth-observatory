@@ -336,3 +336,117 @@ def test_the_changelog_is_generated_before_the_publish_gate():
     assert text.index("mailauth changelog") < text.index("p8-publish"), (
         "changelog の生成が P8 より後になっている"
     )
+
+
+def test_the_deploy_workflow_runs_the_publish_gate_first():
+    """P8 を通さずにデプロイしない。
+
+    第1層に個社特定情報が混ざっていないか、ページに断定的な語彙が無いかを
+    P8 が機械的に弾いている。ビルドだけしてデプロイすると素通りする。
+    """
+    workflow = repo_root() / ".github" / "workflows" / "deploy.yml"
+    assert workflow.is_file(), "デプロイのワークフローが無い"
+    text = workflow.read_text(encoding="utf-8")
+    assert "p8-publish" in text
+    assert text.index("p8-publish") < text.index("pages deploy"), (
+        "P8 の検査がデプロイより後になっている"
+    )
+
+
+def test_the_deploy_workflow_does_nothing_without_secrets():
+    """認証情報を入れる前に動くと、検査前の状態が出る可能性がある。"""
+    text = (repo_root() / ".github" / "workflows" / "deploy.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "ready=false" in text
+    assert text.count("steps.gate.outputs.ready == 'true'") >= 4
+
+
+def test_the_notification_module_has_no_sending_path():
+    """**通知はコードが勝手に始めてよいものではない。**
+
+    DESIGN.md Sprint 9 が求めるのは通知の運用であって、無人送信ではない。
+    送信経路が生えたらここで落ちる。「特定電子メール」の整理も、送信の
+    可否を人が判断していることに依存している。
+    """
+    import re as _re
+
+    root = repo_root() / "src" / "mailauth" / "p9_notify"
+    assert root.is_dir()
+    for path in sorted(root.glob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        # SMTP を開く経路が無いこと
+        assert "smtplib" not in text, f"{path.name} が smtplib を参照している"
+        assert not _re.search(r"\bsend_message\b|\bsendmail\b", text), (
+            f"{path.name} に送信の呼び出しがある"
+        )
+
+
+def test_the_notification_body_excludes_sales_content():
+    """営業要素を一切排除する（DESIGN.md Sprint 9）。
+
+    広告宣伝性がなければ特定電子メール法の「特定電子メール」には当たらないと
+    整理できるが、その整理は文面が実際にそうであることに依存している。
+    """
+    from mailauth.p9_notify import template
+
+    assert template.SALES_TERMS, "営業要素の検査語が空になっている"
+    body = "SPF の設定についてご提案があります"
+    assert template.check_sales_terms(body), "営業要素の検査が効いていない"
+
+
+def test_the_notification_url_must_be_on_the_senders_own_domain():
+    """検証可能な正規ドメイン上の URL を必ず含める（DESIGN.md Sprint 9）。
+
+    日本市場では「不審メール扱いされるリスク」が最初の障壁である。
+    差出人と本文の URL のドメインが違えば、それ自体が不審メールの特徴になる。
+    """
+    from mailauth.p9_notify import template
+
+    findings = [template.Finding(code="x", statement="SPF レコードを観測しました")]
+    for bad in ("http://obs.example.org/x", "https://elsewhere.test/x"):
+        try:
+            template.render(
+                "target-example.jp",
+                findings,
+                sender_domain="obs.example.org",
+                detail_url=bad,
+                method_url="https://obs.example.org/method",
+                correction_contact="c@obs.example.org",
+                measured_month="2026-08",
+            )
+        except template.TemplateError:
+            continue
+        raise AssertionError(f"{bad} が通ってしまった")
+
+
+def test_the_optout_registry_is_permanent():
+    """**断られた相手は恒久的に対象外にする。**
+
+    「1年経ったからまた送る」を可能にする列を作ると、いつか誰かが使う。
+    """
+    from mailauth.p9_notify import optout
+
+    assert "expires" not in optout.COLUMNS
+    assert not hasattr(optout, "remove")
+
+
+def test_notification_is_disabled_in_the_shipped_config():
+    """同梱の設定では通知が動かない（第2層と同じ考え方）。"""
+    import yaml
+
+    raw = yaml.safe_load(
+        (repo_root() / "configs" / "publish.yaml").read_text(encoding="utf-8")
+    )
+    notify = raw.get("notify") or {}
+    assert notify.get("sender_domain") is None
+    assert notify.get("detail_url") is None
+    assert int(notify.get("correction_days") or 0) >= 30
+
+
+def test_the_correction_window_is_at_least_thirty_days_everywhere():
+    """事前通知後、最低30日（推奨60日）の訂正期間（DESIGN.md P8）。"""
+    from mailauth.p9_notify import template
+
+    assert template.CORRECTION_DAYS_MINIMUM == 30
+    assert template.CORRECTION_DAYS_RECOMMENDED == 60

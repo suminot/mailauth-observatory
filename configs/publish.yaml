@@ -30,11 +30,46 @@ tier2:
   correction_contact: null
 
 deploy:
-  # Cloudflare Pages。トークンは .env から読む（コードにも設定にも書かない）
+  # Cloudflare Pages。認証情報は GitHub の secrets に置く。
+  # .github/workflows/deploy.yml が使う。**設定が無ければ何もしない。**
+  #   CLOUDFLARE_API_TOKEN      Pages の編集権限
+  #   CLOUDFLARE_ACCOUNT_ID
+  #   CLOUDFLARE_PAGES_PROJECT  Pages のプロジェクト名
   provider: cloudflare_pages
   project: null
-  # 第2層のパス。Cloudflare Access のポリシーをこのパスに掛ける
+  # 第2層のパス。**Cloudflare Access のポリシーをこのパスに掛ける。**
+  # デプロイのワークフローは第1層しか出さないが、第2層を出す段では
+  # 認証の内側に置くことが条件になる（tier2.access_control_configured）
   tier2_path: /companies
+
+notify:
+  # 事前通知（DESIGN.md Sprint 9）。**既定値は「動かない」側に置いてある。**
+  # `mailauth notify-plan` は計画を作るだけで、**メールは送らない。**
+  #
+  # 送信元ドメイン。**このドメイン自身の SPF/DKIM/DMARC が完全準拠で
+  # なければ計画を作らない。** 不備を指摘する通知を、自分が不備な状態で
+  # 送ると、その一通で信頼を失う
+  sender_domain: null
+  # 自分の DKIM セレクタ。**外から網羅はできない。自分のは自分が知っている**
+  sender_dkim_selectors: []
+  # 本文に載せる URL。**差出人と同一ドメイン上でなければ文面を作らない。**
+  # 日本市場では「不審メール扱い」が最初の障壁になるため、受信側が
+  # ドメイン名を直接入力して到達できることが要件になる。
+  # detail_url は {domain} を含めれば各社分に差し替わる
+  detail_url: null
+  method_url: null
+  # 「今後不要」の返信先。未設定なら tier2.correction_contact を使う
+  optout_contact: null
+  # オプトアウト登録簿。**読めなければ計画を作らない。**
+  # 「読めなかった」を「誰も断っていない」として扱うと、断った相手に送る
+  optout_registry: configs/notify/optout.csv
+  # 訂正期間。最低30日・推奨60日（DESIGN.md P8）
+  correction_days: 60
+  # 毎秒1通。相手の受信側に負荷をかけない
+  rate_per_sec: 1
+  # security.txt を取りに HTTPS を叩くか。false なら「見ていない」と記録する
+  # （「無い」とは書かない）
+  fetch_security_txt: true
 
 attribution:
   - 金融庁 EDINET コードリスト（政府標準利用規約2.0）
