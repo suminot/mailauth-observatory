@@ -560,3 +560,54 @@ def test_the_published_formats_cover_the_download_links():
     assert {"json", "csv"} <= formats, (
         "data.md が json と csv のリンクを出しているので formats から外せない"
     )
+
+
+def test_committed_gold_has_a_plausible_population_size():
+    """**gold は公開データセット（CC0）である。** 開発中の実行結果を
+    コミットしてしまうと、公開している時系列に嘘の月が混ざる。
+
+    実際に混ざりかけた。フィクスチャの17社に実ドメインを差した検証用の
+    実行結果が `jp-all-listed`（実際は約3,830社）として gold に入り、
+    `git add -A` で拾われた。**総数を見れば機械で弾ける。**
+
+    件数の範囲は母集団の設定（acceptance）から取る。設定を持たない
+    母集団は検査しない（下限を勝手に決めない）。
+    """
+    import re as _re
+
+    import yaml
+
+    from mailauth.io import read_parquet
+
+    gold = repo_root() / "gold"
+    months = sorted(
+        d for d in gold.iterdir() if d.is_dir() and _re.match(r"^month=\d{4}-\d{2}$", d.name)
+    ) if gold.is_dir() else []
+    if not months:
+        pytest.skip("コミットされた gold がまだ無い")
+
+    ranges: dict[str, tuple[int, int]] = {}
+    for path in sorted((repo_root() / "configs" / "populations").glob("*.yaml")):
+        cfg = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        acceptance = cfg.get("acceptance") or {}
+        low, high = acceptance.get("expected_count_min"), acceptance.get("expected_count_max")
+        if cfg.get("id") and low and high:
+            ranges[str(cfg["id"])] = (int(low), int(high))
+
+    problems: list[str] = []
+    for month in months:
+        frame = read_parquet(month / "stats_overall.parquet")
+        if frame is None:
+            continue
+        for row in frame.to_dict(orient="records"):
+            population = str(row.get("population_id") or "")
+            expected = ranges.get(population)
+            if not expected:
+                continue
+            n = int(row.get("total_entities") or 0)
+            if not expected[0] <= n <= expected[1]:
+                problems.append(
+                    f"{month.name} の {population} が {n} 社（想定 "
+                    f"{expected[0]}〜{expected[1]}）。開発中の実行結果では？"
+                )
+    assert not problems, "\n".join(problems)
