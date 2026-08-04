@@ -44,7 +44,8 @@ Parquet は月ごとに
 |---|---|
 | `total_domains` | 計測対象にしたドメイン数 |
 | `observed_domains` | **うち観測できた数。率の分母はこれを使う** |
-| `spf_adopted_domains` / `_entities` | SPF を公開しているドメイン数 / 企業数 |
+| `spf_adopted_domains` | SPF を公開しているドメイン数 |
+| `spf_adopted_entities` | SPF を公開している企業数 |
 | `dmarc_enforced_domains` | `quarantine` または `reject` |
 | `nominal_reject_domains` | `p=reject` と書いてある |
 | `enforced_reject_domains` | `pct` 無し・`t=n`・`rua` 有 |
