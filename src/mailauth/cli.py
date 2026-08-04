@@ -388,6 +388,80 @@ for _phase in PHASES:
     )
 
 
+@app.command("run-report")
+def run_report(
+    run: RunOption = "",
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", help="Markdown の書き出し先。省略すると標準出力"),
+    ] = None,
+    as_json: Annotated[
+        bool, typer.Option("--json", help="JSON で出す")
+    ] = False,
+    fail_on_error: Annotated[
+        bool,
+        typer.Option(
+            "--fail-on-error",
+            help="失敗した工程があれば終了コード1。未実行は失敗にしない",
+        ),
+    ] = False,
+) -> None:
+    """八工程の manifest を1つにまとめる（月次実行の記録）。"""
+    from .report import NOT_RUN, collect, exists, to_markdown
+
+    run_id = validate_run_id(run or default_run_id())
+    if not exists(run_id):
+        typer.secho(f"run {run_id} がありません", fg="red", err=True)
+        raise typer.Exit(code=2)
+
+    report = collect(run_id)
+    if as_json:
+        typer.echo(json.dumps(report.to_dict(), ensure_ascii=False, indent=1))
+    else:
+        text = to_markdown(report)
+        if out is None:
+            typer.echo(text)
+        else:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(text, encoding="utf-8")
+            typer.echo(f"→ {out}")
+
+    if report.status == NOT_RUN:
+        typer.secho("どの工程も実行されていません", fg="yellow", err=True)
+    for phase in report.failed_phases:
+        typer.secho(f"  ✗ {phase.phase}: {phase.error or '理由の記録なし'}", fg="red")
+
+    if fail_on_error and report.failed_phases:
+        raise typer.Exit(code=1)
+
+
+@app.command("offload")
+def offload_cmd(
+    run: RunOption = "",
+    dry_run: DryRunOption = False,
+) -> None:
+    """bronze / silver を R2 に退避する（Git には入れない層）。"""
+    from .offload import OffloadError, offload
+
+    run_id = validate_run_id(run or default_run_id())
+    try:
+        plan, result = offload(run_id, dry_run=dry_run)
+    except OffloadError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(code=2) from exc
+
+    typer.echo(
+        f"[offload] 対象 {plan.count} 件 / {plan.total_bytes} バイト → "
+        f"送信 {result.uploaded} 件 失敗 {result.failed} 件"
+    )
+    if result.reason:
+        typer.secho(f"  ⚠ {result.reason}", fg="yellow")
+    for error in result.errors:
+        typer.secho(f"  ✗ {error}", fg="red", err=True)
+    if result.failed:
+        raise typer.Exit(code=1)
+
+
 @app.command("status")
 def status(
     run: RunOption = "",

@@ -1,0 +1,148 @@
+name: 月次計測
+
+# 人手を介さず月次で八工程を回す（DESIGN.md Sprint 8）。
+#
+# 60日自動停止対策が要件になっている。GitHub Actions は60日間リポジトリに
+# 活動が無いと schedule が止まる。**データが変わらなかった月でも必ず
+# コミットする**ことで、活動を途切れさせない。
+#
+# 実行は工程ごとに分けてある。どこで落ちたかを job 単位で見たいのと、
+# 6時間上限に当たったときに続きから流せるようにするため。
+
+on:
+  schedule:
+    # 毎月1日 02:00 UTC。月初にしているのは measured_month を月単位で
+    # 扱っているため（run_id は YYYY-MM）
+    - cron: "0 2 1 * *"
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "実行ID（YYYY-MM）。既定は当月"
+        required: false
+      population:
+        description: "母集団の設定ファイル"
+        required: false
+        default: configs/populations/jp-all-listed.yaml
+      limit:
+        description: "件数上限。動作確認用"
+        required: false
+
+concurrency:
+  # 同じ run に対して2つ走ると manifest の書き込みが競合し、
+  # 原則6（冪等）が壊れる
+  group: monthly-${{ github.event.inputs.run_id || 'scheduled' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    # P4 は30,000ドメインで3時間を見込む。6時間上限に対する余裕を取る
+    timeout-minutes: 330
+    env:
+      MAILAUTH_EDINET_SUBSCRIPTION_KEY: ${{ secrets.MAILAUTH_EDINET_SUBSCRIPTION_KEY }}
+      MAILAUTH_GBIZINFO_TOKEN: ${{ secrets.MAILAUTH_GBIZINFO_TOKEN }}
+      MAILAUTH_HOUJIN_BANGOU_APP_ID: ${{ secrets.MAILAUTH_HOUJIN_BANGOU_APP_ID }}
+      MAILAUTH_CONTACT_EMAIL: ${{ secrets.MAILAUTH_CONTACT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: 依存関係のインストール
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[console,dev]"
+
+      - name: run_id を決める
+        id: run
+        run: |
+          RUN_ID="${{ github.event.inputs.run_id }}"
+          if [ -z "$RUN_ID" ]; then RUN_ID=$(date -u +%Y-%m); fi
+          echo "id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "run_id=$RUN_ID"
+
+      # 各工程は失敗しても続ける。**途中で止めると manifest が揃わず、
+      # どこで何件落ちたかが分からなくなる**（原則4）。
+      # 最終的な成否は manifest を集めて判断する。
+      - name: P1 母集団確定
+        continue-on-error: true
+        run: |
+          mailauth p1-population \
+            --config "${{ github.event.inputs.population || 'configs/populations/jp-all-listed.yaml' }}" \
+            --run "${{ steps.run.outputs.id }}" \
+            ${{ github.event.inputs.limit && format('--limit {0}', github.event.inputs.limit) || '' }}
+
+      - name: P2 ドメイン候補生成
+        continue-on-error: true
+        run: mailauth p2-candidates --run "${{ steps.run.outputs.id }}"
+
+      - name: P3 メールドメイン確定
+        continue-on-error: true
+        run: mailauth p3-domains --run "${{ steps.run.outputs.id }}"
+
+      - name: P4 DNS計測
+        continue-on-error: true
+        run: mailauth p4-measure --run "${{ steps.run.outputs.id }}"
+
+      - name: P5 パース
+        continue-on-error: true
+        run: mailauth p5-parse --run "${{ steps.run.outputs.id }}"
+
+      - name: P6 推察
+        continue-on-error: true
+        run: mailauth p6-infer --run "${{ steps.run.outputs.id }}"
+
+      - name: P7 集計
+        continue-on-error: true
+        run: mailauth p7-aggregate --run "${{ steps.run.outputs.id }}"
+
+      - name: P8 公開データの生成
+        continue-on-error: true
+        run: mailauth p8-publish --run "${{ steps.run.outputs.id }}" --any-month
+
+      - name: 工程レポート
+        id: report
+        run: |
+          mailauth status --run "${{ steps.run.outputs.id }}"
+          mailauth run-report --run "${{ steps.run.outputs.id }}" \
+            --out "runs/${{ steps.run.outputs.id }}.md"
+
+      # bronze / silver は Git に入れない（履歴肥大化の回避）。
+      # 認証情報が無ければ理由付きでスキップする。**成功したふりをしない。**
+      # 退避されていないことに気付くのがリポジトリを失ったあとでは遅い。
+      - name: bronze / silver を R2 に退避
+        continue-on-error: true
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          pip install "boto3>=1.34"
+          mailauth offload --run "${{ steps.run.outputs.id }}"
+
+      # **データが変わらなかった月でも必ずコミットする。**
+      # GitHub Actions は60日間活動が無いと schedule を止める。
+      # 実行した記録そのものが活動になる。
+      - name: gold と実行記録をコミット
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add gold runs || true
+          if git diff --cached --quiet; then
+            # 空コミットを作る。60日で schedule が止まるのを防ぐのが目的で、
+            # 「今月は数字が動かなかった」ことも記録として意味がある
+            git commit --allow-empty -m "月次計測 ${{ steps.run.outputs.id }}（gold に変更なし）"
+          else
+            git commit -m "月次計測 ${{ steps.run.outputs.id }}"
+          fi
+          git push
+
+      - name: 失敗した工程があれば落とす
+        run: mailauth run-report --run "${{ steps.run.outputs.id }}" --fail-on-error

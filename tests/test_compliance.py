@@ -287,3 +287,40 @@ def test_sec_user_agent_is_not_faked():
         )
     ]
     assert offenders == [], f"偽の連絡先を User-Agent に書いている: {offenders}"
+
+
+def test_monthly_workflow_commits_even_without_changes():
+    """60日自動停止対策（DESIGN.md Sprint 8）。
+
+    GitHub Actions は60日間リポジトリに活動が無いと schedule を止める。
+    データが変わらなかった月でも必ずコミットする必要がある。
+    """
+    workflow = repo_root() / ".github" / "workflows" / "monthly.yml"
+    assert workflow.is_file(), "月次実行のワークフローが無い"
+    text = workflow.read_text(encoding="utf-8")
+    assert "--allow-empty" in text, "変更が無い月にコミットしない実装になっている"
+    assert "schedule" in text and "cron" in text
+
+
+def test_monthly_workflow_does_not_stop_at_the_first_failure():
+    """途中で止めると manifest が揃わず、どこで何件落ちたか分からなくなる。"""
+    text = (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(
+        encoding="utf-8"
+    )
+    assert text.count("continue-on-error: true") >= 8, (
+        "工程の途中で止まる実装になっている（原則4）"
+    )
+    # 最終的な成否は集約レポートで判断する
+    assert "--fail-on-error" in text
+
+
+def test_monthly_workflow_reads_credentials_from_secrets():
+    """認証情報をワークフローに直書きしない。"""
+    import re as _re
+
+    text = (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(
+        encoding="utf-8"
+    )
+    for line in text.splitlines():
+        if _re.search(r"MAILAUTH_\w+:\s*\S", line):
+            assert "secrets." in line, f"認証情報が直書きされている: {line.strip()}"
