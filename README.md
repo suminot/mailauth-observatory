@@ -77,6 +77,11 @@ mailauth p7-aggregate  --run 2026-08 --min-cell-size 10   # 秘匿を厳しく�
 mailauth p8-publish    --run 2026-08   # gold を公開サイトのデータに書き出す
 mailauth p8-publish    --any-month     # gold にある月をそのまま出す（CI 用）
 
+# 月次実行の記録と退避
+mailauth run-report    --run 2026-08   # 八工程の manifest を1枚にまとめる
+mailauth run-report    --run 2026-08 --out runs/2026-08.md --fail-on-error
+mailauth offload       --run 2026-08   # bronze / silver を R2 へ（Git には入れない層）
+
 # 実行状況
 mailauth status --run 2026-08
 mailauth populations
@@ -590,6 +595,42 @@ bronze は purpose 別に件数を並べ、生 JSON をそのまま開ける。*
 
 gold への寄与は**どの集計セルに入ったかまでしか出さない。** 個社の数字を gold から
 逆算できる画面にすると、セル秘匿の意味が無くなる。
+
+## 月次自動実行（Sprint 8）
+
+`.github/workflows/monthly.yml` が毎月1日 02:00 UTC に八工程を回す。
+`workflow_dispatch` で run_id・母集団・件数上限を指定して手動実行もできる。
+
+### 60日自動停止対策
+
+GitHub Actions は**60日間リポジトリに活動が無いと schedule を止める。**
+個人アカウント運営でバス係数1なので、止まったことに気付かないまま数か月
+飛ぶのが現実的なリスクである。
+
+対策として、**データが変わらなかった月でも必ずコミットする**（`--allow-empty`）。
+実行した記録そのものが活動になる。「今月は数字が動かなかった」ことも記録として
+意味がある。`tests/test_compliance.py` がこの実装を検査している。
+
+### 途中で止めない
+
+各工程は `continue-on-error: true` で走る。**途中で止めると manifest が揃わず、
+どこで何件落ちたかが分からなくなる**（原則4）。最終的な成否は
+`mailauth run-report --fail-on-error` が八工程の manifest を集めて判断する。
+
+`run-report` は**「失敗」と「未実行」を分ける。** 実行していない工程を失敗として
+扱うと、部分実行を意図的にやったときに毎回赤くなり、赤が意味を持たなくなる。
+
+出力は `runs/<run_id>.md` にコミットする。工程ごとの件数と警告、そして
+**工程間で何件落ちたか**が1枚で読める。
+
+### R2 への退避
+
+bronze / silver は Git に入れない（履歴肥大化の回避）。`mailauth offload` が
+R2（S3 互換）へ送る。
+
+**認証情報が無ければ何もせずに理由を返す。** 黙って成功したふりをすると、
+退避されていないことに気付くのはリポジトリを失ったあとになる。1件の失敗で
+全体を止めず、送れた件数と送れなかった理由を残す。
 
 ## 設計上の約束
 

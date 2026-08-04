@@ -32,6 +32,11 @@ console = [
     "uvicorn[standard]>=0.29",
     "duckdb>=0.10",
 ]
+# bronze / silver の R2 退避。S3 互換なので boto3 で話す。
+# 月次実行だけで使うので本体の依存にはしない
+offload = [
+    "boto3>=1.34",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.4",
