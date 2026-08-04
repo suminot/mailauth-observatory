@@ -486,6 +486,70 @@ def changelog_cmd(
         )
 
 
+@app.command("worklist")
+def worklist_cmd(
+    run: RunOption = "",
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", help="書き出し先。既定は runs/<run_id>-worklist.md"),
+    ] = None,
+    as_json: Annotated[bool, typer.Option("--json", help="JSON で出す")] = False,
+    stdout: Annotated[
+        bool, typer.Option("--stdout", help="ファイルに書かず標準出力へ")
+    ] = False,
+) -> None:
+    """未知 MX ホストの月次作業リストを作る。
+
+    P6 は未知ホストを頻度順で manifest に出しているが、**一覧が出るだけでは
+    routine にならない。** 毎月同じ顔ぶれが並んでいても気付けない。
+
+    ここでは月をまたいで「何か月連続で未知のままか」を数え、調査して同定
+    できなかったホストを未着手と区別する。
+    """
+    import json as _json
+
+    from . import worklist as mod
+    from .paths import repo_root
+
+    run_id = validate_run_id(run or default_run_id())
+    result = mod.build(run_id)
+
+    if as_json:
+        typer.echo(_json.dumps(result.to_dict(), ensure_ascii=False, indent=1))
+        return
+
+    text = mod.to_markdown(result)
+    if stdout:
+        typer.echo(text)
+    else:
+        target = out or repo_root() / "runs" / f"{run_id}-worklist.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+        typer.echo(
+            f"→ {target}（手を付けるもの {len(result.hosts)} 件 / "
+            f"調査済み {len(result.set_aside)} 件）"
+        )
+
+    if result.stale:
+        typer.secho(
+            f"  ⚠ {mod.STALE_MONTHS} か月以上そのままのホストが "
+            f"{len(result.stale)} 件: "
+            + ", ".join(h.registered_domain for h in result.stale[:5]),
+            fg="yellow",
+        )
+    if result.truncated:
+        typer.secho(
+            f"  ⚠ P6 の未知ホスト一覧が上限 {mod.TOP_N} 件に達している。"
+            "一覧に無いホストが残っている",
+            fg="yellow",
+        )
+    if not result.unidentified_available:
+        typer.secho(
+            "  ⚠ 調査済みの記録を読めていないため、すべて未着手として並べた",
+            fg="yellow",
+        )
+
+
 @app.command("corrections")
 def corrections_cmd(
     out: Annotated[
