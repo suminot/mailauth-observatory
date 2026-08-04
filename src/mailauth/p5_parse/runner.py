@@ -23,6 +23,7 @@ from ..contracts import (
 )
 from ..io import read_parquet, write_parquet
 from ..manifest import RunManifest
+from ..normalize import etld_plus_one
 from ..p4_measure.bronze import iter_bronze_files, read_bronze
 from ..paths import bronze_dir, month_date, phase_dir, phase_output
 from ..records import find_spf_records, is_null_mx, join_txt_strings
@@ -173,17 +174,37 @@ def parse_domain(
     out["rua_domain_unregistered"] = None
     if external and resolver is not None:
         authorized = True
-        unregistered = False
+        # **「未登録」は強い主張である。** 断定できたときだけ True にする。
+        # 三値で持つ: True=断定 / False=登録されている / None=確認できなかった
+        unregistered: bool | None = False
         for ext in external:
             name = dmarc_mod.authorization_record_name(domain, ext)
             answer = resolver.query(name, "TXT")
             if answer.observed and not answer.record_present:
                 authorized = False
-            # 宛先ドメインが登録されているか（NS の有無で近似）。
-            # Hureau et al.（PAM 2024）は未登録ドメイン宛の rua が
-            # 9,121件あり、第三者が登録すればレポートが漏洩しうると指摘
-            ns = resolver.query(ext, "NS")
-            if ns.observed and not ns.record_present:
+
+            # 宛先ドメインが登録されているか。Hureau et al.（PAM 2024）は
+            # 未登録ドメイン宛の rua が 9,121件あり、第三者が登録すれば
+            # レポートが漏洩しうると指摘している。
+            #
+            # **見るのは登録可能ドメイン（eTLD+1）であって、rua の
+            # ホスト名そのものではない。** rua の宛先は `rua.` `dmarc.`
+            # のようなサブドメインが普通で、サブドメインに NS が無いのは
+            # ゾーンを切っていないだけである。実測（2026-08）で
+            # rx.rakuten.co.jp / ml.tepco.co.jp が「未登録」と判定されていた。
+            # 楽天や東電のレポートが第三者に奪われうる、という事実に反する
+            # 主張を公開しかけていた。
+            #
+            # **NODATA と NXDOMAIN も区別する。** NODATA は「その名前は
+            # 在るが NS が無い」であって未登録ではない。第三者が登録できる
+            # のは名前自体が存在しない（NXDOMAIN）場合である
+            registrable = etld_plus_one(ext) or ext
+            ns = resolver.query(registrable, "NS")
+            if not ns.observed:
+                # 取れなかった。**「未登録」とは言えない**（原則5）
+                if unregistered is False:
+                    unregistered = None
+            elif ns.rcode == "NXDOMAIN":
                 unregistered = True
         out["rua_authorized"] = authorized
         out["rua_domain_unregistered"] = unregistered
