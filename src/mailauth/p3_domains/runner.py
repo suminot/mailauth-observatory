@@ -25,6 +25,8 @@ from ..contracts import (
     Domain,
     EntityStatus,
 )
+from ..exclusions import load as load_exclusions
+from ..exclusions import require_available
 from ..io import read_parquet, write_parquet
 from ..manifest import RunManifest, config_hash
 from ..paths import config_path, phase_dir, phase_output
@@ -167,6 +169,21 @@ def run(
             key = (str(row["entity_id"]), str(row["domain"]))
             grouped.setdefault(key, []).append(str(row["discovery_method"]))
 
+        # 除外の再確認。**P2 の出力が古い可能性がある。** 除外の依頼は
+        # 前月の候補には効いていないので、ここでも落とす（多重防御）
+        excluded = load_exclusions()
+        require_available(excluded)
+        dropped_by_request = 0
+        if excluded.entries:
+            kept: dict[tuple[str, str], list[str]] = {}
+            for (entity_id, domain), methods in grouped.items():
+                if excluded.excludes(domain, entity_id=entity_id):
+                    dropped_by_request += 1
+                    excluded.record(domain)
+                    continue
+                kept[(entity_id, domain)] = methods
+            grouped = kept
+
         keys = list(grouped)
         if res_cfg.get("shuffle", True):
             # 同一権威への連続クエリを避ける
@@ -276,7 +293,20 @@ def run(
             resolver=getattr(resolver, "stats", {}),
             null_mx_domains=sum(1 for d in domains if d.null_mx),
             spf_hard_deny_domains=sum(1 for d in domains if d.spf_hard_deny),
+            # **除外は黙って行わない。** 分母から抜いた分を記録する（原則4）
+            excluded=excluded.to_dict(),
         )
+        if dropped_by_request:
+            manifest.add_warning(
+                "EXCLUDED_BY_REQUEST",
+                count=dropped_by_request,
+                sample=sorted(d for d in excluded.domains if d)[:5],
+                message=(
+                    "計測対象からの除外の依頼により候補から落とした。"
+                    "**「観測できなかった」ではなく「測らないと決めた」である。** "
+                    "P2 の出力より後に依頼が入った場合ここで落ちる"
+                ),
+            )
         _check_acceptance(cfg, by_confidence, len(domains), len(without_confirmed),
                           len(all_entities), manifest)
 

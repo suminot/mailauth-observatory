@@ -30,6 +30,8 @@ from ..contracts import (
     EntityStatus,
 )
 from ..ctlog import CrtShClient, CtSource, DisabledCtSource
+from ..exclusions import ExclusionRegistry, require_available
+from ..exclusions import load as load_exclusions
 from ..io import read_parquet, write_parquet
 from ..manifest import RunManifest, config_hash
 from ..normalize import etld_plus_one
@@ -76,18 +78,38 @@ def load_manual_domains(path: str | Path) -> dict[str, list[tuple[str, str]]]:
 
 
 class _Collector:
-    """1社ぶんの候補を集める。同じドメインが複数経路で出たら経路を足す。"""
+    """1社ぶんの候補を集める。同じドメインが複数経路で出たら経路を足す。
 
-    def __init__(self, entity_id: str, limit: int) -> None:
+    除外リストに載っているドメインはここで落とす。**候補にならなければ
+    以降のどの工程にも現れない**ので、除外を効かせる最も確実な位置である。
+    """
+
+    def __init__(
+        self,
+        entity_id: str,
+        limit: int,
+        *,
+        excluded: ExclusionRegistry | None = None,
+    ) -> None:
         self.entity_id = entity_id
         self.limit = limit
         #: domain -> {method: source_detail}
         self.found: dict[str, dict[str, str]] = {}
         self.truncated = 0
+        self.excluded = excluded
+        #: 除外して落とした件数。**黙って落とさない**（原則4）
+        self.skipped_excluded = 0
 
     def add(self, domain: str | None, method: str, detail: str = "") -> None:
         apex = etld_plus_one(domain) if domain else None
         if not apex:
+            return
+        if self.excluded is not None and self.excluded.excludes(apex):
+            # **「除外した」は「観測できなかった」でも「無かった」でもない。**
+            # 測らないと決めたということ。件数は manifest に出る
+            if apex not in self.found:
+                self.skipped_excluded += 1
+                self.excluded.record(apex)
             return
         if apex not in self.found and len(self.found) >= self.limit:
             self.truncated += 1
@@ -199,7 +221,19 @@ def run(
                 f"{entities_path} がありません。先に p1-population を実行してください"
             )
 
+        # 計測対象からの除外。**読めなければ止める。** 外してほしいと言った
+        # 相手を測ってしまうのは取り返しがつかない（exclusions.py 参照）
+        excluded = load_exclusions()
+        require_available(excluded)
+
         active = entities[entities["status"] != EntityStatus.DELISTED]
+        # 企業単位の除外はここで落とす。**候補の起点にしない**
+        if excluded.entity_ids:
+            before = len(active)
+            active = active[~active["entity_id"].astype(str).isin(excluded.entity_ids)]
+            dropped = before - len(active)
+            if dropped:
+                excluded.record("entity", dropped)
         if limit:
             active = active.head(limit)
         manifest.counts.input = len(active)
@@ -267,7 +301,7 @@ def run(
         for idx in order:
             row = rows.iloc[idx]
             entity_id = str(row["entity_id"])
-            collector = _Collector(entity_id, per_entity_limit)
+            collector = _Collector(entity_id, per_entity_limit, excluded=excluded)
             collectors[entity_id] = collector
 
             official = row.get("official_domain")
@@ -383,7 +417,22 @@ def run(
             shared_domains=len(shared),
             # rua が第三者サービスを指していた件数。P6 の dmarc_vendor 推定の材料
             dmarc_report_vendors=dict(sorted(vendor_hits.items())),
+            # **除外は黙って行わない。** 分母から抜いた分を記録する（原則4）
+            excluded=excluded.to_dict(),
         )
+        dropped_domains = sum(c.skipped_excluded for c in collectors.values())
+        if dropped_domains or excluded.hits.get("entity"):
+            manifest.add_warning(
+                "EXCLUDED_BY_REQUEST",
+                count=dropped_domains + excluded.hits.get("entity", 0),
+                sample=sorted(d for d in excluded.domains if d)[:5],
+                message=(
+                    "計測対象からの除外の依頼により候補から落としたものがある。"
+                    "**「観測できなかった」ではなく「測らないと決めた」である。** "
+                    f"ドメイン {dropped_domains} 件 / 企業 "
+                    f"{excluded.hits.get('entity', 0)} 件"
+                ),
+            )
         _check_acceptance(cfg, percentiles, zero, len(collectors), manifest)
 
         if dry_run:

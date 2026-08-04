@@ -458,3 +458,37 @@ def test_the_correction_window_is_at_least_thirty_days_everywhere():
 
     assert template.CORRECTION_DAYS_MINIMUM == 30
     assert template.CORRECTION_DAYS_RECOMMENDED == 60
+
+
+def test_the_exclusion_promise_is_machine_enforced():
+    """公開サイトが「計測対象から外す依頼には応じます」と書いている。
+
+    **効いていない約束は、書いていない約束より悪い。** 除外リストが
+    P2 / P3 / P4 のそれぞれで参照されていることを確かめる。
+    """
+    src = repo_root() / "src" / "mailauth"
+    for phase in ("p2_candidates", "p3_domains", "p4_measure"):
+        text = (src / phase / "runner.py").read_text(encoding="utf-8")
+        assert "load_exclusions" in text, f"{phase} が除外リストを読んでいない"
+        assert "require_available" in text, (
+            f"{phase} が読めない除外リストで止まらない"
+        )
+
+
+def test_exclusion_and_notification_optout_are_separate_registries():
+    """「連絡は不要だが計測は構わない」を潰さない。"""
+    from mailauth import exclusions
+    from mailauth.p9_notify import optout
+
+    assert exclusions.DEFAULT_PATH != optout.DEFAULT_PATH
+    for path in (exclusions.DEFAULT_PATH, optout.DEFAULT_PATH):
+        assert (repo_root() / path).is_file(), f"{path} が無い"
+
+
+def test_neither_registry_can_expire_a_request():
+    """断りにも除外にも期限を設けない。**恒久的に扱う。**"""
+    from mailauth import exclusions
+    from mailauth.p9_notify import optout
+
+    for columns in (exclusions.COLUMNS, optout.COLUMNS):
+        assert not any("expire" in c for c in columns)
