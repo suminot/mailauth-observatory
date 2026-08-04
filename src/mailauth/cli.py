@@ -486,6 +486,80 @@ def changelog_cmd(
         )
 
 
+@app.command("notify-plan")
+def notify_plan_cmd(
+    run: RunOption = "",
+    config: Annotated[
+        str, typer.Option("--config", help="通知の設定（publish.yaml の notify 節）")
+    ] = "configs/publish.yaml",
+    limit: Annotated[
+        int | None, typer.Option("--limit", help="先頭 N 件だけを計画にする")
+    ] = None,
+    only: Annotated[
+        str, typer.Option("--only", help="対象ドメインをカンマ区切りで絞る")
+    ] = "",
+    no_https: Annotated[
+        bool,
+        typer.Option(
+            "--no-https",
+            help="security.txt を取りに HTTPS を叩かない（「見ていない」と記録する）",
+        ),
+    ] = False,
+    stdout: Annotated[
+        bool, typer.Option("--stdout", help="ファイルに書かず標準出力へ")
+    ] = False,
+) -> None:
+    """事前通知の計画を作る。**メールは送らない。**
+
+    送信の可否は運用上の判断であり、コードが勝手に始めてよいものではない。
+    このコマンドが作るのは「誰にどの文面を送るか」の一覧までである。
+
+    作る前に4つの門を通る。どれも警告ではなく停止である。
+    送信元自身の認証が完全準拠か / オプトアウト登録簿が読めているか /
+    訂正窓口があるか / 文面が語彙規約と営業要素の検査を通るか。
+    """
+    from .p9_notify import MissingInputError, PlanBlockedError, SelfComplianceError
+    from .p9_notify import run as run_p9
+
+    run_id = validate_run_id(run or default_run_id())
+    domains = [d.strip() for d in only.split(",") if d.strip()]
+    try:
+        plan, written = run_p9(
+            run_id,
+            config=config,
+            limit=limit,
+            only=domains or None,
+            fetch_https=False if no_https else None,
+            write=not stdout,
+        )
+    except MissingInputError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(code=2) from exc
+    except SelfComplianceError as exc:
+        # **自分の設定が不備な状態では通知を作らない**
+        typer.secho(f"通知計画を作りませんでした:\n{exc}", fg="red", err=True)
+        raise typer.Exit(code=3) from exc
+    except PlanBlockedError as exc:
+        typer.secho(f"通知計画を作りませんでした: {exc}", fg="red", err=True)
+        raise typer.Exit(code=3) from exc
+
+    if stdout:
+        typer.echo(plan.to_markdown())
+        return
+
+    typer.echo(
+        f"[notify-plan] 対象 {plan.count} 件 / 対象外 {len(plan.skipped)} 件 "
+        f"（毎秒{plan.rate_per_sec:g}通で約{plan.duration_sec / 60:.0f}分）"
+    )
+    for path in written.get("paths", []):
+        typer.echo(f"  → {path}")
+    typer.secho(
+        "  ⚠ このコマンドは送信していません。"
+        f"第2層を出せる最短日は {plan.earliest_publish.isoformat()} です",
+        fg="yellow",
+    )
+
+
 @app.command("offload")
 def offload_cmd(
     run: RunOption = "",

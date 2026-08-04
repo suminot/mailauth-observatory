@@ -1,0 +1,99 @@
+name: 公開サイトのデプロイ
+
+# P8 が生成した site/dist を Cloudflare Pages に載せる（DESIGN.md Sprint 7）。
+#
+# **secrets が無ければ何もしない。** 認証情報を入れる前に動いてしまうと、
+# 検査を通っていない状態のサイトが出る可能性がある。
+#
+# 第2層（個社名付き明細）はこのワークフローでは出さない。P8 が
+# 訂正期間とアクセス制御の条件を満たさない限り停止するため、
+# ここに来る dist には第1層しか入っていない。
+
+on:
+  # gold が更新されたときだけ。月次ワークフローのコミットが引き金になる
+  push:
+    branches: [main]
+    paths:
+      - "gold/**"
+      - "site/**"
+      - "src/mailauth/p8_publish/**"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-site
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  deployments: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: secrets の有無を確認
+        id: gate
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PROJECT: ${{ secrets.CLOUDFLARE_PAGES_PROJECT }}
+        run: |
+          if [ -z "$TOKEN" ] || [ -z "$ACCOUNT" ] || [ -z "$PROJECT" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### デプロイをスキップした"
+              echo
+              echo "Cloudflare の認証情報が設定されていない。必要な secrets:"
+              echo
+              echo '- `CLOUDFLARE_API_TOKEN`（Pages の編集権限）'
+              echo '- `CLOUDFLARE_ACCOUNT_ID`'
+              echo '- `CLOUDFLARE_PAGES_PROJECT`（Pages のプロジェクト名）'
+              echo
+              echo "第2層を出す場合は、あわせて Cloudflare Access のポリシーを"
+              echo '`configs/publish.yaml` の `deploy.tier2_path` に掛けること。'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.gate.outputs.ready == 'true'
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.ready == 'true'
+        with:
+          node-version: "20"
+
+      - name: 依存関係のインストール
+        if: steps.gate.outputs.ready == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[console,dev]"
+          npm --prefix site install
+
+      # **P8 を通さずにデプロイしない。** 第1層に個社特定情報が混ざっていないか、
+      # ページに断定的な語彙や順位付けが無いかを、ここで機械的に弾いている。
+      # 通らなければ exit code で止まり、デプロイに進まない。
+      - name: 公開データの生成と規約検査
+        if: steps.gate.outputs.ready == 'true'
+        run: mailauth p8-publish --any-month
+
+      - name: サイトのビルド
+        if: steps.gate.outputs.ready == 'true'
+        run: npm --prefix site run build
+
+      - name: Cloudflare Pages にデプロイ
+        if: steps.gate.outputs.ready == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            pages deploy site/dist
+            --project-name=${{ secrets.CLOUDFLARE_PAGES_PROJECT }}
+            --branch=main
