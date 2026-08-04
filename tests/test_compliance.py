@@ -492,3 +492,71 @@ def test_neither_registry_can_expire_a_request():
 
     for columns in (exclusions.COLUMNS, optout.COLUMNS):
         assert not any("expire" in c for c in columns)
+
+
+def _documented_columns() -> list[str]:
+    """data.md の「列の意味」表の1列目に書いてある列名を拾う。"""
+    import re as _re
+
+    text = (repo_root() / "site" / "src" / "data.md").read_text(encoding="utf-8")
+    out: list[str] = []
+    for line in text.splitlines():
+        m = _re.match(r"^\|\s*`([a-z0-9_]+)`\s*\|", line)
+        if m:
+            out.append(m.group(1))
+    return out
+
+
+def test_the_documented_columns_exist_in_the_schema():
+    """公開ページの列の説明がスキーマと食い違わないこと。
+
+    **列名を変えたら、その表は読み手に対する嘘になる。** ダウンロードした
+    CSV に無い列の説明を読ませることになるので、機械で縛る。
+    """
+    from mailauth.contracts import (
+        STATS_BY_SECTOR_ARROW_SCHEMA,
+        STATS_OVERALL_ARROW_SCHEMA,
+    )
+
+    known = {f.name for f in STATS_OVERALL_ARROW_SCHEMA} | {
+        f.name for f in STATS_BY_SECTOR_ARROW_SCHEMA
+    }
+    documented = _documented_columns()
+    assert documented, "data.md の列の表を読めていない"
+    missing = [c for c in documented if c not in known]
+    assert not missing, f"data.md が実在しない列を説明している: {missing}"
+
+
+def test_the_download_links_point_at_files_p8_writes():
+    """**壊れたダウンロードリンクを公開しない。**
+
+    `site/src/data/` は P8 の生成物でコミットしないため、サイトのビルド時の
+    リンク検証では捕まらない。ここで縛る。
+    """
+    import re as _re
+
+    text = (repo_root() / "site" / "src" / "data.md").read_text(encoding="utf-8")
+    linked = set(_re.findall(r'href="data/([A-Za-z0-9_.]+)"', text))
+    assert linked, "data.md のダウンロードリンクを読めていない"
+
+    # P8 が書くもの（p8_publish.runner._write_site_data）
+    written = {"meta.json"}
+    for name in ("stats_overall", "stats_by_sector"):
+        for ext in ("json", "csv"):
+            written.add(f"{name}.{ext}")
+
+    unknown = sorted(linked - written)
+    assert not unknown, f"P8 が書かないファイルへのリンクがある: {unknown}"
+
+
+def test_the_published_formats_cover_the_download_links():
+    """publish.yaml の formats を狭めたらリンクが壊れることを検知する。"""
+    import yaml
+
+    cfg = yaml.safe_load(
+        (repo_root() / "configs" / "publish.yaml").read_text(encoding="utf-8")
+    )
+    formats = set((cfg.get("tier1") or {}).get("formats") or [])
+    assert {"json", "csv"} <= formats, (
+        "data.md が json と csv のリンクを出しているので formats から外せない"
+    )
