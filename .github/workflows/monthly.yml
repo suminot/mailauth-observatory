@@ -102,6 +102,12 @@ jobs:
         continue-on-error: true
         run: mailauth p7-aggregate --run "${{ steps.run.outputs.id }}"
 
+      # changelog は P8 より先に作る。**site/src/changelog.md を書き換えるので、
+      # P8 のページ検査（断定的な語彙・順位付けの禁止）を通す必要がある。**
+      - name: 変更履歴の生成
+        continue-on-error: true
+        run: mailauth changelog
+
       - name: P8 公開データの生成
         continue-on-error: true
         run: mailauth p8-publish --run "${{ steps.run.outputs.id }}" --any-month
@@ -134,7 +140,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add gold runs || true
+          git add gold runs site/src/changelog.md || true
           if git diff --cached --quiet; then
             # 空コミットを作る。60日で schedule が止まるのを防ぐのが目的で、
             # 「今月は数字が動かなかった」ことも記録として意味がある

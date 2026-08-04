@@ -435,6 +435,57 @@ def run_report(
         raise typer.Exit(code=1)
 
 
+@app.command("changelog")
+def changelog_cmd(
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", help="書き出し先。既定は site/src/changelog.md"),
+    ] = None,
+    as_json: Annotated[bool, typer.Option("--json", help="JSON で出す")] = False,
+    stdout: Annotated[
+        bool, typer.Option("--stdout", help="ファイルに書かず標準出力へ")
+    ] = False,
+) -> None:
+    """変更履歴を gold と manifest から生成する。
+
+    版が上がったことは機械が検出するが、**それが数字にどう影響したかは
+    人が書く。** 生成物には解釈の欄が空いたまま出る。
+    """
+    from .changelog import available_months, build, to_json, to_markdown
+    from .paths import config_path
+
+    months = available_months()
+    if not months:
+        typer.secho(
+            "gold がまだありません。先に p7-aggregate を実行してください",
+            fg="yellow",
+            err=True,
+        )
+    entries = build(months)
+
+    if as_json:
+        typer.echo(to_json(entries))
+        return
+
+    text = to_markdown(entries)
+    if stdout:
+        typer.echo(text)
+        return
+
+    target = out or config_path("site/src/changelog.md")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding="utf-8")
+    typer.echo(f"→ {target}（{len(entries)} か月分）")
+
+    pending = [e.month for e in entries if e.has_measurement_change]
+    if pending:
+        typer.secho(
+            f"  ⚠ 計測側の変更があった月: {', '.join(pending)}。"
+            "「解釈」の欄を人が埋めること",
+            fg="yellow",
+        )
+
+
 @app.command("offload")
 def offload_cmd(
     run: RunOption = "",
