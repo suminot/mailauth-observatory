@@ -250,6 +250,9 @@ def publish_config(tmp_path, monkeypatch):
     (root / "configs" / "publish.yaml").write_text(
         yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False), encoding="utf-8"
     )
+    # 訂正申告の登録簿。**無い状態は「申告0件」ではない**ので、
+    # これが無いと第2層は出せない。実リポジトリと同じ状態にしておく
+    shutil.copytree(real / "configs" / "corrections", root / "configs" / "corrections")
     monkeypatch.setenv("MAILAUTH_ROOT", str(root))
     return root / "configs" / "publish.yaml"
 
@@ -410,3 +413,42 @@ def test_p8_dry_run_writes_nothing(publish_config):
     assert any(w["code"] == "DRY_RUN" for w in result["warnings"])
     data = publish_config.parent.parent / "site" / "src" / "data"
     assert not (data / "stats_overall.json").exists()
+
+
+def test_p8_refuses_tier2_when_the_corrections_registry_is_unreadable(publish_config):
+    """**「読めなかった」を「申告0件」として第2層を出さない。**
+
+    未審査の申告があるかどうかが分からない状態で個社名付き明細を出すのは、
+    訂正窓口を名目だけにすることになる。第1層は個社を名指ししないので
+    止めない（警告に留める）。
+    """
+    _write_gold()
+    (publish_config.parent / "corrections" / "corrections.yaml").unlink()
+
+    # 第1層のみ ── 警告は出るが止まらない
+    result = run_p8(run_id=RUN, config=str(publish_config))
+    assert result["status"] == "success"
+    assert any(
+        w["code"] == "CORRECTIONS_REGISTRY_UNREADABLE" for w in result["warnings"]
+    )
+
+    _set(
+        publish_config,
+        **{
+            "tier2.enabled": True,
+            "tier2.notified_on": "2026-01-01",
+            "tier2.access_control_configured": True,
+        },
+    )
+    with pytest.raises(PublishBlockedError) as exc:
+        run_p8(run_id=RUN, config=str(publish_config), today=dt.date(2026, 8, 10))
+    assert "登録簿が読めていない" in str(exc.value)
+
+
+def test_p8_lints_the_corrections_history_page(publish_config):
+    """訂正履歴も公開ページなので語彙検査の対象になる。"""
+    _write_gold()
+    page = publish_config.parent.parent / "site" / "src" / "corrections-log.md"
+    assert page.is_file(), "訂正履歴ページが site/src に無い"
+    result = run_p8(run_id=RUN, config=str(publish_config))
+    assert "corrections-log.md" in result["breakdown"]["pages_checked"]

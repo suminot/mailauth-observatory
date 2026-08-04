@@ -20,6 +20,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .. import corrections
 from ..config import load_yaml
 from ..io import read_parquet
 from ..manifest import RunManifest
@@ -113,7 +114,7 @@ def run(
     run_id: str,
     *,
     dry_run: bool = False,
-    config: str = DEFAULT_CONFIG,
+    config: str | Path = DEFAULT_CONFIG,
     today: dt.date | None = None,
     require_month: bool = True,
 ) -> dict[str, Any]:
@@ -136,7 +137,9 @@ def run(
         phase=PHASE,
         out_dir=out_dir,
         tool_versions={"publisher": PUBLISHER_VERSION},
-        params={"dry_run": dry_run, "config": config},
+        # Path を渡されても manifest は JSON になる。**記録が書けないと
+        # 原則4（件数を必ず記録する）が成り立たない**ので文字列に寄せる
+        params={"dry_run": dry_run, "config": str(config)},
     ) as manifest:
         months = available_months()
         if require_month and run_id[:7] not in months:
@@ -208,6 +211,37 @@ def run(
             raise PublishBlockedError(
                 "第2層（個社名付き明細）の公開条件を満たしていない:\n  "
                 + "\n  ".join(decision.reasons)
+            )
+
+        # -- 未処理の訂正申告 --------------------------------------------------
+        # **第1層は止めない。第2層は止める。** 第1層は個社を名指ししないので
+        # 未審査の申告が残っていても実害が小さい。個社名付き明細を出す段で
+        # 未審査の申告を放置するのは、訂正窓口を名目だけにすることになる
+        registry = corrections.load()
+        if not registry.available:
+            manifest.add_warning(
+                "CORRECTIONS_REGISTRY_UNREADABLE",
+                message=(
+                    "訂正申告の登録簿を読めていない。**「申告0件」ではない。** "
+                    + "; ".join(registry.notes + registry.problems)
+                ),
+            )
+        overdue = registry.overdue()
+        if tier2_requested and (overdue or not registry.available):
+            raise PublishBlockedError(
+                "第2層を出す前に訂正申告の処理を終えること。"
+                f"審査の上限（{corrections.SLA_LIMIT_HOURS} 時間）を超えている申告: "
+                + (", ".join(e.id for e in overdue) or "（登録簿が読めていない）")
+            )
+        if overdue:
+            manifest.add_warning(
+                "CORRECTIONS_OVERDUE",
+                count=len(overdue),
+                sample=[e.id for e in overdue][:5],
+                message=(
+                    f"審査の上限（{corrections.SLA_LIMIT_HOURS} 時間）を超えている"
+                    "訂正申告がある。**第2層はこの状態では出せない**"
+                ),
             )
         if not tier2_requested:
             manifest.add_warning(

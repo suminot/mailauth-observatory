@@ -1,0 +1,36 @@
+# 訂正申告の登録簿（DESIGN.md Sprint 9・10）
+#
+# `mailauth corrections` がここから訂正履歴ページを生成する。
+#
+# **申告者を特定する情報は置かない。** 氏名・メールアドレス・電話番号の列は
+# 用意していない。列が無ければ入らない。対象はドメインで識別する。
+#
+# **審査中のものも、訂正しなかったものも残す。** 訂正した分だけを載せると、
+# 申告が何件あってどう扱われたのかが読み手に分からない。
+#
+# **過去の月の数字は書き換えない。** 訂正は applied_from の月から反映する。
+# 公開済みの値を引用した第三者の記述と食い違わないようにするため。
+#
+# 審査は受付から48時間以内を目標、72時間を上限とする。超過は
+# `mailauth corrections` が検出して印を付ける。
+#
+# 書き方:
+#
+#   - id: C-2026-001            # 一意。年と連番
+#     received_on: 2026-08-04   # 受付日
+#     domain: example.jp        # 対象ドメイン
+#     channel: issue            # issue / email / postal / other
+#     claim: |                  # 申告の内容（事実として何が違うと言われたか）
+#       このドメインは当社のものではない
+#     our_observation: |        # 当方が観測していたこと
+#       P3 が official_url から候補として展開し、確度 medium で採用していた
+#     status: accepted          # received / under_review / accepted /
+#                               # partially_accepted / rejected / withdrawn
+#     reviewed_on: 2026-08-05   # closed 系の status では必須
+#     resolution: |             # 結論（人が書く）
+#       誤りを確認し、除外リストに追加した
+#     applied_from: 2026-09     # 反映する月。過去は書き換えない
+#     months_affected: [2026-08]
+#     note: null
+
+corrections: []

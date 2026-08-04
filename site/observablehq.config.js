@@ -12,6 +12,7 @@ export default {
     { name: "方法論", path: "/methodology" },
     { name: "データ", path: "/data" },
     { name: "訂正申告", path: "/corrections" },
+    { name: "訂正履歴", path: "/corrections-log" },
     { name: "免責事項・利用規約", path: "/terms" },
     { name: "変更履歴", path: "/changelog" },
   ],
