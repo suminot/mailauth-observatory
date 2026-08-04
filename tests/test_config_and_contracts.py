@@ -41,12 +41,27 @@ def test_every_population_yaml_is_valid():
     assert {p.id for p in populations} >= {"jp-prime", "us-fortune500", "global500"}
 
 
+#: source.primary ごとに必須の設定
+_REQUIRED_BY_PRIMARY = {
+    "edinet_code_list": ("edinet_code_list",),
+    "sec_edgar": (),
+    "wikidata": ("wikidata_query",),
+}
+
+
 def test_implemented_populations_have_the_settings_they_need():
     for cfg in list_populations():
-        if cfg.implemented and cfg.enabled:
-            assert cfg.source.edinet_code_list is not None, cfg.id
-            assert cfg.source.industry.common_mapping, cfg.id
-            assert (repo_root() / cfg.source.industry.common_mapping).is_file(), cfg.id
+        if not (cfg.implemented and cfg.enabled):
+            continue
+        primary = cfg.source.primary
+        assert primary in _REQUIRED_BY_PRIMARY, f"{cfg.id}: 未知の primary {primary}"
+        for field_name in _REQUIRED_BY_PRIMARY[primary]:
+            assert getattr(cfg.source, field_name, None) is not None, (
+                f"{cfg.id} に source.{field_name} がない"
+            )
+        # 業種軸で集計するので写像は実装済みの母集団すべてに要る
+        assert cfg.source.industry.common_mapping, cfg.id
+        assert (repo_root() / cfg.source.industry.common_mapping).is_file(), cfg.id
 
 
 def test_unimplemented_populations_state_why():

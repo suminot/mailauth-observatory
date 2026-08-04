@@ -257,3 +257,33 @@ def test_site_data_is_not_committed():
     gitignore = (repo_root() / ".gitignore").read_text(encoding="utf-8")
     assert "site/src/data/*.json" in gitignore
     assert "site/src/data/*.csv" in gitignore
+
+
+def test_fortune_membership_is_not_reconstructed_as_a_population():
+    """Fortune の順位は編集著作物。母集団として持たない。
+
+    実測で所属リストが CC0 / CC BY-SA から500社規模で再構築できないことが
+    分かっている。計測は us-all-listed で行い、リストが手に入ったら
+    ビューとして重ねる（README「Fortune 500 は母集団ではなくビュー」）。
+    """
+    from mailauth.config import list_populations
+
+    by_id = {c.id: c for c in list_populations()}
+    for pid in ("us-fortune500", "global500"):
+        assert by_id[pid].implemented is False, f"{pid} を母集団として有効にしている"
+        assert "再構築できない" in (by_id[pid].blocked_by or ""), pid
+
+
+def test_sec_user_agent_is_not_faked():
+    """SEC は連絡先つきの User-Agent を必須としている。偽の値を埋めない。"""
+    import re as _re
+
+    offenders = [
+        str(p.relative_to(repo_root()))
+        for p in _files()
+        if _re.search(
+            r"User-Agent[\"']?\s*:\s*[\"'][^\"']*(example\.com|test@|noreply@)",
+            _effective_text(p),
+        )
+    ]
+    assert offenders == [], f"偽の連絡先を User-Agent に書いている: {offenders}"

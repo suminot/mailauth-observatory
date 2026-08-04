@@ -82,6 +82,13 @@ def p1_population(
         ),
     ] = None,
     dry_run: DryRunOption = False,
+    offline: Annotated[
+        bool,
+        typer.Option(
+            "--offline",
+            help="外部 API に問い合わせない。補完しなかったことは manifest に残る",
+        ),
+    ] = False,
 ) -> None:
     """P1 母集団確定 ── 企業リストの取得と identity 付与。"""
     from .p1_population import PopulationNotImplementedError
@@ -90,7 +97,12 @@ def p1_population(
     run_id = validate_run_id(run or default_run_id())
     try:
         result = run_p1(
-            config=config, run_id=run_id, limit=limit, source_file=source_file, dry_run=dry_run
+            config=config,
+            run_id=run_id,
+            limit=limit,
+            source_file=source_file,
+            dry_run=dry_run,
+            offline=offline,
         )
     except PopulationNotImplementedError as exc:
         typer.secho(f"未実装: {exc}", fg="red", err=True)
