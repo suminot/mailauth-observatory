@@ -611,3 +611,53 @@ def test_committed_gold_has_a_plausible_population_size():
                     f"{expected[0]}〜{expected[1]}）。開発中の実行結果では？"
                 )
     assert not problems, "\n".join(problems)
+
+
+def test_the_data_license_is_declared_consistently():
+    """**公開データのライセンスは1箇所を変えて済む話ではない。**
+
+    `publish.yaml` を変えてもサイトの文面と LICENSE-DATA が古いままなら、
+    受け取った人はどちらを信じればよいか分からない。CC0 は引き継ぎ可能性の
+    ための選択なので、権利付与が曖昧になると目的そのものが崩れる。
+
+    出力データのライセンスは CC0 1.0（DESIGN.md 第11章で決定済み）。
+    """
+    import yaml
+
+    declared = (
+        yaml.safe_load(
+            (repo_root() / "configs" / "publish.yaml").read_text(encoding="utf-8")
+        ).get("tier1")
+        or {}
+    ).get("license")
+    assert declared == "CC0-1.0", f"publish.yaml の宣言が CC0-1.0 でない: {declared}"
+
+    # データ用のライセンスファイルが実在し、CC0 の正文を含むこと
+    data_license = repo_root() / "LICENSE-DATA"
+    assert data_license.is_file(), "LICENSE-DATA が無い（権利付与を明示していない）"
+    text = data_license.read_text(encoding="utf-8")
+    assert "CC0 1.0 Universal" in text
+    # 正文が入っていること（リンクだけでは権利付与にならない）
+    assert "Statement of Purpose" in text
+    # **コードとデータの境界を明示する。** LICENSE は Apache-2.0
+    assert "Apache-2.0" in text
+    assert (repo_root() / "LICENSE").is_file()
+
+    # OpenINTEL を混ぜると継承条項が波及しうる、という注意が残っていること
+    assert "OpenINTEL" in text
+
+    # サイトと gold の README が同じことを言っていること
+    for path in ("site/src/terms.md", "gold/README.md"):
+        page = (repo_root() / path).read_text(encoding="utf-8")
+        assert "CC0" in page, f"{path} がライセンスに触れていない"
+
+
+def test_the_design_records_the_license_decision():
+    """判断待ちのまま公開データのライセンスが確定している状態を作らない。"""
+    design = (repo_root() / "DESIGN.md").read_text(encoding="utf-8")
+    section = design.split("## 11. 未解決事項")[1]
+    open_table = section.split("### 決定済み")[0]
+    assert "出力データのライセンス" not in open_table, (
+        "DESIGN の未解決事項に残っている。決定したなら決定済みへ移すこと"
+    )
+    assert "CC0 1.0。" in section
