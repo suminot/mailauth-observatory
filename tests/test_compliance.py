@@ -661,3 +661,43 @@ def test_the_design_records_the_license_decision():
         "DESIGN の未解決事項に残っている。決定したなら決定済みへ移すこと"
     )
     assert "CC0 1.0。" in section
+
+
+def test_the_owner_runbook_references_things_that_exist():
+    """OWNER-TASKS.md が実在しないパスや secret 名を指していないこと。
+
+    **運営者が読んで手を動かす文書なので、古くなると作業が止まる。**
+    ファイルを移したときにここで落ちる。
+    """
+    import re as _re
+
+    runbook = repo_root() / "OWNER-TASKS.md"
+    assert runbook.is_file(), "OWNER-TASKS.md が無い"
+    text = runbook.read_text(encoding="utf-8")
+
+    # バッククォートで囲まれた configs/ 以下のパスは実在すること
+    missing = [
+        p
+        for p in sorted(set(_re.findall(r"`(configs/[A-Za-z0-9_./-]+)`", text)))
+        if not (repo_root() / p).exists()
+    ]
+    assert not missing, f"実在しないパスを指している: {missing}"
+
+    # 挙げている secret 名がワークフローで実際に読まれていること
+    workflows = "".join(
+        p.read_text(encoding="utf-8")
+        for p in sorted((repo_root() / ".github" / "workflows").glob("*.yml"))
+    )
+    declared = set(_re.findall(r"`((?:CLOUDFLARE|R2|BACKUP|MAILAUTH)_[A-Z0-9_]+)`", text))
+    unused = sorted(s for s in declared if f"secrets.{s}" not in workflows)
+    assert not unused, f"ワークフローが読んでいない secret を挙げている: {unused}"
+
+    # 挙げている CLI サブコマンドが実在すること
+    from mailauth.cli import app
+
+    names = {
+        c.name for c in getattr(app, "registered_commands", []) if getattr(c, "name", None)
+    }
+    referenced = set(_re.findall(r"mailauth ([a-z0-9-]+)", text))
+    unknown = sorted(referenced - names - {"p1-population"})
+    assert not unknown, f"存在しないサブコマンドを挙げている: {unknown}"
