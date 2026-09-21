@@ -80,7 +80,7 @@ CREDENTIALS: dict[str, Credential] = {
             label="EDINET API キー",
             where="https://api.edinet-fsa.go.jp/api/auth/index.aspx?mode=1",
             cost=COST_SIGNUP,
-            stops="国内の母集団が取れない",
+            stops="コードリストは鍵なしでも取れる。書類取得 API を使う段で要る",
         ),
         Credential(
             name="MAILAUTH_GBIZINFO_TOKEN",
@@ -106,10 +106,20 @@ OFFICIAL_URL_SOURCES: dict[str, str | None] = {
     "wikidata_identity": None,
 }
 
-#: 母集団の一次ソースが要求する鍵
+#: 母集団の一次ソースが**無いと取れない**鍵。
+#:
+#: **EDINET コードリストはここに入らない。** 配布物が認証の要らない静的な zip
+#: なので、`MAILAUTH_EDINET_SUBSCRIPTION_KEY` が無くても取得できる（2026-09 の
+#: 実行で鍵なしに 11,386 件を取得したことを確認済み。設定にある
+#: `send_subscription_key` は、鍵があれば添えるという意味でしかない）。
+#: **必須でないものを必須として出すと、着手の障壁を実際より高く見せる。**
 PRIMARY_SOURCE_CREDENTIAL = {
-    "edinet_code_list": "MAILAUTH_EDINET_SUBSCRIPTION_KEY",
     "sec_edgar": "MAILAUTH_CONTACT_EMAIL",
+}
+
+#: 一次ソースが「あれば添える」鍵。欠けても取得そのものは通る
+OPTIONAL_SOURCE_CREDENTIAL = {
+    "edinet_code_list": "MAILAUTH_EDINET_SUBSCRIPTION_KEY",
 }
 
 #: official_url 以外の enrich が使う鍵。欠けても計測は通る
@@ -170,6 +180,10 @@ def _population_readiness() -> list[PopulationReadiness]:
         if primary_key and not CREDENTIALS[primary_key].present():
             required.append(primary_key)
 
+        soft_key = OPTIONAL_SOURCE_CREDENTIAL.get(src.primary)
+        if soft_key and not CREDENTIALS[soft_key].present():
+            optional.append(soft_key)
+
         # constraints で明示されていれば一次ソースによらず必須
         if cfg.constraints.get("requires_contact_email"):
             name = "MAILAUTH_CONTACT_EMAIL"
@@ -224,15 +238,61 @@ def _repo() -> Path:
 # --------------------------------------------------------------------------
 
 
+def _observed_domains(month_dir: Path) -> int | None:
+    """その月に実際に観測できたドメイン数。読めなければ None。
+
+    **ファイルがあることと測れたことは別である**（原則5）。2026-09 の実行は
+    gold を書き、実行レポートも `status=success` と言ったが、official_url が
+    1件も取れなかったため P2 以降の入力が 0 で、`observed_domains` は 0
+    だった。**ディレクトリの有無で「計測済み」と判定すると、空の結果を
+    根拠に次の作業を勧めることになる。**
+    """
+    f = month_dir / "stats_overall.parquet"
+    if not f.is_file():
+        return None
+    try:
+        import pandas as pd
+
+        df = pd.read_parquet(f, columns=["observed_domains"])
+    except Exception:
+        return None
+    if df.empty or "observed_domains" not in df.columns:
+        return None
+    return int(df["observed_domains"].fillna(0).sum())
+
+
+def _gold_population(month_dir: Path) -> str | None:
+    """その月がどの母集団で回ったか。**空振りの原因は母集団ごとに違う。**"""
+    f = month_dir / "stats_overall.parquet"
+    if not f.is_file():
+        return None
+    try:
+        import pandas as pd
+
+        df = pd.read_parquet(f, columns=["population_id"])
+    except Exception:
+        return None
+    if df.empty:
+        return None
+    return str(df["population_id"].iloc[0])
+
+
 def _measured_months() -> list[str]:
+    """観測が1件でもある月だけを返す。"""
+    return [m for m, n, _ in _gold_months() if n]
+
+
+def _gold_months() -> list[tuple[str, int, str | None]]:
+    """gold にある月、その月の観測ドメイン数、回した母集団。"""
     root = gold_root()
     if not root.is_dir():
         return []
-    months = []
+    out: list[tuple[str, int, str | None]] = []
     for p in sorted(root.glob("month=*")):
-        if p.is_dir() and any(p.iterdir()):
-            months.append(p.name.split("=", 1)[1])
-    return months
+        if not p.is_dir() or not any(p.iterdir()):
+            continue
+        out.append((p.name.split("=", 1)[1], _observed_domains(p) or 0, _gold_population(p)))
+    return out
 
 
 def _run_reports() -> list[str]:
@@ -347,11 +407,41 @@ def _next_action(
     pops: list[PopulationReadiness],
     months: list[str],
     later: list[LaterItem],
+    empty_months: list[tuple[str, str | None]] | None = None,
 ) -> NextAction:
     runnable = [p for p in pops if p.runnable]
+    empty_months = empty_months or []
 
     # まだ一度も測っていない。**ここで9件の作業を見せない。**
     if not months:
+        # 回ったのに1件も観測できていない月がある。**放っておくと毎月これが
+        # 積み上がる**（月次は自動で回り、実行レポートは success と言う）。
+        if empty_months and not runnable:
+            month, pop_id = empty_months[-1]
+            # **空振りの原因は、その月に回した母集団のものを出す。**
+            # 全母集団から一番安い鍵を選ぶと、関係のない鍵を指すことになる
+            blocked = next((p for p in pops if p.id == pop_id and p.missing_required), None)
+            steps = [f"runs/{month}.md の警告を見る（NO_SEED_DOMAINS が出ているはず）"]
+            if blocked:
+                keys = sorted(
+                    blocked.missing_required, key=lambda n: COST_ORDER.get(CREDENTIALS[n].cost, 9)
+                )
+                c = CREDENTIALS[keys[0]]
+                steps.append(
+                    f"{c.name} を入れると {blocked.id} が通る（{c.cost_label}・{c.where}）"
+                )
+            steps.append(
+                "待つ間に測るなら us-all-listed。"
+                "要るのは MAILAUTH_CONTACT_EMAIL だけで登録も申請も要らない"
+            )
+            return NextAction(
+                headline=f"{month} は回ったが1件も測れていない",
+                why=(
+                    "gold は書かれたが observed_domains が 0。"
+                    "起点になる official_url が取れておらず、P2 以降の入力が空になっている"
+                ),
+                steps=steps,
+            )
         if runnable:
             target = min(runnable, key=lambda p: (0 if p.country == "US" else 1, p.id))
             return NextAction(
@@ -443,6 +533,8 @@ class Report:
     runs: list[str]
     later: list[LaterItem]
     next_action: NextAction
+    #: gold はあるが観測が 0 件の月。**「回った」と「測れた」を分ける**（原則5）
+    empty_months: list[str] = field(default_factory=list)
 
     @property
     def runnable(self) -> list[PopulationReadiness]:
@@ -456,6 +548,7 @@ class Report:
         return {
             "populations": [p.to_dict() for p in self.populations],
             "measured_months": list(self.months),
+            "empty_months": list(self.empty_months),
             "runs": list(self.runs),
             "later": [i.to_dict() for i in self.later],
             "next_action": self.next_action.to_dict(),
@@ -464,14 +557,17 @@ class Report:
 
 def diagnose() -> Report:
     pops = _population_readiness()
-    months = _measured_months()
+    gold = _gold_months()
+    months = [m for m, n, _ in gold if n]
+    empty = [(m, pop) for m, n, pop in gold if not n]
     later = _later_items()
     return Report(
         populations=pops,
         months=months,
         runs=_run_reports(),
         later=later,
-        next_action=_next_action(pops, months, later),
+        next_action=_next_action(pops, months, later, empty),
+        empty_months=[m for m, _ in empty],
     )
 
 
@@ -512,9 +608,13 @@ def render(report: Report) -> str:
     lines.append("計測の実績")
     if report.months:
         span = f"{report.months[0]} 〜 {report.months[-1]}"
-        lines.append(f"  gold: {len(report.months)} か月ぶん（{span}）")
+        lines.append(f"  観測できた月: {len(report.months)} か月（{span}）")
     else:
-        lines.append("  gold: まだ無い")
+        lines.append("  観測できた月: まだ無い")
+    if report.empty_months:
+        # **「回った」を「測れた」と読ませない。** 実行は成功し gold も
+        # 書かれているので、ここで言わないと気付けない
+        lines.append(f"  回ったが観測 0 件の月: {', '.join(report.empty_months)}")
     lines.append("")
 
     lines.append("あとでよいもの（無くても計測は回る）")
