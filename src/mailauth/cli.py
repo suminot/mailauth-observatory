@@ -858,6 +858,27 @@ def populations() -> None:
         typer.echo(f"{cfg.id:<16} {cfg.country:<6} {state:<12} {cfg.label}{note}")
 
 
+@app.command("doctor")
+def doctor_cmd(
+    as_json: Annotated[
+        bool, typer.Option("--json", help="機械可読で出す（コンソール用）")
+    ] = False,
+) -> None:
+    """いま何をすればいいかを1つだけ出す。
+
+    運営者の作業は9件あるが依存関係があり、実際に着手できるのは常に1〜2件で
+    ある。**全部を並べると全部が未完了に見える**ので、持っている鍵と生成物の
+    状態から次の一手を1つに絞って出す。読むだけで何も書き換えない。
+    """
+    from .doctor import diagnose, render
+
+    report = diagnose()
+    if as_json:
+        typer.echo(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
+        return
+    typer.echo(render(report))
+
+
 def main() -> None:
     try:
         app()
