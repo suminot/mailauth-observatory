@@ -66,16 +66,27 @@ def test_連絡先だけで米国母集団が回せる(monkeypatch, empty_gold):
     assert any("limit" in s for s in report.next_action.steps)
 
 
-def test_国内母集団は鍵が揃うまで動かせない(empty_gold):
+def test_国内母集団は_gbizinfo_が無いと動かせない(empty_gold):
     report = doctor.diagnose()
     jp = next(p for p in report.populations if p.id == "jp-all-listed")
     assert not jp.runnable
-    assert "MAILAUTH_EDINET_SUBSCRIPTION_KEY" in jp.missing_required
+    assert jp.missing_required == ["MAILAUTH_GBIZINFO_TOKEN"]
+
+
+def test_edinet_の鍵は必須にしない(empty_gold):
+    """EDINET コードリストは認証の要らない静的な zip である。
+
+    2026-09 の実行が鍵なしで 11,386 件を取得している。**必須でないものを
+    必須として出すと、着手の障壁を実際より高く見せる**ので、任意側に置く。
+    """
+    report = doctor.diagnose()
+    jp = next(p for p in report.populations if p.id == "jp-all-listed")
+    assert "MAILAUTH_EDINET_SUBSCRIPTION_KEY" not in jp.missing_required
+    assert "MAILAUTH_EDINET_SUBSCRIPTION_KEY" in jp.missing_optional
 
 
 def test_法人番号は任意扱い(monkeypatch, empty_gold):
     """商号の裏取りが無くても計測は通る。必須に混ぜると着手の壁が1つ増える。"""
-    monkeypatch.setenv("MAILAUTH_EDINET_SUBSCRIPTION_KEY", "x")
     monkeypatch.setenv("MAILAUTH_GBIZINFO_TOKEN", "y")
     report = doctor.diagnose()
     jp = next(p for p in report.populations if p.id == "jp-all-listed")
@@ -102,16 +113,56 @@ def test_あとでよいものに計測を止める要素が混ざらない(empt
     assert all(not i.done for i in report.later)
 
 
+def _write_gold(tmp_path, month: str, observed: int, population: str = "us-all-listed"):
+    import pandas as pd
+
+    d = tmp_path / "gold" / f"month={month}"
+    d.mkdir(parents=True)
+    pd.DataFrame(
+        [{"population_id": population, "observed_domains": observed, "total_entities": 100}]
+    ).to_parquet(d / "stats_overall.parquet")
+    return d
+
+
 def test_計測済みなら次の一手が公開に移る(monkeypatch, tmp_path):
     monkeypatch.setenv("MAILAUTH_CONTACT_EMAIL", "someone@example.com")
-    gold = tmp_path / "gold" / "month=2026-08"
-    gold.mkdir(parents=True)
-    (gold / "summary.parquet").write_bytes(b"x")
+    _write_gold(tmp_path, "2026-08", observed=1200)
     monkeypatch.setenv("MAILAUTH_GOLD_ROOT", str(tmp_path / "gold"))
     monkeypatch.setenv("MAILAUTH_DATA_ROOT", str(tmp_path / "data"))
     report = doctor.diagnose()
     assert report.months == ["2026-08"]
     assert "Cloudflare" in report.next_action.headline
+
+
+def test_回っただけで観測0の月を計測済みと数えない(monkeypatch, tmp_path):
+    """**ファイルがあることと測れたことは別である**（原則5）。
+
+    2026-09 の実行は gold を書き、実行レポートも success と言ったが、
+    official_url が1件も取れず observed_domains は 0 だった。ディレクトリの
+    有無で判定すると、空の結果を根拠に「次は公開」と勧めることになる。
+    """
+    _write_gold(tmp_path, "2026-09", observed=0, population="jp-all-listed")
+    monkeypatch.setenv("MAILAUTH_GOLD_ROOT", str(tmp_path / "gold"))
+    monkeypatch.setenv("MAILAUTH_DATA_ROOT", str(tmp_path / "data"))
+    report = doctor.diagnose()
+    assert report.months == []
+    assert report.empty_months == ["2026-09"]
+    assert "測れていない" in report.next_action.headline
+    assert "Cloudflare" not in report.next_action.headline
+
+
+def test_空振りの原因はその月に回した母集団のものを出す(monkeypatch, tmp_path):
+    """全母集団から一番安い鍵を選ぶと、関係のない鍵を指すことになる。
+
+    jp-all-listed で空振りしたなら、指すのは gBizINFO であって、
+    別の母集団の MAILAUTH_CONTACT_EMAIL ではない。
+    """
+    _write_gold(tmp_path, "2026-09", observed=0, population="jp-all-listed")
+    monkeypatch.setenv("MAILAUTH_GOLD_ROOT", str(tmp_path / "gold"))
+    monkeypatch.setenv("MAILAUTH_DATA_ROOT", str(tmp_path / "data"))
+    steps = doctor.diagnose().next_action.steps
+    joined = "\n".join(steps)
+    assert "MAILAUTH_GBIZINFO_TOKEN を入れると jp-all-listed が通る" in joined
 
 
 def test_診断は何も書き換えない(empty_gold, tmp_path):

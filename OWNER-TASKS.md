@@ -33,7 +33,8 @@ Wikidata（CC0）なので、必要なのは `MAILAUTH_CONTACT_EMAIL` ひとつ 
    - limit: `50`
 
 **所要 約5分＋待ち時間30分。** これで八工程が端から端まで通り、サイトの
-生成物まで出る。国内側（EDINET・gBizINFO）の鍵はそのあとでよい。
+生成物まで出る。国内側で要るのは gBizINFO のトークン1つだけで、
+それはそのあとでよい（**EDINET の鍵は母集団の取得には要らない** ── 下記）。
 gBizINFO は申請制で待たされるが、**待っている間に他が止まらない**のが
 この順序の理由である。
 
@@ -68,7 +69,11 @@ gBizINFO は申請制で待たされるが、**待っている間に他が止ま
 | 母集団 | 要る鍵 | 取得の手間 |
 |---|---|---|
 | `us-all-listed` | `MAILAUTH_CONTACT_EMAIL` のみ | **登録不要。今日できる** |
-| `jp-all-listed` | EDINET ＋ gBizINFO | gBizINFO が申請制で待つ |
+| `jp-all-listed` | `MAILAUTH_GBIZINFO_TOKEN` のみ | 申請制で待つ |
+
+**EDINET の API キーは母集団の取得には要らない。** コードリストの配布物が
+認証の要らない静的な zip だからで、2026-09 の実行が鍵なしで 11,386 件を
+取得している。鍵が要るのは書類取得 API（有報の本文）を使う段で、いまは使っていない。
 
 米国側を先に通せば、八工程・サイト生成・辞書の飽和曲線まで全部確認できる。
 国内側の鍵が揃うのを待つ必要は無い。`mailauth doctor` が現状で何が回せるかを出す。
@@ -79,7 +84,7 @@ GitHub の Settings → Secrets and variables → Actions に入れる。
 
 | secret | 用途 | 取得元 | 無いとどうなるか |
 |---|---|---|---|
-| `MAILAUTH_EDINET_SUBSCRIPTION_KEY` | 企業リスト | [EDINET API](https://api.edinet-fsa.go.jp/api/auth/index.aspx?mode=1)（無料・要登録） | **母集団が取れない** |
+| `MAILAUTH_EDINET_SUBSCRIPTION_KEY` | 書類取得 API（現状は未使用） | [EDINET API](https://api.edinet-fsa.go.jp/api/auth/index.aspx?mode=1)（無料・要登録） | コードリストは鍵なしで取れるので**いまは影響しない** |
 | `MAILAUTH_GBIZINFO_TOKEN` | 公式サイト URL | [gBizINFO](https://info.gbiz.go.jp/api/index.html)（無料・申請制） | `official_domain` が全社欠損し、**P2 の候補生成が起点を失う** |
 | `MAILAUTH_HOUJIN_BANGOU_APP_ID` | 商号の裏取り | [国税庁](https://www.houjin-bangou.nta.go.jp/webapi/)（無料） | 裏取りをスキップ（動く） |
 | `MAILAUTH_CONTACT_EMAIL` | SEC の User-Agent | あなたの連絡先 | 米国母集団が**理由を添えて停止**する |
