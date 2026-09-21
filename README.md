@@ -75,6 +75,23 @@ Sprint 9 は**送信の判断を含まない範囲まで**実装してある。�
 **コードで解けない作業は [OWNER-TASKS.md](OWNER-TASKS.md) にまとめてある。**
 API キーの取得元、Cloudflare の設定、通知を送るまでの順序、未解決事項の判断材料。
 
+ただし**一覧を最初から読む必要は無い。** 依存関係があるので着手できるのは
+常に1〜2件で、残りは判断材料が出るまで手を付けられない。次の一手だけを出す。
+
+```bash
+mailauth doctor
+```
+
+持っている鍵と生成物の状態から、いま動かせる母集団・足りない鍵とその取得
+コスト（すぐ / 登録 / 申請して待つ）・**次にやること1件**を出す。読むだけで
+何も書き換えない。GitHub Actions の実行ログ先頭にも同じものが出る。
+
+**鍵が1つも無い状態でも着手できる経路が1本ある。** `us-all-listed` は出典が
+SEC EDGAR（パブリックドメイン）と Wikidata（CC0）なので、要るのは
+`MAILAUTH_CONTACT_EMAIL` ── あなたの連絡先だけで、登録も申請も要らない
+（SEC が User-Agent に連絡先を求めるため必須にしてある）。国内側の gBizINFO は
+申請制で待たされるが、**待っている間に米国側で八工程を端から端まで通せる。**
+
 順序に意味がある。**まず全件計測を1回通すと、辞書の育成（未解決事項1）と
 DKIM L3 の判断（同2）と rua ベンダーの同定（同6）の材料が同時に出る。**
 
@@ -130,6 +147,8 @@ mailauth notify-plan   --run 2026-08 --limit 20   # 先頭20件だけ（残り�
 mailauth notify-plan   --run 2026-08 --no-https   # security.txt を見に行かない
 
 # 実行状況
+mailauth doctor                        # いま何をすればいいかを1件だけ出す
+mailauth doctor --json                 # コンソール用
 mailauth status --run 2026-08
 mailauth populations
 

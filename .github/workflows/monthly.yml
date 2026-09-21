@@ -20,11 +20,24 @@ on:
         description: "実行ID（YYYY-MM）。既定は当月"
         required: false
       population:
-        description: "母集団の設定ファイル"
+        description: "母集団"
         required: false
         default: configs/populations/jp-all-listed.yaml
+        # パスを手で打たせない。**初回はここで us-all-listed を選べば
+        # 鍵は MAILAUTH_CONTACT_EMAIL ひとつで通る**（SEC EDGAR は
+        # パブリックドメイン、Wikidata は CC0 で、登録も申請も要らない）。
+        type: choice
+        options:
+          - configs/populations/jp-all-listed.yaml
+          - configs/populations/us-all-listed.yaml
+          - configs/populations/jp-prime.yaml
+          - configs/populations/jp-standard.yaml
+          - configs/populations/jp-growth.yaml
+          - configs/populations/jp-nikkei225.yaml
+          - configs/populations/us-fortune500.yaml
+          - configs/populations/global500.yaml
       limit:
-        description: "件数上限。動作確認用"
+        description: "件数上限。初回の動作確認は 50"
         required: false
 
 concurrency:
@@ -66,6 +79,21 @@ jobs:
           if [ -z "$RUN_ID" ]; then RUN_ID=$(date -u +%Y-%m); fi
           echo "id=$RUN_ID" >> "$GITHUB_OUTPUT"
           echo "run_id=$RUN_ID"
+
+      # 何が足りていて何が足りないかを実行ログの先頭に出す。**鍵の不足は
+      # P1 が落ちてから気付くのでは遅い**（工程ごとに continue-on-error に
+      # しているので、鍵が無い実行は「全部そこそこ動いて中身が空」になる）。
+      # 診断は読むだけなので失敗させない。
+      - name: 準備状況の診断
+        continue-on-error: true
+        run: |
+          mailauth doctor | tee /tmp/doctor.txt
+          {
+            echo "## 準備状況"
+            echo '```'
+            cat /tmp/doctor.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # 各工程は失敗しても続ける。**途中で止めると manifest が揃わず、
       # どこで何件落ちたかが分からなくなる**（原則4）。
