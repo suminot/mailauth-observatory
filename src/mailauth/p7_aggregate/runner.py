@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
 from ..contracts import (
@@ -44,6 +45,68 @@ ACTIVE_STATUSES = (EntityStatus.ACTIVE, EntityStatus.RENAMED)
 
 class MissingInputError(RuntimeError):
     pass
+
+
+def _merge_other_populations(
+    new_rows: list[dict],
+    existing_path: Path,
+    manifest: RunManifest,
+    *,
+    what: str,
+) -> list[dict]:
+    """同じ月の gold にある**他の母集団の行を残す。**
+
+    gold のパスは `gold/month=YYYY-MM/` で母集団を含まない。行そのものは
+    `population_id` を持ち、P8 は全母集団を縦に積んで出すので、**月に複数の
+    母集団を置けることが前提の構造になっている。** それなのに書き込みが
+    ファイルを丸ごと置き換えていたため、国内を回すと同じ月の米国が消えていた。
+
+    自分の母集団の行だけを差し替える。同じ母集団を回し直せば自分の行が
+    置き換わるだけなので、冪等性（原則6）も保たれる。
+
+    **読めなかった既存ファイルを「無かった」ことにしない**（原則5）。
+    黙って上書きすると、他の母集団の実績が理由も残さず消える。
+    """
+    if not existing_path.is_file():
+        return new_rows
+
+    mine = {r.get("population_id") for r in new_rows}
+    try:
+        frame = read_parquet(existing_path)
+    except Exception as exc:  # pragma: no cover - 壊れた Parquet は再現が難しい
+        frame = None
+        manifest.add_warning(
+            "GOLD_UNREADABLE",
+            message=(
+                f"既存の {what}（{existing_path}）を読めなかった: {exc}。"
+                "**他の母集団の行が失われた可能性がある。** 必要なら該当母集団を回し直すこと"
+            ),
+        )
+    if frame is None:
+        return new_rows
+
+    kept = [r for r in frame_records(frame) if r.get("population_id") not in mine]
+    if kept:
+        manifest.add_warning(
+            "GOLD_OTHER_POPULATIONS_KEPT",
+            count=len(kept),
+            message=(
+                "同じ月の gold にあった他の母集団の行を残した: "
+                + ", ".join(sorted({str(r.get("population_id")) for r in kept}))
+            ),
+        )
+    return new_rows + kept
+
+
+def frame_records(frame) -> list[dict]:
+    return frame.to_dict(orient="records")
+
+
+def _rows_for_write(rows) -> list[dict]:
+    """Pydantic モデルでも dict でも、population_id を読める形にそろえる。"""
+    from pydantic import BaseModel
+
+    return [r.model_dump() if isinstance(r, BaseModel) else dict(r) for r in rows]
 
 
 def _rows(frame) -> list[dict]:
@@ -106,9 +169,7 @@ def run(
             raise MissingInputError(
                 f"{run_id} の facts.parquet がありません。先に p5-parse を実行してください"
             )
-        entities_frame = read_parquet(
-            phase_output(run_id, "p1_population", "entities.parquet")
-        )
+        entities_frame = read_parquet(phase_output(run_id, "p1_population", "entities.parquet"))
         if entities_frame is None:
             raise MissingInputError(
                 f"{run_id} の entities.parquet がありません。先に p1-population を実行してください"
@@ -116,9 +177,7 @@ def run(
 
         facts = _rows(facts_frame)
         entities = entity_index(_rows(entities_frame))
-        inferences = _rows(
-            read_parquet(phase_output(run_id, "p6_infer", "inferences.parquet"))
-        )
+        inferences = _rows(read_parquet(phase_output(run_id, "p6_infer", "inferences.parquet")))
         manifest.counts.input = len(facts)
 
         if not inferences:
@@ -251,9 +310,7 @@ def run(
                 "NO_PREVIOUS_FACTS",
                 message=f"前月 {prev_run} の facts が無いため差分を計算していない",
             )
-        unobserved = sum(
-            v.get("domains_unobserved_this_month", 0) for v in deltas.values()
-        )
+        unobserved = sum(v.get("domains_unobserved_this_month", 0) for v in deltas.values())
         if unobserved:
             manifest.add_warning(
                 "DOMAINS_UNOBSERVED",
@@ -274,14 +331,24 @@ def run(
                 "mailauth.min_cell_size": str(cell_threshold),
             }
             n1 = write_parquet(
-                overall_rows,
+                _merge_other_populations(
+                    _rows_for_write(overall_rows),
+                    target / OVERALL_FILENAME,
+                    manifest,
+                    what="stats_overall",
+                ),
                 target / OVERALL_FILENAME,
                 STATS_OVERALL_ARROW_SCHEMA,
                 sort_keys=STATS_OVERALL_SORT_KEYS,
                 metadata=meta,
             )
             n2 = write_parquet(
-                sector_rows,
+                _merge_other_populations(
+                    _rows_for_write(sector_rows),
+                    target / BY_SECTOR_FILENAME,
+                    manifest,
+                    what="stats_by_sector",
+                ),
                 target / BY_SECTOR_FILENAME,
                 STATS_BY_SECTOR_ARROW_SCHEMA,
                 sort_keys=STATS_BY_SECTOR_SORT_KEYS,
