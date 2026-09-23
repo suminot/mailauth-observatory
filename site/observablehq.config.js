@@ -6,7 +6,7 @@
 //   - 配色は3段階。赤の面積を最小化する（styles.css の --absent を参照）
 
 export default {
-  title: "メール認証月次計測",
+  title: "Email DNS Monitor",
   pages: [
     { name: "業種別", path: "/sectors" },
     { name: "方法論", path: "/methodology" },

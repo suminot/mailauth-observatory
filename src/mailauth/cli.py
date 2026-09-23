@@ -24,7 +24,7 @@ from .stubs import PhaseNotImplementedError, not_implemented
 
 app = typer.Typer(
     name="mailauth",
-    help="メール認証月次計測システム。設計仕様は DESIGN.md を参照。",
+    help="Email DNS Monitor ── メール認証の月次観測。設計仕様は DESIGN.md を参照。",
     no_args_is_help=True,
     add_completion=False,
 )
