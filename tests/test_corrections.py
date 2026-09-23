@@ -285,14 +285,22 @@ def test_the_shipped_registry_is_readable_and_empty():
     assert registry.entries == []
 
 
-def test_the_history_page_is_committed():
-    """通知文面が「訂正の履歴は公開サイトに残します」と書いている。
+def test_the_history_is_written_outside_the_public_site():
+    """訂正履歴は残すが、**公開サイトには出さない。**
 
-    **その約束を果たすページが実在すること。**
+    本システムは内部運用で、外部からの訂正申告を受け付けていない。応対
+    しない窓口を掲げないためにページを置いていない。記録そのものは残す
+    （申告が何件あってどう扱われたかが分からなくなると、登録簿の意味が
+    無くなる）ので、書き出し先が公開サイトの外にあることを検査する。
     """
-    page = repo_root() / "site" / "src" / "corrections-log.md"
-    assert page.is_file()
-    assert "訂正履歴" in page.read_text(encoding="utf-8")
+    import inspect
+
+    from mailauth import cli
+
+    source = inspect.getsource(cli.corrections_cmd)
+    assert "runs/corrections-log.md" in source
+    assert "site/src" not in source, "公開サイトに書き戻している"
+    assert not (repo_root() / "site" / "src" / "corrections-log.md").exists()
 
 
 def test_the_notification_promises_what_the_site_provides():
@@ -307,8 +315,15 @@ def test_the_notification_promises_what_the_site_provides():
         correction_contact="c@obs.example.org",
         measured_month="2026-08",
     ).body
-    assert "訂正の履歴は公開サイトに残します" in body
-    assert (repo_root() / "site" / "src" / "corrections-log.md").is_file()
+    # **文面が公開ページを約束するなら、そのページが存在すること。**
+    # 特定の一文を固定するのではなく、約束と実装の一致そのものを検査する。
+    # 本システムは内部運用で訂正履歴を公開していないので、文面もそう書かない
+    promises_public_page = "訂正の履歴は公開サイトに残します" in body
+    page_exists = (repo_root() / "site" / "src" / "corrections-log.md").is_file()
+    assert promises_public_page == page_exists, (
+        "通知文面の約束と公開サイトの実装が食い違っている"
+    )
+    assert "訂正の記録は保管します" in body or promises_public_page
 
 
 def test_an_overdue_claim_blocks_tier2_but_not_tier1(tmp_path, monkeypatch, access_verified):

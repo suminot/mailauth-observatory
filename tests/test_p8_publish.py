@@ -447,10 +447,16 @@ def test_p8_refuses_tier2_when_the_corrections_registry_is_unreadable(
     assert "登録簿が読めていない" in str(exc.value)
 
 
-def test_p8_lints_the_corrections_history_page(publish_config):
-    """訂正履歴も公開ページなので語彙検査の対象になる。"""
+def test_p8_lints_every_page_under_the_site(publish_config):
+    """**site/src に置いた .md は例外なく語彙検査を通す。**
+
+    検査の対象をページ名で列挙すると、ページを増やしたときに抜ける。
+    実際に置かれているものを数えて突き合わせる。
+    """
     _write_gold()
-    page = publish_config.parent.parent / "site" / "src" / "corrections-log.md"
-    assert page.is_file(), "訂正履歴ページが site/src に無い"
+    site_src = publish_config.parent.parent / "site" / "src"
+    on_disk = {p.name for p in site_src.rglob("*.md")}
     result = run_p8(run_id=RUN, config=str(publish_config))
-    assert "corrections-log.md" in result["breakdown"]["pages_checked"]
+    checked = set(result["breakdown"]["pages_checked"])
+    assert on_disk, "検査対象のページが1つも無い"
+    assert on_disk <= checked, f"検査から漏れたページ: {sorted(on_disk - checked)}"
