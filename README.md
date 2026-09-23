@@ -1,4 +1,6 @@
-# mailauth-observatory
+# Email DNS Monitor
+
+メール認証の月次観測（リポジトリ名は `mailauth-observatory`、コマンド名は `mailauth`）。
 
 日本と米国の上場企業を対象に、各社が実際にメール送信に用いているドメインを同定し、
 そのメール認証設定（SPF / DKIM / DMARC / BIMI / MTA-STS / TLS-RPT / DNSSEC）と
@@ -29,17 +31,22 @@
 | P5 パース | 生レスポンスの構造化と仕様準拠の解釈 | **実装済** |
 | P6 推察 | メール基盤・製品の推定、パーク分類 | **実装済** |
 | P7 集計 | 全社統計・業種別集計・前月差分 | **実装済** |
-| P8 公開 | 静的サイト生成と表現規約の機械検査 | **実装済**（デプロイは secrets 待ち） |
+| P8 公開 | 静的サイト生成と表現規約の機械検査 | **実装済**（Cloudflare Pages に公開中） |
 
 フェーズを追加するときは、実装前に `stubs.PLANNED_SPRINT` に登録して「どのスプリントで
 実装予定か」を添えて停止させる。空の出力を作って下流に「0件だった」と誤解させないため。
 
-**公開サイトはまだデプロイしていない。** 生成と検査までが実装済みで、
-`.github/workflows/deploy.yml` が Cloudflare Pages への接続を待っている。
-**secrets が無ければ何もしない**形にしてあり、必要なものは実行サマリに出る
+**公開サイトは Cloudflare Pages に出ている。** `main` の `gold/` `site/`
+`src/mailauth/p8_publish/` が変わると `.github/workflows/deploy.yml` が動く。
+**secrets が無ければ何もしない**形は残してあり、必要なものは実行サマリに出る
 （`CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_PAGES_PROJECT`）。
 デプロイの前に必ず `mailauth p8-publish` を通す。ビルドだけしてデプロイすると、
 第1層の列フィルタと語彙検査を素通りする。
+
+**検索エンジンには載せていない。** `X-Robots-Tag: noindex`（`site/static/_headers`）
+と meta robots の二重化で、JSON / CSV まで含めて索引から外している。`robots.txt` で
+巡回を止めていないのは意図的で、**取りに来られなければ noindex を読めない**ため。
+配信されているかは `mailauth noindex-check` で確かめる。
 
 個社名付き明細（第2層）は事前通知と訂正期間を経ていないため無効のままである。
 通知の準備（連絡先収集・文面・オプトアウト・自己準拠検査）は実装済みで、
@@ -59,7 +66,7 @@
 | 4 | P5、checkdmarc 突合 | 実装済 |
 | 5 | P6、画面5（飽和曲線を含む） | 実装済 |
 | 6 | P7、画面4・画面6 | 実装済 |
-| 7 | P8 第1層 | 実装済（デプロイのワークフローは secrets 待ち） |
+| 7 | P8 第1層 | 実装済（Cloudflare Pages に公開中） |
 | 8 | 自動化（月次 cron / 60日停止対策 / R2 退避） | 実装済 |
 | 9 | 第2層と事前通知 | **送らない準備まで実装済**（下記） |
 | 10 | 運用の定常化 | 未知 MX ホストの月次ルーチン・changelog・訂正履歴まで実装済 |
@@ -136,7 +143,7 @@ mailauth run-report    --run 2026-08   # 八工程の manifest を1枚にまと�
 mailauth run-report    --run 2026-08 --out runs/2026-08.md --fail-on-error
 mailauth offload       --run 2026-08   # bronze / silver を R2 へ（Git には入れない層）
 mailauth changelog                     # 計測側の変更を gold と manifest から検出する
-mailauth corrections                   # 訂正申告の登録簿から訂正履歴ページを作る
+mailauth corrections                   # 訂正申告の登録簿から訂正履歴を runs/ に書く
 mailauth corrections --fail-on-overdue # 審査の上限を超えた申告があれば落とす
 mailauth worklist      --run 2026-08   # 未知 MX ホストの月次作業リストを作る
 
@@ -149,6 +156,8 @@ mailauth notify-plan   --run 2026-08 --no-https   # security.txt を見に行か
 # 実行状況
 mailauth doctor                        # いま何をすればいいかを1件だけ出す
 mailauth doctor --json                 # コンソール用
+mailauth noindex-check                 # 検索避けが配信されているかを外から確かめる
+mailauth access-check                  # 第2層の認証が実際に掛かっているかを確かめる
 mailauth status --run 2026-08
 mailauth populations
 

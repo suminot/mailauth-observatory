@@ -9,7 +9,7 @@ site:
   dir: site
   # データローダが読む先。ここに gold から書き出す
   data_dir: site/src/data
-  title: メール認証月次計測
+  title: Email DNS Monitor
   # 常時表示する限界の明示。vocabulary.DISCLAIMER と一致していること
   disclaimer: 本サイトは標準準拠の計測であり、総合的セキュリティ評価ではない
 

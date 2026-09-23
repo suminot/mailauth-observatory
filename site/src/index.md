@@ -1,4 +1,6 @@
-# メール認証月次計測
+# Email DNS Monitor
+
+<div class="subtitle">メール認証の月次観測</div>
 
 日本の上場企業について、メール認証（SPF / DKIM / DMARC）と周辺プロトコルの
 公開状況を毎月 DNS から観測しています。**標準への準拠状況の計測であり、
