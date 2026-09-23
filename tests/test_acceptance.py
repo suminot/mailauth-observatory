@@ -209,13 +209,17 @@ def test_personal_email_addresses_are_not_stored():
     assert all("@" not in d for d in got)
 
 
-def test_the_published_site_has_a_methodology_and_a_contact():
-    """計測の説明ページと連絡先が公開されている。"""
+def test_the_published_site_explains_how_it_measures():
+    """計測の説明ページが公開されている。
+
+    連絡先・訂正申告の受け口は**内部運用なので置いていない**。外部からの
+    申告を受け付けていないのに窓口だけ出すと、応対しない窓口を掲げることに
+    なる。第2層を外部に出す段では窓口の常設が要件になる（DESIGN.md 1.4）。
+    """
     site = repo_root() / "site" / "src"
     assert (site / "methodology.md").is_file()
-    assert (site / "corrections.md").is_file()
-    text = (site / "corrections.md").read_text(encoding="utf-8")
-    assert "issues" in text.lower(), "連絡先が書かれていない"
+    text = (site / "methodology.md").read_text(encoding="utf-8")
+    assert "観測" in text, "計測の説明になっていない"
 
 
 def test_spf_includes_and_mx_hosts_are_cached():

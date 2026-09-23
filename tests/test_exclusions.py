@@ -152,10 +152,16 @@ def test_the_shipped_registry_is_readable_and_empty():
 
 
 def test_the_site_promises_exclusion_and_the_code_provides_it():
-    """公開サイトの約束と実装が一致していること。"""
-    page = (repo_root() / "site" / "src" / "corrections.md").read_text(encoding="utf-8")
-    assert "計測対象から外す依頼には応じます" in page
-    assert "除外リスト" in page
+    """公開サイトの約束と実装が一致していること。
+
+    訂正申告のページは内部運用のため置いていない。除外の説明は
+    methodology / terms に残っており、**説明がある以上、実装も要る。**
+    """
+    site = repo_root() / "site" / "src"
+    pages = "\n".join(
+        (site / name).read_text(encoding="utf-8") for name in ("methodology.md", "terms.md")
+    )
+    assert "計測対象から外した" in pages
     assert (repo_root() / "configs" / "domains" / "excluded.csv").is_file()
 
 

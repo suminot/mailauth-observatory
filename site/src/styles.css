@@ -1,91 +1,445 @@
-/* 配色は3段階（DESIGN.md P8「表現上の規約」）。
-   赤の面積を最小化するため、未対応はグレー寄りの赤にする。
-   彩度の高い赤で塗ると、標準への準拠状況の提示が「危険な企業の告発」に見える。 */
+/* 計測端末としての見え方（DESIGN.md P8「表現上の規約」）。
+ *
+ * 暗い地に読み取り色を1色だけ置く構成にしている。理由は装飾ではない。
+ *
+ *   - **意味色と差し色を分ける。** ティールは「ここを読め」という印で、
+ *     合格・要改善・未対応の3段階とは別系統に置く。同じ色域で混ぜると、
+ *     強調しただけの箇所が評価に見える
+ *   - **赤の面積を最小化する**（DESIGN.md P8）。未対応は彩度を落とした
+ *     赤寄りのグレーにする。彩度の高い赤で塗ると、標準への準拠状況の
+ *     提示が「危険な企業の告発」に見える
+ *   - **動かさない。** 計測結果を読む場所なので、注意を引く動きを足さない
+ */
 
 :root {
-  --pass: #2f7d4f;
-  --attention: #b8791f;
-  --absent: #9a6b6b;
-  --neutral: #8a9099;
+  /* **これが無いとフォーム部品とスクロールバーが明るいまま残る。**
+     背景色を指定しても、select の描画は OS のテーマ側が持っていく */
+  color-scheme: dark;
+
+  /* 地と面 */
+  --bg:        #05080c;
+  --panel:     #0a1017;
+  --panel-alt: #0c141d;
+  --rule:      #16232e;
+  --rule-soft: #101a23;
+
+  /* 文字 */
+  --ink:       #cfdde7;
+  --ink-strong:#eaf3f9;
+  --dim:       #6d8294;
+  --faint:     #445868;
+
+  /* 読み取り色。**評価ではない。** */
+  --accent:    #3fd8c4;
+  --accent-dim:#1f6f66;
+  --accent-bg: rgba(63, 216, 196, .07);
+
+  /* 3段階。差し色とは別系統 */
+  --pass:      #3aa981;
+  --attention: #d4a33c;
+  --absent:    #8a626a;
+  --neutral:   #5d7386;
+
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: "Chakra Petch", "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic",
+          Meiryo, system-ui, sans-serif;
+  --body: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo,
+          system-ui, sans-serif;
+
+  /* Observable Framework のテーマ変数を上書きして、枠組みごと寄せる */
+  --theme-background: var(--bg);
+  --theme-background-alt: var(--panel);
+  --theme-background-a: var(--bg);
+  --theme-background-b: var(--panel);
+  --theme-foreground: var(--ink);
+  --theme-foreground-alt: var(--ink-strong);
+  --theme-foreground-muted: var(--dim);
+  --theme-foreground-faint: var(--faint);
+  --theme-foreground-fainter: var(--rule);
+  --theme-foreground-faintest: var(--rule-soft);
+  --theme-foreground-focus: var(--accent);
+  --theme-blue: var(--accent);
+  --theme-green: var(--pass);
+  --theme-yellow: var(--attention);
+  --theme-red: var(--absent);
 }
+
+/* ---------------------------------------------------------------- 地 */
+
+body {
+  background-color: var(--bg);
+  /* 地のテクスチャ。**表の罫と競合させない。** 最初に 64px の格子を
+     --rule-soft で引いたところ、罫線として読めてしまい、データ表の
+     境界と混ざった。構造ではなく質感として残る濃さまで落としている */
+  background-image:
+    linear-gradient(rgba(140, 200, 220, .018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(140, 200, 220, .018) 1px, transparent 1px);
+  background-size: 96px 96px, 96px 96px;
+  background-attachment: fixed;
+  color: var(--ink);
+  font-family: var(--body);
+  font-feature-settings: "palt" 1;
+  line-height: 1.85;
+}
+
+/* 本文の帯だけ地を締める。テクスチャが文字の裏に来ないようにする */
+#observablehq-center {
+  background: linear-gradient(
+    90deg,
+    transparent 0,
+    rgba(5, 8, 12, .92) 40px,
+    rgba(5, 8, 12, .92) calc(100% - 40px),
+    transparent 100%
+  );
+}
+
+#observablehq-main {
+  font-size: 15px;
+}
+
+/* --------------------------------------------------------- 見出し */
+
+h1, h2, h3, h4 {
+  font-family: var(--sans);
+  color: var(--ink-strong);
+  letter-spacing: .02em;
+  text-wrap: balance;
+}
+
+#observablehq-main h1 {
+  font-size: clamp(26px, 3.4vw, 38px);
+  font-weight: 600;
+  letter-spacing: .04em;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 14px;
+  margin-bottom: 8px;
+}
+
+/* 節の頭に読み取り色の細い印を置く。装飾だが、**節の切れ目を
+   罫線より弱く示す**ことで、表の罫と競合しない */
+#observablehq-main h2 {
+  font-size: 19px;
+  font-weight: 600;
+  margin-top: 44px;
+  padding-left: 14px;
+  border-left: 2px solid var(--accent-dim);
+  line-height: 1.5;
+}
+
+#observablehq-main h3 {
+  font-size: 15.5px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-top: 28px;
+}
+
+/* --------------------------------------------------------- 本文 */
+
+#observablehq-main p,
+#observablehq-main li {
+  color: var(--ink);
+}
+
+#observablehq-main strong {
+  color: var(--ink-strong);
+  font-weight: 700;
+}
+
+a {
+  color: var(--accent);
+  text-decoration-color: var(--accent-dim);
+  text-underline-offset: 3px;
+}
+a:hover { color: var(--ink-strong); text-decoration-color: var(--accent); }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+code, pre, kbd {
+  font-family: var(--mono);
+  font-size: .92em;
+}
+
+#observablehq-main :not(pre) > code {
+  background: var(--accent-bg);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: .1em .38em;
+  color: var(--ink-strong);
+}
+
+pre {
+  background: var(--panel) !important;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+}
+
+/* --------------------------------------------------------- 表 */
+
+#observablehq-main table {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  border-collapse: collapse;
+}
+
+#observablehq-main th {
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--dim);
+  border-bottom: 1px solid var(--accent-dim);
+  padding: 8px 12px;
+}
+
+#observablehq-main td {
+  border-bottom: 1px solid var(--rule-soft);
+  padding: 7px 12px;
+}
+
+#observablehq-main tr:hover td { background: var(--panel); }
+
+/* --------------------------------------------------------- 左の一覧 */
+
+#observablehq-sidebar {
+  background: linear-gradient(180deg, var(--panel) 0%, var(--bg) 100%);
+  border-right: 1px solid var(--rule);
+}
+
+#observablehq-sidebar > ol > li.observablehq-link-active > a,
+#observablehq-sidebar a[aria-current="page"] {
+  color: var(--accent);
+  background: var(--accent-bg);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+#observablehq-sidebar a {
+  font-family: var(--sans);
+  font-size: 13.5px;
+  letter-spacing: .02em;
+}
+
+#observablehq-sidebar #observablehq-sidebar-header {
+  font-family: var(--sans);
+  letter-spacing: .06em;
+}
+
+#observablehq-header, #observablehq-footer {
+  border-color: var(--rule);
+}
+
+/* 限界の明示。**常時表示なので、消えて見えない濃さにしない** */
+#observablehq-footer {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--dim);
+  border-top: 1px solid var(--accent-dim);
+  padding-top: 14px;
+}
+
+#observablehq-toc a { font-size: 12.5px; color: var(--dim); }
+#observablehq-toc a:hover { color: var(--accent); }
+
+/* --------------------------------------------------------- 凡例 */
 
 .legend {
   display: flex;
-  gap: 16px;
-  font-size: 13px;
-  margin: 8px 0 16px;
+  flex-wrap: wrap;
+  gap: 18px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: .04em;
+  color: var(--dim);
+  margin: 10px 0 18px;
+  padding: 8px 0;
+  border-top: 1px solid var(--rule-soft);
+  border-bottom: 1px solid var(--rule-soft);
 }
 
 .legend span::before {
   content: "";
   display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
-  margin-right: 6px;
+  width: 9px;
+  height: 9px;
+  margin-right: 7px;
+  border-radius: 1px;
 }
 
 .legend .pass::before { background: var(--pass); }
 .legend .attention::before { background: var(--attention); }
 .legend .absent::before { background: var(--absent); }
 
-/* 事実と推察の視覚的分離（DESIGN.md P8）。
-   同じカードの中で「観測値」と「推定」を混ぜて見せない。 */
+/* ------------------------------------------- 事実と推察の視覚的分離 */
+/* DESIGN.md P8。**同じ枠の中で「観測値」と「推定」を混ぜて見せない。**
+   実線＝観測、破線＝推定。罫の種類そのもので区別しているので、
+   色が見えない環境でも分かれる。 */
+
 .observed,
 .inferred {
-  border-left: 3px solid var(--neutral);
-  padding: 8px 14px;
-  margin: 12px 0;
+  position: relative;
+  padding: 14px 18px;
+  margin: 16px 0;
+  background: var(--panel);
 }
 
 .observed {
-  border-left-color: var(--pass);
-  background: color-mix(in srgb, var(--pass) 5%, transparent);
+  border: 1px solid var(--rule);
+  border-left: 2px solid var(--pass);
 }
 
 .inferred {
-  border-left-color: var(--neutral);
-  background: color-mix(in srgb, var(--neutral) 7%, transparent);
-  border-left-style: dashed;
+  border: 1px dashed var(--rule);
+  border-left: 2px dashed var(--neutral);
 }
 
-.observed > h3::after {
-  content: " ── DNS から直接読み取った事実";
-  font-weight: normal;
-  font-size: 12px;
-  color: var(--neutral);
+.observed > h3,
+.inferred > h3 {
+  margin-top: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
 }
 
+.observed > h3::after,
 .inferred > h3::after {
-  content: " ── 辞書との照合による推定。確度と根拠を併記";
-  font-weight: normal;
-  font-size: 12px;
-  color: var(--neutral);
+  display: block;
+  font-family: var(--body);
+  font-weight: 400;
+  font-size: 11.5px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--dim);
+  margin-top: 2px;
 }
+
+.observed > h3::after { content: "DNS から直接読み取った事実"; }
+.inferred > h3::after { content: "辞書との照合による推定。確度と根拠を併記"; }
+
+/* --------------------------------------------------------- 限界 */
 
 .limits {
   font-size: 13px;
-  border: 1px solid #e3e5e8;
-  border-radius: 6px;
-  padding: 10px 14px;
-  margin: 16px 0;
+  line-height: 1.8;
+  color: var(--dim);
+  background: var(--panel-alt);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 14px 18px;
+  margin: 20px 0;
 }
 
-.limits li {
-  margin: 4px 0;
-}
+.limits strong { color: var(--ink); }
+.limits li { margin: 5px 0; }
+
+/* --------------------------------------------------------- 達成状況 */
 
 .checklist {
   list-style: none;
   padding: 0;
+  font-family: var(--mono);
+  font-size: 13.5px;
+}
+
+.checklist li {
+  padding: 3px 0;
+  border-bottom: 1px solid var(--rule-soft);
 }
 
 .checklist li::before {
   display: inline-block;
-  width: 1.4em;
+  width: 1.6em;
+  font-weight: 700;
 }
 
-.checklist li.met::before { content: "✓"; color: var(--pass); }
+.checklist li.met::before     { content: "✓"; color: var(--pass); }
 .checklist li.partial::before { content: "△"; color: var(--attention); }
-.checklist li.unmet::before { content: "−"; color: var(--absent); }
+.checklist li.unmet::before   { content: "−"; color: var(--absent); }
 .checklist li.unknown::before { content: "?"; color: var(--neutral); }
+
+/* --------------------------------------------------------- 図 */
+
+figure { margin: 22px 0; }
+
+figcaption {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: .05em;
+  color: var(--dim);
+}
+
+/* Plot の軸と目盛りを地になじませる */
+svg[class^="plot-"] text,
+figure svg text {
+  font-family: var(--mono) !important;
+  fill: var(--dim);
+}
+
+/* --------------------------------------------------------- 画面幅 */
+
+@media (max-width: 640px) {
+  body { background-size: 40px 40px, 40px 40px; }
+  #observablehq-main table { font-size: 12px; }
+  #observablehq-main h2 { margin-top: 32px; }
+}
+
+/* 動きを減らす設定を尊重する。**そもそも動かしていない**が、
+   Framework 側の遷移が残っている場合に備える */
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+/* --------------------------------------------------------- 入力 */
+/* Observable Inputs は既定のままだと明るい枠が残り、地から浮く */
+
+#observablehq-main select {
+  /* 既定の矢印は明るい地を前提にしているので、自前で描く */
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--dim) 50%),
+    linear-gradient(135deg, var(--dim) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 50%, calc(100% - 10px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 28px;
+}
+
+#observablehq-main select,
+#observablehq-main input[type="text"],
+#observablehq-main input[type="search"],
+#observablehq-main input[type="number"] {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 5px 8px;
+}
+
+#observablehq-main select:hover,
+#observablehq-main input:hover {
+  border-color: var(--accent-dim);
+}
+
+#observablehq-main label,
+form.observablehq-input > label {
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+/* 検索欄 */
+#observablehq-search input {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+}

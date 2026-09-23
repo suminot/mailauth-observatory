@@ -538,7 +538,7 @@ def worklist_cmd(
 def corrections_cmd(
     out: Annotated[
         Path | None,
-        typer.Option("--out", help="書き出し先。既定は site/src/corrections-log.md"),
+        typer.Option("--out", help="書き出し先。既定は runs/corrections-log.md"),
     ] = None,
     as_json: Annotated[bool, typer.Option("--json", help="JSON で出す")] = False,
     stdout: Annotated[bool, typer.Option("--stdout", help="ファイルに書かず標準出力へ")] = False,
@@ -550,7 +550,12 @@ def corrections_cmd(
         ),
     ] = False,
 ) -> None:
-    """訂正申告の登録簿から訂正履歴ページを作る。
+    """訂正申告の登録簿から訂正履歴を書き出す。
+
+    **公開サイトには出さない。** 本システムは内部運用で、外部からの訂正申告を
+    受け付けていない。登録簿と審査期限の仕組みは残してある ── 第2層（個社名
+    付き明細）を外部に出す段になれば、訂正窓口の常設は名誉毀損の抗弁における
+    公益目的の立証材料になるため（DESIGN.md 1.4）。そのとき公開先を戻す。
 
     **審査中のものも、訂正しなかったものも載せる。** 訂正した分だけを載せると、
     申告が何件あってどう扱われたのかが読み手に分からない。
@@ -571,7 +576,7 @@ def corrections_cmd(
     if stdout:
         typer.echo(text)
     else:
-        target = out or config_path("site/src/corrections-log.md")
+        target = out or config_path("runs/corrections-log.md")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding="utf-8")
         typer.echo(f"→ {target}（{len(registry.entries)} 件）")

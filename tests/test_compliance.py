@@ -246,14 +246,20 @@ def test_publish_config_keeps_tier2_disabled():
 
 
 def test_required_public_pages_exist():
-    """DESIGN.md P8 の必須ページ。"""
+    """DESIGN.md P8 の必須ページ。
+
+    訂正申告と訂正履歴のページは**外していない**のではなく、**内部運用なので
+    置いていない**。外部からの訂正申告を受け付けていないため、申告の受け口を
+    公開しても応対できる先が無い。登録簿と審査期限の仕組みはコード側に
+    残してあり（`mailauth corrections`、P8 の第2層ゲート）、第2層を外部に
+    出す段になれば訂正窓口の常設が公益目的の立証材料になる（DESIGN.md 1.4）。
+    そのとき公開ページを戻す。
+    """
     names = {p.stem for p in _site_pages()}
     required = {
         "index",
         "methodology",
         "terms",
-        "corrections",
-        "corrections-log",
         "changelog",
         "data",
     }

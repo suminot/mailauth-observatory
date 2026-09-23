@@ -162,8 +162,9 @@ jobs:
         continue-on-error: true
         run: mailauth changelog
 
-      # 訂正履歴も P8 より先に作る。site/src/corrections-log.md を書き換えるので
-      # 同じくページ検査を通す必要がある。
+      # 訂正履歴は runs/ に書く。**公開サイトには出さない**（内部運用で
+      # 外部からの訂正申告を受け付けていない）。登録簿と審査期限の仕組みは
+      # 残してあり、第2層を外部に出す段で公開先を戻す。
       #
       # **--fail-on-overdue は付けない。** 審査が遅れていることを理由に月次の
       # 計測そのものを止めると、無関係な数字の記録まで落ちる。第1層は個社を
@@ -227,7 +228,7 @@ jobs:
           # 実行記録（runs/）は残す。**何を回したかの記録は、結果を出さない
           # 実行でも意味がある**し、60日で schedule が止まるのを防ぐ活動にもなる。
           if [ -n "${{ github.event.inputs.limit }}" ]; then
-            git add runs site/src/changelog.md site/src/corrections-log.md || true
+            git add runs site/src/changelog.md || true
             {
               echo "### gold はコミットしていない"
               echo
@@ -237,7 +238,7 @@ jobs:
               echo "全件を出すには limit を空欄にして回すこと。"
             } >> "$GITHUB_STEP_SUMMARY"
           else
-            git add gold runs site/src/changelog.md site/src/corrections-log.md || true
+            git add gold runs site/src/changelog.md || true
           fi
           if git diff --cached --quiet; then
             # 空コミットを作る。60日で schedule が止まるのを防ぐのが目的で、
