@@ -8,11 +8,18 @@
 `configs/worklist/unidentified_hosts.yaml` に理由を書いて作業リストから外してください。
 **「調べたが分からなかった」は結論であって、無かったことにはしません。**
 
-## 手を付けるもの
+## 手を付けるもの（8 件）
 
-ありません。
-
-- 2026-09 の P6 の実行記録に未知ホストが無い。P6 を実行していないか、すべて辞書に一致した
+| 登録ドメイン | 件数 | 連続月 | 例 |
+|---|---|---|---|
+| `avnet.com` | 6 | 1 | `smtpemea02.avnet.com`, `smtp03.avnet.com`, `smtp01.avnet.com` |
+| `americanexpress.com.mx` | 2 | 1 | `servicetest.americanexpress.com.mx`, `service.americanexpress.com.mx` |
+| `avery.com` | 2 | 1 | `mail10.avery.com`, `mail11.avery.com` |
+| `cclind.com` | 2 | 1 | `mail2.cclind.com`, `mail1.cclind.com` |
+| `gpphosted.com` | 2 | 1 | `mxa-00517304.gslb.gpphosted.com`, `mxb-00517304.gslb.gpphosted.com` |
+| `aig.com.br` | 1 | 1 | `mail3.aig.com.br` |
+| `digital--analog.com` | 1 | 1 | `digital--analog.com` |
+| `unumemarketing.com` | 1 | 1 | `unumemarketing.com` |
 
 ## 追記のしかた
 
