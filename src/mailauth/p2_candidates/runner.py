@@ -36,6 +36,7 @@ from ..io import read_parquet, write_parquet
 from ..manifest import RunManifest, config_hash
 from ..normalize import etld_plus_one
 from ..paths import cache_root, config_path, month_date, phase_dir, phase_output
+from ..progress import Progress
 from ..records import (
     dmarc_report_domains,
     find_dmarc_records,
@@ -157,9 +158,7 @@ def load_report_vendor_patterns(
     return out
 
 
-def match_report_vendor(
-    domain: str, patterns: list[tuple[str, re.Pattern[str]]]
-) -> str | None:
+def match_report_vendor(domain: str, patterns: list[tuple[str, re.Pattern[str]]]) -> str | None:
     for vendor, pattern in patterns:
         if pattern.search(domain):
             return vendor
@@ -299,9 +298,7 @@ def run(
             )
 
         manual = (
-            load_manual_domains(cfg.get("manual_domains", ""))
-            if discovery.get("manual")
-            else {}
+            load_manual_domains(cfg.get("manual_domains", "")) if discovery.get("manual") else {}
         )
 
         vendor_patterns = load_report_vendor_patterns()
@@ -351,8 +348,15 @@ def run(
         total = 0
         hit_total_limit = False
 
+        # **この工程は数時間かかることがある。** CT ログの取得が支配的で、
+        # 1件あたりの所要は相手によって1秒から3分まで開く。進捗を出さないと、
+        # 実行中は何割まで進んだかも残り時間も分からない
+        # （GitHub Actions の API は実行中のジョブのログを返さない）
+        tracker = Progress(len(order), "P2 候補生成")
+
         for idx in order:
             row = rows.iloc[idx]
+            cache_before = ct_stats["from_cache"]
             entity_id = str(row["entity_id"])
             collector = _Collector(entity_id, per_entity_limit, excluded=excluded)
             collectors[entity_id] = collector
@@ -399,9 +403,17 @@ def run(
                 )
 
             total += len(collector.found)
+            tracker.tick(
+                候補=len(collector.found),
+                CT取得=1 if (official and discovery.get("ct_log")) else 0,
+                キャッシュ=ct_stats["from_cache"] - cache_before,
+            )
             if total >= total_limit:
                 hit_total_limit = True
                 break
+
+        # 打ち切られた場合も最後に1行出す
+        tracker.finish()
 
         if hit_total_limit:
             manifest.add_warning(
@@ -427,11 +439,7 @@ def run(
         for domain, entity_ids in _domain_entities(collectors).items():
             if len(entity_ids) < SHARED_RUA_MIN_ENTITIES:
                 continue
-            methods = {
-                m
-                for eid in entity_ids
-                for m in collectors[eid].found.get(domain, {})
-            }
+            methods = {m for eid in entity_ids for m in collectors[eid].found.get(domain, {})}
             # official_url / ct_log / manual は所有の裏付けなので、
             # それが1つでもあれば本物のグループ共用ドメインとして残す。
             # DNS 由来の経路（rua / redirect）だけで見つかったものは
@@ -462,9 +470,7 @@ def run(
         # 壁時計を埋めると同じ入力でも出力のバイト列が変わり、原則6（冪等）が
         # 壊れる。月次計測なので「いつ発見したか」の粒度は月で足りる。
         # 実行時刻そのものは manifest の started_at に残る。
-        discovered_at = dt.datetime.combine(
-            month_date(run_id), dt.time(0, 0), tzinfo=dt.UTC
-        )
+        discovered_at = dt.datetime.combine(month_date(run_id), dt.time(0, 0), tzinfo=dt.UTC)
         per_entity: list[int] = []
         domain_to_entities: dict[str, set[str]] = {}
 
@@ -538,9 +544,7 @@ def run(
             shared_rua_dropped={d: v for d, v in sorted(rua_only_shared.items())},
             # 自社ドメインでない rua 宛先。**候補にしていない。**
             # ベンダー名が分かれば dmarc_rua_vendors.yaml に足す作業リスト
-            unaligned_rua_targets={
-                d: sorted(v) for d, v in sorted(unaligned_rua.items())
-            },
+            unaligned_rua_targets={d: sorted(v) for d, v in sorted(unaligned_rua.items())},
             # **除外は黙って行わない。** 分母から抜いた分を記録する（原則4）
             excluded=excluded.to_dict(),
         )
