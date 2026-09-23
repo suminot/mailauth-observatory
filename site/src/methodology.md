@@ -89,4 +89,4 @@ display(html`<ul>${(meta.attribution ?? []).map((t) => html`<li>${t}</li>`)}</ul
 
 取得した DNS の応答は加工せずに保存しており、解釈にバグが見つかった場合は
 保存した応答から作り直します。集計に使った辞書の版も出力に記録しています。
-コードは[リポジトリ](https://github.com/suminot/mailauth-observatory)にあります。
+計測のコードと設定は、計測結果と同じ版で保管しています。

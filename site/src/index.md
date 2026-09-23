@@ -12,7 +12,7 @@ const overall = FileAttachment("data/stats_overall.json").json();
 ```
 
 ```js
-import { rate, pct, band, BAND_COLORS, checklist, checklistClass } from "./components/format.js";
+import { rate, pct, band, BAND_COLORS, checklist, checklistClass, indicators, entityIndicators } from "./components/format.js";
 ```
 
 ```js
@@ -85,6 +85,27 @@ display(
 達成した標準のチェックリストとして提示しています。総合順位や A〜F のような
 まとめの記号は付けません。個々の標準について満たしているかどうかが、
 そのまま読み取れる形にしています。
+
+```js
+display(Inputs.table(indicators(current ?? {}), { sort: null, rows: 12, width: { 指標: 300, ドメイン: 90, 割合: 80, 補足: 260 } }));
+```
+
+棒の長さは傾向を見るのに向きますが、「SPF は何ドメインか」には答えません。
+件数と割合を併記しています。**割合の分母はいずれも観測できたドメイン数です。**
+
+### 企業数で見た場合
+
+```js
+display(
+  Inputs.table(entityIndicators(current ?? {}), {
+    sort: null,
+    width: { 指標: 300, 企業: 90, 割合: 80 },
+  })
+);
+```
+
+ドメイン数だけで見ると、ドメインを多く持つ企業の重みが大きくなります。
+1社が1ドメインしか持たないとは限らないため、両方を出しています。
 
 </div>
 

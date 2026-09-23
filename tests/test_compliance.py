@@ -707,3 +707,31 @@ def test_the_owner_runbook_references_things_that_exist():
     referenced = set(_re.findall(r"mailauth ([a-z0-9-]+)", text))
     unknown = sorted(referenced - names - {"p1-population"})
     assert not unknown, f"存在しないサブコマンドを挙げている: {unknown}"
+
+
+def test_the_public_site_does_not_expose_the_repository_url():
+    """公開サイトにリポジトリの URL を出さない。
+
+    **内部運用のリポジトリなので、URL そのものを公開したくない。**
+    「コードはここ」と書いてリンクを張るのは透明性としては筋がいいが、
+    それは公開リポジトリを前提にした話で、ここでは前提が違う。
+
+    生成物（site/dist）ではなく**ソース側**を検査する。dist はビルドの
+    たびに作り直され、依存パッケージの package.json 由来の URL も混ざる
+    ため、自分が書いた文面だけを対象にする。
+    """
+    site_src = repo_root() / "site" / "src"
+    targets = [
+        *site_src.glob("*.md"),
+        *(site_src / "components").glob("*.js"),
+        repo_root() / "site" / "observablehq.config.js",
+    ]
+    assert targets, "検査対象が1つも無い"
+
+    problems: list[str] = []
+    for path in targets:
+        text = path.read_text(encoding="utf-8")
+        for i, line in enumerate(text.splitlines(), 1):
+            if "github.com" in line.lower():
+                problems.append(f"{path.name}:{i}: {line.strip()[:80]}")
+    assert not problems, "公開サイトにリポジトリの URL がある:\n  " + "\n  ".join(problems)

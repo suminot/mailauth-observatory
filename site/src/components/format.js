@@ -71,3 +71,43 @@ export function checklistClass(value) {
   if (value >= 0.2) return "partial";
   return "unmet";
 }
+
+/** 各標準の件数と割合。**チェックリストの棒だけでは数字が読めない。**
+ *
+ * 棒の長さは傾向を見るのに向くが、「SPF は何ドメインか」を知りたい読み手には
+ * 答えない。件数と率を並べて、どちらの問いにも答えられるようにする。
+ *
+ * 分母は observed_domains で固定する（rate と同じ理由）。
+ */
+export function indicators(stats) {
+  const obs = stats.observed_domains;
+  const row = (label, n, note = "") => ({
+    指標: label,
+    ドメイン: n ?? null,
+    割合: pct(rate(n, obs)),
+    補足: note,
+  });
+  return [
+    row("SPF を公開している", stats.spf_adopted_domains),
+    row("DKIM を既知セレクタで検出できた", stats.dkim_detected_domains, "未検出は未設定の証明ではない"),
+    row("DMARC を公開している", stats.dmarc_adopted_domains),
+    row("DMARC が強制ポリシー", stats.dmarc_enforced_domains, "quarantine または reject"),
+    row("reject が実効している", stats.enforced_reject_domains, "pct 無し・t=n・rua 有"),
+    row("MTA-STS を公開している", stats.mta_sts_domains),
+    row("TLS-RPT を公開している", stats.tls_rpt_domains),
+    row("BIMI を公開している", stats.bimi_domains),
+    row("DNSSEC で署名されている", stats.dnssec_domains),
+    row("DANE（TLSA）がある", stats.dane_domains, "うち DNSSEC 未確認は別掲"),
+  ];
+}
+
+/** 企業数ベースの対比。ドメイン数だけだと多ドメイン企業の重みが大きくなる。 */
+export function entityIndicators(stats) {
+  const n = stats.total_entities;
+  const row = (label, v) => ({ 指標: label, 企業: v ?? null, 割合: pct(rate(v, n)) });
+  return [
+    row("SPF を公開している企業", stats.spf_adopted_entities),
+    row("DMARC を公開している企業", stats.dmarc_adopted_entities),
+    row("DMARC が強制ポリシーの企業", stats.dmarc_enforced_entities),
+  ];
+}
