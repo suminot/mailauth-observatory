@@ -311,7 +311,7 @@ def test_the_notification_promises_what_the_site_provides():
     assert (repo_root() / "site" / "src" / "corrections-log.md").is_file()
 
 
-def test_an_overdue_claim_blocks_tier2_but_not_tier1(tmp_path, monkeypatch):
+def test_an_overdue_claim_blocks_tier2_but_not_tier1(tmp_path, monkeypatch, access_verified):
     """**第1層は止めない。第2層は止める。**
 
     第1層は個社を名指ししないので未審査の申告が残っていても実害が小さい。

@@ -54,3 +54,23 @@ def jp_config() -> str:
 
 def env_without_credentials() -> dict[str, str]:
     return {k: v for k, v in os.environ.items() if not k.startswith("MAILAUTH_")}
+
+
+@pytest.fixture
+def access_verified(monkeypatch):
+    """アクセス制御の検査を「確認済み」に固定する。
+
+    第2層のゲートは複数ある（訂正期間・未処理の訂正申告・アクセス制御）。
+    **そのうち1つを試すテストで、ネットワークに出る検査まで走らせない。**
+    アクセス制御の検査そのものは tests/test_access.py が見ている。
+    """
+    from mailauth import access
+
+    def _verified(config, **kw):
+        report = access.AccessReport(config=config)
+        report.probes = [
+            access.ProbeResult(url="https://example.test/companies", state=access.PROTECTED)
+        ]
+        return report
+
+    monkeypatch.setattr(access, "verify", _verified)

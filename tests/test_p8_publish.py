@@ -373,7 +373,7 @@ def test_p8_blocks_tier2_without_the_correction_period(publish_config):
         run_p8(run_id=RUN, config=str(publish_config), today=dt.date(2026, 8, 10))
 
 
-def test_p8_allows_tier2_after_the_correction_period(publish_config):
+def test_p8_allows_tier2_after_the_correction_period(publish_config, access_verified):
     _write_gold()
     _set(
         publish_config,
@@ -415,7 +415,9 @@ def test_p8_dry_run_writes_nothing(publish_config):
     assert not (data / "stats_overall.json").exists()
 
 
-def test_p8_refuses_tier2_when_the_corrections_registry_is_unreadable(publish_config):
+def test_p8_refuses_tier2_when_the_corrections_registry_is_unreadable(
+    publish_config, access_verified
+):
     """**「読めなかった」を「申告0件」として第2層を出さない。**
 
     未審査の申告があるかどうかが分からない状態で個社名付き明細を出すのは、

@@ -29,6 +29,36 @@ tier2:
   # 訂正申告の受付窓口。第2層を出すなら必須
   correction_contact: null
 
+access:
+  # アクセス制御（Cloudflare Access ＋ Entra ID）。
+  #
+  # **この節は宣言であって証拠ではない。** 実際に認証が掛かっているかは
+  # `mailauth access-check` が公開 URL を認証なしで叩いて確かめる。
+  # 第2層はその検査に通らない限り公開しない（P8 が停止する）。
+  provider: cloudflare_access
+  idp: entra_id
+
+  # 通してよいメールドメイン。**Cloudflare Access のポリシーを
+  # 「ログイン方法 = Entra」だけで組むと、そのテナントのゲスト
+  # アカウント（外部ドメインのメール）も通る。** 所属で絞るなら
+  # メールドメインの条件を別に置くこと。ここはその意図を残すための記録で、
+  # 値そのものを検査には使えない（弾かれた側からは誰が通れるか分からない）
+  allowed_email_domains:
+    - mkilabo.com
+
+  # 認証の内側にあるべきパス。deploy.tier2_path は設定漏れがあっても
+  # 自動で加わる。
+  #
+  # **試験中にサイト全体を閉じるなら "/" を足す。** ただし DESIGN.md は
+  # 第1層を無条件公開と定めているので、公開前に外すこと。外し忘れると
+  # 「公開している」という前提が静かに崩れるため、"/" が入っている間は
+  # 検査が毎回警告を出す
+  protected_paths: []
+
+  # 公開サイトの基点 URL（例 https://mailauth-observatory.pages.dev）。
+  # **未設定なら検査できないので、第2層は公開されない**
+  verify_base_url: null
+
 deploy:
   # Cloudflare Pages。認証情報は GitHub の secrets に置く。
   # .github/workflows/deploy.yml が使う。**設定が無ければ何もしない。**

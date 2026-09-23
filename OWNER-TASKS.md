@@ -330,6 +330,97 @@ cat runs/YYYY-MM-worklist.md
 **ここが一番慎重に進めるところ。** 訂正期間を経ていない個社明細を公開すると
 取り返しがつかない（キャッシュもインデックスも残る）。
 
+### アクセス制御（Cloudflare Access ＋ Entra ID）
+
+第2層は認証の内側にしか置けない。**`mkilabo.com` のアカウントだけを通す**設定は
+Cloudflare Zero Trust 側に作る。リポジトリ側は「掛かっていることの検査」を持つ。
+
+#### 1. Entra ID にアプリを登録する
+
+Microsoft Entra 管理センター → **アプリの登録** → 新規登録
+
+| 項目 | 値 |
+|---|---|
+| 名前 | 任意（例 `mailauth-observatory`） |
+| サポートされるアカウントの種類 | **この組織ディレクトリのみ**（シングルテナント） |
+| リダイレクト URI | Web / `https://<チーム名>.cloudflareaccess.com/cdn-cgi/access/callback` |
+
+作成後に控えるもの:
+
+- **アプリケーション (クライアント) ID**
+- **ディレクトリ (テナント) ID**
+- **クライアントシークレット**（証明書とシークレット → 新しいクライアントシークレット）
+
+API のアクセス許可に Microsoft Graph の `email` / `openid` / `profile` /
+`User.Read` を入れ、**管理者の同意**を与える。
+
+#### 2. Cloudflare Zero Trust に Entra を足す
+
+Zero Trust ダッシュボード → **Settings** → **Authentication** → Login methods →
+Add new → **Azure AD**。1 で控えた3つを入れて保存し、**Test** で通ることを確認する。
+
+#### 3. Access アプリケーションを作る
+
+Zero Trust → **Access** → Applications → Add an application → **Self-hosted**
+
+| 項目 | 値 |
+|---|---|
+| Application domain | `<プロジェクト名>.pages.dev` |
+| Path | `companies`（第2層だけを閉じる場合） |
+
+ポリシー:
+
+| 項目 | 値 |
+|---|---|
+| Action | Allow |
+| Include | **Emails ending in** `@mkilabo.com` |
+| Require | **Login Methods** = 2 で作った Entra |
+
+**Include を「ログイン方法 = Entra」だけにしないこと。** それだけだと、
+そのテナントに招かれたゲストアカウント（外部ドメインのメール）も通る。
+所属で絞るならメールドメインの条件を別に置く必要がある。
+
+#### 4. リポジトリ側の設定
+
+`configs/publish.yaml` の `access`:
+
+```yaml
+access:
+  provider: cloudflare_access
+  idp: entra_id
+  allowed_email_domains: [mkilabo.com]
+  protected_paths: []          # 試験中にサイト全体を閉じるなら "/" を足す
+  verify_base_url: https://<プロジェクト名>.pages.dev
+```
+
+`verify_base_url` を入れると検査できるようになる。
+
+```bash
+mailauth access-check
+```
+
+対象パスを**認証なしで叩いて、実際に弾かれること**を確かめる。
+
+| 表示 | 意味 |
+|---|---|
+| ○ | Access / Entra のログインへ転送された、または 401・403 |
+| × | **認証なしで本文が返った。公開されている** |
+| ? | 確かめられなかった。**「守られている」ではない** |
+
+#### なぜ検査するのか
+
+`tier2.access_control_configured` は**人が YAML に書き込む真偽値**であり、
+認証が掛かっていることの証拠ではない。Access アプリを作る前に `true` にしても、
+ポリシーの Path を間違えても `true` のままになる。個社明細の公開は
+取り返しがつかない（キャッシュもインデックスも残る）。
+
+**第2層を出す実行では、P8 が同じ検査を必ず通す。** 確かめられなければ止まる。
+
+> **試験中にサイト全体を閉じる場合。** `protected_paths` に `"/"` を足せば
+> Pages の URL 全体が Entra の内側に入る。ただし DESIGN.md は第1層を
+> 無条件公開と定めているので、**公開前に外すこと。** 外し忘れに気付けるよう、
+> `"/"` が入っている間は検査と P8 が毎回警告を出す。
+
 ### 前提の設定
 
 `configs/publish.yaml` の `tier2`:

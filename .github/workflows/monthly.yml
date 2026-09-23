@@ -192,7 +192,27 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add gold runs site/src/changelog.md site/src/corrections-log.md || true
+          # **--limit を掛けた実行の gold はコミットしない。**
+          # gold は公開データセットそのもので、P8 がそのままサイトに流す。
+          # 50社だけ回した結果を us-all-listed として置くと、「米国上場企業を
+          # 計測した数字」として世に出る。件数が受け入れ範囲の外であることは
+          # CI が弾くが、そもそも入れない。
+          #
+          # 実行記録（runs/）は残す。**何を回したかの記録は、結果を出さない
+          # 実行でも意味がある**し、60日で schedule が止まるのを防ぐ活動にもなる。
+          if [ -n "${{ github.event.inputs.limit }}" ]; then
+            git add runs site/src/changelog.md site/src/corrections-log.md || true
+            {
+              echo "### gold はコミットしていない"
+              echo
+              echo '`--limit ${{ github.event.inputs.limit }}` を指定した動作確認の実行なので、'
+              echo "公開データセットには入れていない。実行記録は runs/ に残っている。"
+              echo
+              echo "全件を出すには limit を空欄にして回すこと。"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            git add gold runs site/src/changelog.md site/src/corrections-log.md || true
+          fi
           if git diff --cached --quiet; then
             # 空コミットを作る。60日で schedule が止まるのを防ぐのが目的で、
             # 「今月は数字が動かなかった」ことも記録として意味がある
