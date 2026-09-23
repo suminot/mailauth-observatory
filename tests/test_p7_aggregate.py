@@ -110,9 +110,7 @@ def _row(**kwargs) -> DomainRow:
 
 
 def _agg(rows, total_entities=3):
-    return aggregate(
-        rows, measured_month=MONTH, population_id=POP, total_entities=total_entities
-    )
+    return aggregate(rows, measured_month=MONTH, population_id=POP, total_entities=total_entities)
 
 
 def test_unobserved_domains_are_excluded_from_the_denominator():
@@ -153,14 +151,26 @@ def test_nominal_and_enforced_reject_are_separated():
     """`p=reject` と書いてあることと、効いていることは別の事実。"""
     stats = _agg(
         [
-            _row(domain_id="d:1", dmarc_p="reject", effective_7489="reject",
-                 policy_label=PolicyLabel.ENFORCED_REJECT),
+            _row(
+                domain_id="d:1",
+                dmarc_p="reject",
+                effective_7489="reject",
+                policy_label=PolicyLabel.ENFORCED_REJECT,
+            ),
             # pct=10 で名目のみ
-            _row(domain_id="d:2", dmarc_p="reject", effective_7489="quarantine",
-                 policy_label=PolicyLabel.NOMINAL_REJECT_WEAK_PCT),
+            _row(
+                domain_id="d:2",
+                dmarc_p="reject",
+                effective_7489="quarantine",
+                policy_label=PolicyLabel.NOMINAL_REJECT_WEAK_PCT,
+            ),
             # rua が無く可視性ゼロ
-            _row(domain_id="d:3", dmarc_p="reject", effective_7489="reject",
-                 policy_label=PolicyLabel.BLIND_REJECT),
+            _row(
+                domain_id="d:3",
+                dmarc_p="reject",
+                effective_7489="reject",
+                policy_label=PolicyLabel.BLIND_REJECT,
+            ),
         ]
     )
     assert stats.nominal_reject_domains == 3
@@ -172,8 +182,11 @@ def test_enforced_quarantine_is_not_counted_as_enforced_reject():
     """quarantine を reject の欄に混ぜない（ラベルの流用を戻した回帰）。"""
     stats = _agg(
         [
-            _row(dmarc_p="quarantine", effective_7489="quarantine",
-                 policy_label=PolicyLabel.ENFORCED_QUARANTINE)
+            _row(
+                dmarc_p="quarantine",
+                effective_7489="quarantine",
+                policy_label=PolicyLabel.ENFORCED_QUARANTINE,
+            )
         ]
     )
     assert stats.enforced_reject_domains == 0
@@ -212,8 +225,13 @@ def test_maturity_stage_distribution_covers_all_five_stages():
     stats = _agg(
         [
             _row(domain_id="d:1"),
-            _row(domain_id="d:2", spf_present=True, dmarc_present=True,
-                 dkim_status=DkimStatus.DETECTED, effective_7489="reject"),
+            _row(
+                domain_id="d:2",
+                spf_present=True,
+                dmarc_present=True,
+                dkim_status=DkimStatus.DETECTED,
+                effective_7489="reject",
+            ),
         ]
     )
     dist = json.loads(stats.maturity_stage_dist)
@@ -224,8 +242,7 @@ def test_maturity_stage_distribution_covers_all_five_stages():
 
 def test_park_metrics_split_sending_from_parked():
     rows = [
-        _row(domain_id="d:1", park_class=ParkClass.ACTIVE_SENDING,
-             effective_7489="reject"),
+        _row(domain_id="d:1", park_class=ParkClass.ACTIVE_SENDING, effective_7489="reject"),
         _row(domain_id="d:2", park_class=ParkClass.HARDENED_PARKED),
         _row(domain_id="d:3", park_class=ParkClass.NEGLECTED),
         # 矛盾はパーク分母に入れない
@@ -352,7 +369,8 @@ def _write_entities(n_per_sector: dict[str, int], run_id: str = RUN) -> list[str
                 }
             )
     write_parquet(
-        rows, phase_output(run_id, "p1_population", "entities.parquet"),
+        rows,
+        phase_output(run_id, "p1_population", "entities.parquet"),
         ENTITY_ARROW_SCHEMA,
     )
     return ids
@@ -377,9 +395,7 @@ def _write_facts(entity_ids: list[str], run_id: str = RUN, **overrides) -> None:
         }
         row.update(overrides)
         rows.append(row)
-    write_parquet(
-        rows, phase_output(run_id, "p5_parse", "facts.parquet"), FACT_ARROW_SCHEMA
-    )
+    write_parquet(rows, phase_output(run_id, "p5_parse", "facts.parquet"), FACT_ARROW_SCHEMA)
 
 
 def _write_inferences(entity_ids: list[str], park_class: str) -> None:
@@ -398,7 +414,8 @@ def _write_inferences(entity_ids: list[str], park_class: str) -> None:
         for i, entity_id in enumerate(entity_ids)
     ]
     write_parquet(
-        rows, phase_output(RUN, "p6_infer", "inferences.parquet"),
+        rows,
+        phase_output(RUN, "p6_infer", "inferences.parquet"),
         INFERENCE_ARROW_SCHEMA,
     )
 
@@ -468,8 +485,9 @@ def test_p7_excludes_delisted_entities():
     ids = _write_entities({"1": 6})
     frame = read_parquet(phase_output(RUN, "p1_population", "entities.parquet"))
     frame.loc[0, "status"] = EntityStatus.DELISTED
-    write_parquet(frame, phase_output(RUN, "p1_population", "entities.parquet"),
-                  ENTITY_ARROW_SCHEMA)
+    write_parquet(
+        frame, phase_output(RUN, "p1_population", "entities.parquet"), ENTITY_ARROW_SCHEMA
+    )
     _write_facts(ids)
 
     run_p7(run_id=RUN)
@@ -487,8 +505,9 @@ def test_p7_warns_when_a_domain_has_no_entity():
 def test_p7_records_the_previous_month_delta():
     ids = _write_entities({"1": 6})
     _write_entities({"1": 6}, run_id=PREV)
-    _write_facts(ids, run_id=PREV, effective_7489="none", dmarc_p="none",
-                 policy_label=PolicyLabel.MONITORING)
+    _write_facts(
+        ids, run_id=PREV, effective_7489="none", dmarc_p="none", policy_label=PolicyLabel.MONITORING
+    )
     _write_facts(ids)
 
     result = run_p7(run_id=RUN)
@@ -502,9 +521,16 @@ def test_p7_does_not_report_unobserved_domains_as_gone():
     ids = _write_entities({"1": 6})
     _write_entities({"1": 6}, run_id=PREV)
     _write_facts(ids, run_id=PREV)
-    _write_facts(ids, observed=False, record_present=None, spf_present=None,
-                 dmarc_present=None, effective_7489=None, dmarc_p=None,
-                 policy_label=None)
+    _write_facts(
+        ids,
+        observed=False,
+        record_present=None,
+        spf_present=None,
+        dmarc_present=None,
+        effective_7489=None,
+        dmarc_p=None,
+        policy_label=None,
+    )
 
     result = run_p7(run_id=RUN)
     d = json.loads(_gold("stats_overall.parquet").iloc[0]["delta_prev_month"])
@@ -546,11 +572,105 @@ def test_p7_skips_entities_without_common12():
     ids = _write_entities({"1": 6})
     frame = read_parquet(phase_output(RUN, "p1_population", "entities.parquet"))
     frame.loc[0, "common12_code"] = None
-    write_parquet(frame, phase_output(RUN, "p1_population", "entities.parquet"),
-                  ENTITY_ARROW_SCHEMA)
+    write_parquet(
+        frame, phase_output(RUN, "p1_population", "entities.parquet"), ENTITY_ARROW_SCHEMA
+    )
     _write_facts(ids)
 
     result = run_p7(run_id=RUN)
     assert any(w["code"] == "COMMON12_UNMAPPED" for w in result["warnings"])
     # 全社統計の分母は減らない。業種別からだけ外れる
     assert _gold("stats_overall.parquet").iloc[0]["total_entities"] == 6
+
+
+# --------------------------------------------------------------------------
+# 同じ月に複数の母集団を置く
+# --------------------------------------------------------------------------
+
+
+def _gold_row(population_id: str, month: str = "2026-09", observed: int = 100) -> dict:
+    """スキーマの必須列を埋めた最小の stats_overall 行。"""
+    import datetime as dt
+
+    from mailauth.contracts import STATS_OVERALL_ARROW_SCHEMA
+
+    row: dict = {}
+    for field in STATS_OVERALL_ARROW_SCHEMA:
+        row[field.name] = None
+    row["population_id"] = population_id
+    row["measured_month"] = dt.date.fromisoformat(f"{month}-01")
+    row["observed_domains"] = observed
+    row["total_entities"] = observed
+    return row
+
+
+def test_同じ月の他の母集団を消さない(tmp_path):
+    """gold のパスは母集団を含まないが、行は population_id を持ち、
+    P8 は全母集団を縦に積んで出す。**月に複数の母集団を置ける構造なのに、
+    書き込みがファイルを丸ごと置き換えていた。**
+
+    国内を回すと同じ月の米国が理由も残さず消えていた。
+    """
+    from mailauth.contracts import STATS_OVERALL_ARROW_SCHEMA, STATS_OVERALL_SORT_KEYS
+    from mailauth.io import write_parquet
+    from mailauth.manifest import RunManifest
+    from mailauth.p7_aggregate.runner import _merge_other_populations
+
+    path = tmp_path / "stats_overall.parquet"
+    write_parquet(
+        [_gold_row("us-all-listed", observed=1553)],
+        path,
+        STATS_OVERALL_ARROW_SCHEMA,
+        sort_keys=STATS_OVERALL_SORT_KEYS,
+    )
+
+    manifest = RunManifest(phase="p7_aggregate", run_id="2026-09", out_dir=tmp_path)
+    merged = _merge_other_populations(
+        [_gold_row("jp-all-listed", observed=3400)],
+        path,
+        manifest,
+        what="stats_overall",
+    )
+
+    ids = sorted(str(r["population_id"]) for r in merged)
+    assert ids == ["jp-all-listed", "us-all-listed"]
+    assert any(w["code"] == "GOLD_OTHER_POPULATIONS_KEPT" for w in manifest.to_dict()["warnings"])
+
+
+def test_同じ母集団を回し直すと自分の行だけ差し替わる(tmp_path):
+    """冪等であること（原則6）。行が二重に積み上がってはいけない。"""
+    from mailauth.contracts import STATS_OVERALL_ARROW_SCHEMA, STATS_OVERALL_SORT_KEYS
+    from mailauth.io import write_parquet
+    from mailauth.manifest import RunManifest
+    from mailauth.p7_aggregate.runner import _merge_other_populations
+
+    path = tmp_path / "stats_overall.parquet"
+    write_parquet(
+        [_gold_row("jp-all-listed", observed=1)],
+        path,
+        STATS_OVERALL_ARROW_SCHEMA,
+        sort_keys=STATS_OVERALL_SORT_KEYS,
+    )
+
+    merged = _merge_other_populations(
+        [_gold_row("jp-all-listed", observed=3400)],
+        path,
+        RunManifest(phase="p7_aggregate", run_id="2026-09", out_dir=tmp_path),
+        what="stats_overall",
+    )
+    assert len(merged) == 1
+    assert merged[0]["observed_domains"] == 3400
+
+
+def test_既存ファイルが無ければそのまま書く(tmp_path):
+    from mailauth.manifest import RunManifest
+    from mailauth.p7_aggregate.runner import _merge_other_populations
+
+    rows = [_gold_row("jp-all-listed")]
+    merged = _merge_other_populations(
+        rows,
+        tmp_path / "does-not-exist.parquet",
+        RunManifest(phase="p7_aggregate", run_id="2026-09", out_dir=tmp_path),
+        what="stats_overall",
+    )
+    assert merged == rows

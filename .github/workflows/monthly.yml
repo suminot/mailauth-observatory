@@ -200,7 +200,19 @@ jobs:
           else
             git commit -m "月次計測 ${{ steps.run.outputs.id }}"
           fi
-          git push
+          # **実行中に main へ別の push が入ると非早送りで落ちる。**
+          # 数時間かけた計測の成果を「押し出せなかった」という理由だけで
+          # 失うのは割に合わないので、rebase して数回やり直す。
+          # gold は月ごとのファイルなので、他人の変更と内容が衝突しない。
+          branch="$(git rev-parse --abbrev-ref HEAD)"
+          for attempt in 1 2 3; do
+            if git push origin "$branch"; then exit 0; fi
+            echo "push に失敗した（$attempt 回目）。rebase してやり直す"
+            git pull --rebase origin "$branch" || true
+            sleep $((attempt * 5))
+          done
+          echo "::error::gold と実行記録を push できなかった。成果物はこの実行のログにしか無い"
+          exit 1
 
       - name: 失敗した工程があれば落とす
         run: mailauth run-report --run "${{ steps.run.outputs.id }}" --fail-on-error
