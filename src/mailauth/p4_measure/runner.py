@@ -21,6 +21,7 @@ from ..exclusions import require_available
 from ..io import read_parquet
 from ..manifest import RunManifest, config_hash
 from ..paths import bronze_dir, config_path, phase_dir, phase_output
+from ..progress import Progress
 from ..records import find_spf_records, join_txt_strings, spf_includes
 from ..records import mx_hosts as extract_mx_hosts
 from ..resolver import DnsResolver, shuffled
@@ -85,9 +86,7 @@ def make_backend(method: str, measure_cfg: dict):
             timeout=common["timeout"],
             threads=int(rate.get("threads", 80)),
         )
-    raise UnknownBackendError(
-        f"未知のバックエンド: {method}（使えるのは dnspython / zdns）"
-    )
+    raise UnknownBackendError(f"未知のバックエンド: {method}（使えるのは dnspython / zdns）")
 
 
 def run(
@@ -201,8 +200,13 @@ def run(
         tcp_fallback = 0
         queries_written = 0
 
+        # **30,000ドメインで3時間を見込む工程である。** 進捗を出さないと、
+        # 実行中は何割まで進んだかも残り時間も分からない
+        tracker = Progress(len(targets), f"P4 DNS計測({method})")
+
         with BronzeWriter(bronze_dir(run_id), method) as writer:
             for target in targets:
+                queries_before = queries_written
                 domain = target["domain"]
                 # まず MX と SPF を引いて L2 のセレクタ推定に使う。
                 # DANE の TLSA も MX ホストが分かってからでないと組めない
@@ -295,6 +299,10 @@ def run(
                 if dkim_hit:
                     dkim_detected_domains += 1
 
+                tracker.tick(クエリ=queries_written - queries_before)
+
+        tracker.finish()
+
         # parts は writer が閉じたあとに確定する。with の中で読むと
         # 最後のパートが記録されず outputs が空になる
         parts = list(writer.parts)
@@ -356,8 +364,6 @@ def run(
             )
         if stats.get("queries"):
             hits = stats.get("cache_hits", 0)
-            manifest.set_breakdown(
-                cache_hit_rate=round(hits / (hits + stats["queries"]), 4)
-            )
+            manifest.set_breakdown(cache_hit_rate=round(hits / (hits + stats["queries"]), 4))
 
         return manifest.to_dict()
