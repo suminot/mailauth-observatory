@@ -20,7 +20,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .. import corrections, exclusions
+from .. import access, corrections, exclusions
 from ..config import load_yaml
 from ..io import read_parquet
 from ..manifest import RunManifest
@@ -212,6 +212,32 @@ def run(
                 "第2層（個社名付き明細）の公開条件を満たしていない:\n  "
                 + "\n  ".join(decision.reasons)
             )
+
+        # **認証が掛かっていることを、設定の申告ではなく実際に確かめる。**
+        # access_control_configured は人が書き込む真偽値で、Access アプリを
+        # 作る前に true にしても、ポリシーの対象パスを間違えても true のまま
+        # になる。個社明細の公開は取り返しがつかない（キャッシュもインデックス
+        # も残る）ので、第2層を出す実行では必ず外から叩いて確認する。
+        access_cfg = access.AccessConfig.from_publish_config(cfg)
+        if tier2_requested:
+            access_report = access.verify(access_cfg)
+            if not access_report.verified:
+                raise PublishBlockedError(
+                    "アクセス制御が実際に掛かっていることを確認できなかった:\n  "
+                    + "\n  ".join(access_report.reasons())
+                )
+            manifest.set_breakdown(access=access_report.to_dict())
+            if access.tier1_is_gated(
+                access_report, (cfg.get("deploy") or {}).get("tier2_path")
+            ):
+                manifest.add_warning(
+                    "TIER1_BEHIND_AUTH",
+                    message=(
+                        "第1層まで認証の内側に入っている。DESIGN.md は第1層を"
+                        "無条件公開と定めている。試験中なら妥当だが、"
+                        "**公開前に access.protected_paths から外すこと**"
+                    ),
+                )
 
         # -- 未処理の訂正申告 --------------------------------------------------
         # **第1層は止めない。第2層は止める。** 第1層は個社を名指ししないので

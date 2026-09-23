@@ -1,0 +1,15 @@
+# Cloudflare Pages のカスタムヘッダ。
+#
+# **検索避けの実体はここにある。** meta robots は HTML にしか書けないが、
+# X-Robots-Tag は HTTP ヘッダなので、**JSON / CSV / Parquet にも効く。**
+# 公開データを直接リンクされた場合まで含めて索引から外すには、
+# ヘッダ側でないと届かない。
+#
+# noarchive はキャッシュ表示を、nosnippet は抜粋表示を止める。
+# **索引から外れるまでには時間がかかる**ので、一度載ったものは
+# 消えるのを待つことになる。載せない状態で出すほうが安い。
+
+/*
+  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet
+  Referrer-Policy: no-referrer
+  X-Content-Type-Options: nosniff

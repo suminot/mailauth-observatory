@@ -29,16 +29,12 @@ app = typer.Typer(
     add_completion=False,
 )
 
-RunOption = Annotated[
-    str, typer.Option("--run", help="実行ID。既定は当月（YYYY-MM）")
-]
+RunOption = Annotated[str, typer.Option("--run", help="実行ID。既定は当月（YYYY-MM）")]
 LimitOption = Annotated[
     int | None,
     typer.Option("--limit", help="処理件数の上限。開発中の高速反復に使う"),
 ]
-DryRunOption = Annotated[
-    bool, typer.Option("--dry-run", help="出力を書かずに件数だけ確認する")
-]
+DryRunOption = Annotated[bool, typer.Option("--dry-run", help="出力を書かずに件数だけ確認する")]
 
 
 def _echo_summary(result: dict) -> None:
@@ -321,9 +317,7 @@ def p7_aggregate(
 def p8_publish(
     run: RunOption = "",
     dry_run: DryRunOption = False,
-    config: Annotated[
-        str, typer.Option("--config", help="公開の設定")
-    ] = "configs/publish.yaml",
+    config: Annotated[str, typer.Option("--config", help="公開の設定")] = "configs/publish.yaml",
     any_month: Annotated[
         bool,
         typer.Option(
@@ -338,9 +332,7 @@ def p8_publish(
 
     run_id = validate_run_id(run or default_run_id())
     try:
-        result = run_p8(
-            run_id=run_id, dry_run=dry_run, config=config, require_month=not any_month
-        )
+        result = run_p8(run_id=run_id, dry_run=dry_run, config=config, require_month=not any_month)
     except MissingInputError as exc:
         typer.secho(str(exc), fg="red", err=True)
         raise typer.Exit(code=2) from exc
@@ -395,9 +387,7 @@ def run_report(
         Path | None,
         typer.Option("--out", help="Markdown の書き出し先。省略すると標準出力"),
     ] = None,
-    as_json: Annotated[
-        bool, typer.Option("--json", help="JSON で出す")
-    ] = False,
+    as_json: Annotated[bool, typer.Option("--json", help="JSON で出す")] = False,
     fail_on_error: Annotated[
         bool,
         typer.Option(
@@ -442,9 +432,7 @@ def changelog_cmd(
         typer.Option("--out", help="書き出し先。既定は site/src/changelog.md"),
     ] = None,
     as_json: Annotated[bool, typer.Option("--json", help="JSON で出す")] = False,
-    stdout: Annotated[
-        bool, typer.Option("--stdout", help="ファイルに書かず標準出力へ")
-    ] = False,
+    stdout: Annotated[bool, typer.Option("--stdout", help="ファイルに書かず標準出力へ")] = False,
 ) -> None:
     """変更履歴を gold と manifest から生成する。
 
@@ -480,8 +468,7 @@ def changelog_cmd(
     pending = [e.month for e in entries if e.has_measurement_change]
     if pending:
         typer.secho(
-            f"  ⚠ 計測側の変更があった月: {', '.join(pending)}。"
-            "「解釈」の欄を人が埋めること",
+            f"  ⚠ 計測側の変更があった月: {', '.join(pending)}。「解釈」の欄を人が埋めること",
             fg="yellow",
         )
 
@@ -494,9 +481,7 @@ def worklist_cmd(
         typer.Option("--out", help="書き出し先。既定は runs/<run_id>-worklist.md"),
     ] = None,
     as_json: Annotated[bool, typer.Option("--json", help="JSON で出す")] = False,
-    stdout: Annotated[
-        bool, typer.Option("--stdout", help="ファイルに書かず標準出力へ")
-    ] = False,
+    stdout: Annotated[bool, typer.Option("--stdout", help="ファイルに書かず標準出力へ")] = False,
 ) -> None:
     """未知 MX ホストの月次作業リストを作る。
 
@@ -533,8 +518,7 @@ def worklist_cmd(
     if result.stale:
         typer.secho(
             f"  ⚠ {mod.STALE_MONTHS} か月以上そのままのホストが "
-            f"{len(result.stale)} 件: "
-            + ", ".join(h.registered_domain for h in result.stale[:5]),
+            f"{len(result.stale)} 件: " + ", ".join(h.registered_domain for h in result.stale[:5]),
             fg="yellow",
         )
     if result.truncated:
@@ -557,9 +541,7 @@ def corrections_cmd(
         typer.Option("--out", help="書き出し先。既定は site/src/corrections-log.md"),
     ] = None,
     as_json: Annotated[bool, typer.Option("--json", help="JSON で出す")] = False,
-    stdout: Annotated[
-        bool, typer.Option("--stdout", help="ファイルに書かず標準出力へ")
-    ] = False,
+    stdout: Annotated[bool, typer.Option("--stdout", help="ファイルに書かず標準出力へ")] = False,
     fail_on_overdue: Annotated[
         bool,
         typer.Option(
@@ -596,9 +578,7 @@ def corrections_cmd(
 
     if not registry.available:
         # **「読めなかった」を「申告0件」として通さない**
-        typer.secho(
-            "  ⚠ 登録簿を読めていない。**「申告0件」ではない**", fg="red", err=True
-        )
+        typer.secho("  ⚠ 登録簿を読めていない。**「申告0件」ではない**", fg="red", err=True)
         for problem in registry.problems + registry.notes:
             typer.secho(f"    - {problem}", fg="red", err=True)
         raise typer.Exit(code=2)
@@ -623,12 +603,8 @@ def notify_plan_cmd(
     config: Annotated[
         str, typer.Option("--config", help="通知の設定（publish.yaml の notify 節）")
     ] = "configs/publish.yaml",
-    limit: Annotated[
-        int | None, typer.Option("--limit", help="先頭 N 件だけを計画にする")
-    ] = None,
-    only: Annotated[
-        str, typer.Option("--only", help="対象ドメインをカンマ区切りで絞る")
-    ] = "",
+    limit: Annotated[int | None, typer.Option("--limit", help="先頭 N 件だけを計画にする")] = None,
+    only: Annotated[str, typer.Option("--only", help="対象ドメインをカンマ区切りで絞る")] = "",
     no_https: Annotated[
         bool,
         typer.Option(
@@ -636,9 +612,7 @@ def notify_plan_cmd(
             help="security.txt を取りに HTTPS を叩かない（「見ていない」と記録する）",
         ),
     ] = False,
-    stdout: Annotated[
-        bool, typer.Option("--stdout", help="ファイルに書かず標準出力へ")
-    ] = False,
+    stdout: Annotated[bool, typer.Option("--stdout", help="ファイルに書かず標準出力へ")] = False,
 ) -> None:
     """事前通知の計画を作る。**メールは送らない。**
 
@@ -858,11 +832,125 @@ def populations() -> None:
         typer.echo(f"{cfg.id:<16} {cfg.country:<6} {state:<12} {cfg.label}{note}")
 
 
+@app.command("access-check")
+def access_check_cmd(
+    as_json: Annotated[bool, typer.Option("--json", help="機械可読で出す")] = False,
+) -> None:
+    """アクセス制御が**実際に**掛かっているかを外から確かめる。
+
+    `configs/publish.yaml` の `access.protected_paths` を認証なしで叩き、
+    弾かれることを確認する。設定ファイルの申告は証拠にならないので、
+    第2層を出す実行では P8 がこれと同じ検査を必ず通す。
+    """
+    from . import access as access_mod
+
+    cfg = access_mod.load()
+    report = access_mod.verify(cfg)
+
+    if as_json:
+        typer.echo(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
+        raise typer.Exit(0 if report.verified else 1)
+
+    if cfg.idp:
+        typer.echo(f"ID プロバイダ: {cfg.idp}")
+    if cfg.allowed_email_domains:
+        typer.echo("通すメールドメイン: " + ", ".join(cfg.allowed_email_domains))
+        typer.echo(
+            "  ※ この値は記録であって検査には使えない。"
+            "Cloudflare Access 側にメールドメインの条件を置くこと"
+        )
+    typer.echo("")
+
+    for p in report.probes:
+        mark = {"protected": "○", "open": "×", "unknown": "?"}.get(p.state, "?")
+        typer.secho(
+            f"  {mark} {p.url}  {p.detail}",
+            fg={"protected": "green", "open": "red"}.get(p.state, "yellow"),
+        )
+    if not report.probes:
+        typer.echo("  （検査できなかった）")
+    typer.echo("")
+
+    if report.verified:
+        typer.secho("すべての対象パスが認証に弾かれた", fg="green")
+        tier2_path = (access_mod.load_yaml("configs/publish.yaml").get("deploy") or {}).get(
+            "tier2_path"
+        )
+        if access_mod.tier1_is_gated(report, tier2_path):
+            typer.secho(
+                "⚠ 第1層まで認証の内側にある。試験中なら妥当だが、公開前に外すこと",
+                fg="yellow",
+            )
+        raise typer.Exit(0)
+
+    for reason in report.reasons():
+        typer.secho(f"  ✗ {reason}", fg="red", err=True)
+    raise typer.Exit(1)
+
+
+@app.command("noindex-check")
+def noindex_check_cmd(
+    paths: Annotated[
+        str,
+        typer.Option("--paths", help="確かめるパス。カンマ区切り"),
+    ] = "/,/data/stats_overall.json",
+) -> None:
+    """検索エンジンに載らない設定が**実際に配信されているか**を確かめる。
+
+    設定ファイルに書いたことと、配信されているものは別である。
+    `X-Robots-Tag` を優先して見る ── meta robots は HTML にしか効かず、
+    公開データ（JSON / CSV）を直接リンクされた場合に届かない。
+    """
+    from . import access as access_mod
+
+    cfg = access_mod.load()
+    if not cfg.verify_base_url:
+        typer.secho(
+            "access.verify_base_url が未設定。configs/publish.yaml に公開 URL を入れること",
+            fg="red",
+            err=True,
+        )
+        raise typer.Exit(2)
+
+    base = cfg.verify_base_url.rstrip("/")
+    results = []
+    for path in [p.strip() for p in paths.split(",") if p.strip()]:
+        r = access_mod.probe_noindex(base + "/" + path.lstrip("/"))
+        results.append(r)
+        mark = {"protected": "○", "open": "×", "unknown": "?"}.get(r.state, "?")
+        typer.secho(
+            f"  {mark} {r.url}  {r.detail}",
+            fg={"protected": "green", "open": "red"}.get(r.state, "yellow"),
+        )
+
+    # **「載りうる」と「確かめられなかった」を混ぜない**（原則5）。
+    # デプロイ前はすべて unknown になるが、それは不備ではない。
+    # ここで「効いていない」と言うと、直すものが無いのに直そうとする
+    exposed = [r for r in results if r.state == access_mod.OPEN]
+    unknown = [r for r in results if r.state == access_mod.UNKNOWN]
+
+    if exposed:
+        typer.secho(
+            "\n検索避けが効いていない経路がある。"
+            "site/static/_headers が dist/ に配られているか確認すること",
+            fg="red",
+            err=True,
+        )
+        raise typer.Exit(1)
+    if unknown:
+        typer.secho(
+            "\n確かめられなかった経路がある。**効いていないとは限らない。**"
+            "デプロイ前ならこれが正常で、出てから実行し直すこと",
+            fg="yellow",
+            err=True,
+        )
+        raise typer.Exit(2)
+    typer.secho("\nすべての経路に X-Robots-Tag が付いている", fg="green")
+
+
 @app.command("doctor")
 def doctor_cmd(
-    as_json: Annotated[
-        bool, typer.Option("--json", help="機械可読で出す（コンソール用）")
-    ] = False,
+    as_json: Annotated[bool, typer.Option("--json", help="機械可読で出す（コンソール用）")] = False,
 ) -> None:
     """いま何をすればいいかを1つだけ出す。
 
