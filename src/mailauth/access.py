@@ -64,6 +64,18 @@ PROTECTED = "protected"
 OPEN = "open"
 UNKNOWN = "unknown"
 
+#: 想定しているログイン方式。**検査の仕組みはどちらでも変わらない**
+#: （どちらもログイン画面への転送を見ている）が、要求する条件が違う。
+ONE_TIME_PIN = "one_time_pin"
+ENTRA_ID = "entra_id"
+KNOWN_IDPS = frozenset({ONE_TIME_PIN, ENTRA_ID})
+
+#: ドメイン条件が無いと誰でも通ってしまう方式。
+#: OTP は「そのアドレスに届くコードを入力できる」ことしか確かめないので、
+#: **`allowed_email_domains` を空にすると認証の意味が無くなる。**
+#: entra_id なら「ログイン方法 = Entra」で最低限テナント内には絞られる。
+IDPS_REQUIRING_EMAIL_DOMAIN = frozenset({ONE_TIME_PIN})
+
 
 @dataclass
 class ProbeResult:
@@ -200,11 +212,13 @@ class AccessReport:
     probes: list[ProbeResult] = field(default_factory=list)
     #: 検査そのものができなかった理由
     unavailable_reason: str | None = None
+    #: 設定だけで分かる不備。**外から叩いて弾かれても、これがあれば通さない**
+    config_problems: list[str] = field(default_factory=list)
 
     @property
     def verified(self) -> bool:
         """**すべての対象パスが弾かれたときだけ True。**"""
-        if self.unavailable_reason or not self.probes:
+        if self.unavailable_reason or self.config_problems or not self.probes:
             return False
         return all(p.protected for p in self.probes)
 
@@ -220,7 +234,7 @@ class AccessReport:
         """第2層を止める理由。verified なら空。"""
         if self.unavailable_reason:
             return [self.unavailable_reason]
-        out: list[str] = []
+        out: list[str] = list(self.config_problems)
         for p in self.open_paths:
             out.append(f"{p.url} が認証なしで開いている。第2層は認証の内側にしか置けない")
         for p in self.unknown_paths:
@@ -259,6 +273,16 @@ def verify(
         )
         return report
 
+    # 設定だけで分かる不備。**外から叩いて弾かれても、これがあれば通さない。**
+    # OTP は「そのアドレスに届くコードを入力できる」ことしか確かめないので、
+    # ドメインの条件が無ければ誰でも通る ── 弾かれたことは確かめられても、
+    # 誰が通れるのかは外からは分からない
+    if config.idp in IDPS_REQUIRING_EMAIL_DOMAIN and not config.allowed_email_domains:
+        report.config_problems.append(
+            f"idp が {config.idp} なのに allowed_email_domains が空。"
+            "ワンタイム PIN はメールドメインの条件が無いと誰でも通る"
+        )
+
     base = config.verify_base_url.rstrip("/")
     own = client is None
     c = client or httpx.Client(timeout=15.0, follow_redirects=False)
@@ -270,6 +294,90 @@ def verify(
         if own:
             c.close()
     return report
+
+
+# --------------------------------------------------------------------------
+# 検索エンジンに載せない
+# --------------------------------------------------------------------------
+#
+# アクセス制御（誰が開けるか）とは別の話だが、**確かめ方が同じ**なので
+# ここに置く。設定ファイルに書いたことと、配信されているものは別である。
+#
+# 検索避けは3層ある。
+#
+#   1. `site/static/_headers` の `X-Robots-Tag`  ── **実体はこれ**
+#   2. 各ページの `<meta name="robots">`         ── HTML にしか効かない
+#   3. `robots.txt`                              ── **巡回を止めるだけ**
+#
+# 3 を `Disallow: /` にして 1・2 と併用してはいけない。取りに来られなければ
+# noindex を読めないので、他サイトからリンクされていれば URL だけが
+# 検索結果に残りうる。**索引から外したいなら、巡回させて noindex を読ませる。**
+
+ROBOTS_HEADER = "x-robots-tag"
+
+
+@dataclass
+class NoindexResult:
+    url: str
+    state: str
+    header: str | None = None
+    meta: bool = False
+    detail: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "url": self.url,
+            "state": self.state,
+            "header": self.header,
+            "meta": self.meta,
+            "detail": self.detail,
+        }
+
+
+def probe_noindex(url: str, *, client: httpx.Client | None = None) -> NoindexResult:
+    """配信されている応答に noindex が付いているかを確かめる。
+
+    **ヘッダを優先して見る。** meta robots は HTML にしか書けないので、
+    公開データ（JSON / CSV / Parquet）を直接リンクされた場合に届かない。
+    """
+    own = client is None
+    c = client or httpx.Client(timeout=15.0, follow_redirects=True)
+    try:
+        resp = c.get(url, headers={"User-Agent": USER_AGENT})
+    except httpx.HTTPError as exc:
+        return NoindexResult(
+            url=url,
+            state=UNKNOWN,
+            detail=f"到達できなかった: {exc}。**載らないとは言えない**",
+        )
+    finally:
+        if own:
+            c.close()
+
+    header = resp.headers.get(ROBOTS_HEADER)
+    has_header = bool(header and "noindex" in header.lower())
+    body = resp.text if resp.headers.get("content-type", "").startswith("text/html") else ""
+    has_meta = 'name="robots"' in body and "noindex" in body.lower()
+
+    if has_header:
+        return NoindexResult(
+            url=url,
+            state=PROTECTED,
+            header=header,
+            meta=has_meta,
+            detail="X-Robots-Tag が付いている",
+        )
+    if has_meta:
+        return NoindexResult(
+            url=url,
+            state=UNKNOWN,
+            meta=True,
+            detail=(
+                "meta robots はあるが X-Robots-Tag が無い。"
+                "**HTML 以外（JSON / CSV）は索引され得る**"
+            ),
+        )
+    return NoindexResult(url=url, state=OPEN, detail="noindex の指定が無い。**検索結果に載りうる**")
 
 
 def tier1_is_gated(report: AccessReport, tier2_path: str | None) -> bool:

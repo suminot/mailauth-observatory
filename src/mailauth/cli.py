@@ -888,6 +888,53 @@ def access_check_cmd(
     raise typer.Exit(1)
 
 
+@app.command("noindex-check")
+def noindex_check_cmd(
+    paths: Annotated[
+        str,
+        typer.Option("--paths", help="確かめるパス。カンマ区切り"),
+    ] = "/,/data/stats_overall.json",
+) -> None:
+    """検索エンジンに載らない設定が**実際に配信されているか**を確かめる。
+
+    設定ファイルに書いたことと、配信されているものは別である。
+    `X-Robots-Tag` を優先して見る ── meta robots は HTML にしか効かず、
+    公開データ（JSON / CSV）を直接リンクされた場合に届かない。
+    """
+    from . import access as access_mod
+
+    cfg = access_mod.load()
+    if not cfg.verify_base_url:
+        typer.secho(
+            "access.verify_base_url が未設定。configs/publish.yaml に公開 URL を入れること",
+            fg="red",
+            err=True,
+        )
+        raise typer.Exit(2)
+
+    base = cfg.verify_base_url.rstrip("/")
+    ok = True
+    for path in [p.strip() for p in paths.split(",") if p.strip()]:
+        r = access_mod.probe_noindex(base + "/" + path.lstrip("/"))
+        mark = {"protected": "○", "open": "×", "unknown": "?"}.get(r.state, "?")
+        typer.secho(
+            f"  {mark} {r.url}  {r.detail}",
+            fg={"protected": "green", "open": "red"}.get(r.state, "yellow"),
+        )
+        if r.state != "protected":
+            ok = False
+
+    if not ok:
+        typer.secho(
+            "\n検索避けが効いていない経路がある。"
+            "site/static/_headers が dist/ に配られているか確認すること",
+            fg="red",
+            err=True,
+        )
+        raise typer.Exit(1)
+    typer.secho("\nすべての経路に X-Robots-Tag が付いている", fg="green")
+
+
 @app.command("doctor")
 def doctor_cmd(
     as_json: Annotated[bool, typer.Option("--json", help="機械可読で出す（コンソール用）")] = False,

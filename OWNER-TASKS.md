@@ -195,6 +195,43 @@ Cloudflare ダッシュボード → Workers & Pages → Create → Pages。
 デプロイの前に必ず `mailauth p8-publish` が走る。ビルドだけしてデプロイすると
 第1層の列フィルタと語彙検査を素通りするため、順序をテストで固定している。
 
+### 3-4. 検索エンジンに載せない
+
+第1層は公開してよいが、**試験中の数字が検索結果に載るのは別の話である。**
+一度索引に入ると、消えるまで待つことになる。
+
+3層で外してある。
+
+| 層 | 場所 | 効く範囲 |
+|---|---|---|
+| `X-Robots-Tag` ヘッダ | `site/static/_headers` | **全ファイル**（JSON / CSV / Parquet も） |
+| `<meta name="robots">` | `site/observablehq.config.js` の `head` | HTML のみ |
+| `robots.txt` | `site/static/robots.txt` | **巡回の可否だけ** |
+
+**`robots.txt` を `Disallow: /` にしてはいけない。** 直感に反するが、
+Disallow はクローラに「取りに来るな」と言うだけで、索引から外すこととは別である。
+取りに来られなければ noindex を読めないので、**他サイトからリンクされていれば
+URL だけが検索結果に残りうる。** 索引に載せたくないなら、巡回させて
+noindex を読ませるのが正しい。これを取り違えないよう、テストで固定してある。
+
+Observable Framework は**ページから参照されないファイルを配らない。**
+`_headers` を `src/` に置いても `dist/` に現れないので、`site/scripts/copy-static.mjs`
+がビルド後にコピーし、置けなければ非ゼロで落とす。
+
+デプロイしたら確かめる。
+
+```bash
+mailauth noindex-check
+```
+
+`configs/publish.yaml` の `access.verify_base_url` に公開 URL を入れておくこと。
+
+| 表示 | 意味 |
+|---|---|
+| ○ | `X-Robots-Tag` が付いている |
+| ? | meta robots はあるがヘッダが無い。**HTML 以外は索引され得る** |
+| × | **指定が無い。検索結果に載りうる** |
+
 ### Cloudflare 側でやることはこれだけ
 
 計算は全部 GitHub Actions で行う。**Cloudflare 上で操作するものは無い。**

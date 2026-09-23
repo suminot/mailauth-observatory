@@ -182,7 +182,9 @@ def test_第2層のパスを重複させない():
 def test_実際の設定ファイルを読める():
     cfg = access.load()
     assert cfg.provider == "cloudflare_access"
-    assert cfg.idp == "entra_id"
+    # idp は未設定でよい（アクセス制御をまだ掛けていない）が、値を入れるなら
+    # 想定している方式のどれかであること。綴り違いを検査に通さない
+    assert cfg.idp is None or cfg.idp in access.KNOWN_IDPS
     assert "mkilabo.com" in cfg.allowed_email_domains
     # 第2層のパスは publish.yaml の deploy.tier2_path から自動で入る
     assert "/companies" in cfg.protected_paths
@@ -201,3 +203,134 @@ def test_サイト全体を閉じていたら気付ける():
 def test_第2層だけなら警告しない():
     report = access.AccessReport(config=_cfg(protected_paths=["/companies"]))
     assert not access.tier1_is_gated(report, "/companies")
+
+
+# --------------------------------------------------------------------------
+# 検索エンジンに載せない
+# --------------------------------------------------------------------------
+
+
+def test_ヘッダがあれば載らないと判断する():
+    c = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda req: httpx.Response(200, headers={"x-robots-tag": "noindex, nofollow"})
+        ),
+        follow_redirects=True,
+    )
+    r = access.probe_noindex("https://example.pages.dev/", client=c)
+    assert r.state == access.PROTECTED
+
+
+def test_metaだけならヘッダの不足を指摘する():
+    """**meta robots は HTML にしか効かない。**
+
+    公開データ（JSON / CSV / Parquet）を直接リンクされた場合に届かないので、
+    「meta があるから大丈夫」で済ませない。
+    """
+    html = '<html><head><meta name="robots" content="noindex"></head></html>'
+    c = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda req: httpx.Response(
+                200, text=html, headers={"content-type": "text/html; charset=utf-8"}
+            )
+        ),
+        follow_redirects=True,
+    )
+    r = access.probe_noindex("https://example.pages.dev/", client=c)
+    assert r.state == access.UNKNOWN
+    assert r.meta is True
+    assert "X-Robots-Tag" in r.detail
+
+
+def test_指定が無ければ載りうると言う():
+    c = httpx.Client(
+        transport=httpx.MockTransport(lambda req: httpx.Response(200, text="<html></html>")),
+        follow_redirects=True,
+    )
+    r = access.probe_noindex("https://example.pages.dev/", client=c)
+    assert r.state == access.OPEN
+
+
+def test_到達できなければ載らないとは言わない():
+    def boom(req):
+        raise httpx.ConnectError("boom")
+
+    c = httpx.Client(transport=httpx.MockTransport(boom), follow_redirects=True)
+    r = access.probe_noindex("https://example.pages.dev/", client=c)
+    assert r.state == access.UNKNOWN
+
+
+# --------------------------------------------------------------------------
+# 3層が揃っていること（設定漏れで静かに外れるのを防ぐ）
+# --------------------------------------------------------------------------
+
+
+def test_headers_に_x_robots_tag_がある():
+    from mailauth.paths import repo_root
+
+    text = (repo_root() / "site" / "static" / "_headers").read_text(encoding="utf-8")
+    assert "X-Robots-Tag" in text
+    assert "noindex" in text
+
+
+def test_robots_txt_が巡回を止めていない():
+    """`Disallow: /` と noindex を併用してはいけない。
+
+    取りに来られなければ noindex を読めないので、他サイトからリンクされて
+    いれば URL だけが検索結果に残りうる。**索引から外したいなら、
+    巡回させて noindex を読ませる。**
+    """
+    from mailauth.paths import repo_root
+
+    text = (repo_root() / "site" / "static" / "robots.txt").read_text(encoding="utf-8")
+    directives = [
+        line.strip() for line in text.splitlines() if line.strip().lower().startswith("disallow:")
+    ]
+    assert directives, "Disallow 行が無い"
+    for line in directives:
+        value = line.split(":", 1)[1].strip()
+        assert value == "", f"巡回を止めている: {line}"
+
+
+def test_ページに_meta_robots_がある():
+    from mailauth.paths import repo_root
+
+    text = (repo_root() / "site" / "observablehq.config.js").read_text(encoding="utf-8")
+    assert 'name="robots"' in text
+    assert "noindex" in text
+
+
+def test_静的ファイルが配られる仕組みが残っている():
+    """Observable Framework は**ページから参照されないファイルを配らない。**
+
+    src/ に置いただけでは dist/ に現れず、検索避けの設定が配信されない。
+    コピーの段取りが外れていないことを検査する。
+    """
+    import json
+
+    from mailauth.paths import repo_root
+
+    pkg = json.loads((repo_root() / "site" / "package.json").read_text(encoding="utf-8"))
+    assert "copy-static" in pkg["scripts"]["build"]
+    assert (repo_root() / "site" / "scripts" / "copy-static.mjs").is_file()
+
+
+def test_otp_はメールドメインの条件が無いと通さない():
+    """OTP は「そのアドレスに届くコードを入力できる」ことしか確かめない。
+
+    **弾かれたことは外から確かめられても、誰が通れるのかは分からない。**
+    設定だけで分かる不備なので、パスが弾かれていても検証済みにしない。
+    """
+    c = _client(lambda req: httpx.Response(403))
+    report = access.verify(_cfg(idp=access.ONE_TIME_PIN, allowed_email_domains=[]), client=c)
+    assert all(p.protected for p in report.probes)
+    assert not report.verified
+    assert any("誰でも通る" in r for r in report.reasons())
+
+
+def test_otp_でもドメイン条件があれば通す():
+    c = _client(lambda req: httpx.Response(403))
+    report = access.verify(
+        _cfg(idp=access.ONE_TIME_PIN, allowed_email_domains=["mkilabo.com"]), client=c
+    )
+    assert report.verified

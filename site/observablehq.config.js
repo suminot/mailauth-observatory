@@ -18,7 +18,12 @@ export default {
   ],
   root: "src",
   theme: "light",
-  head: '<link rel="stylesheet" href="./styles.css">',
+  // meta robots は HTML にしか効かない。**実体は src/_headers の
+  // X-Robots-Tag** で、そちらは JSON / CSV / Parquet にも届く。
+  // ここに置いてあるのは二重化で、片方の設定漏れに備えている。
+  head:
+    '<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">\n' +
+    '<link rel="stylesheet" href="./styles.css">',
   // 限界の明示。全ページの下端に出る
   footer:
     "本サイトは標準準拠の計測であり、総合的セキュリティ評価ではない。" +
