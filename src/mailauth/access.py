@@ -354,6 +354,17 @@ def probe_noindex(url: str, *, client: httpx.Client | None = None) -> NoindexRes
         if own:
             c.close()
 
+    # **無いものは「載らない」とも言えない。** デプロイ前の Pages は 404 を
+    # 返すので、ここを OPEN にすると「検索結果に載りうる」と嘘の警告が出る。
+    # 逆に PROTECTED にすると、中身が入った瞬間に無防備になっていても
+    # 気付けない。判断しないのが正しい（原則5）。
+    if resp.status_code >= 400:
+        return NoindexResult(
+            url=url,
+            state=UNKNOWN,
+            detail=f"HTTP {resp.status_code}。まだ中身が無いか、届いていない",
+        )
+
     header = resp.headers.get(ROBOTS_HEADER)
     has_header = bool(header and "noindex" in header.lower())
     body = resp.text if resp.headers.get("content-type", "").startswith("text/html") else ""

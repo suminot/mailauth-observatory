@@ -334,3 +334,17 @@ def test_otp_でもドメイン条件があれば通す():
         _cfg(idp=access.ONE_TIME_PIN, allowed_email_domains=["mkilabo.com"]), client=c
     )
     assert report.verified
+
+
+def test_中身が無い応答は判断しない():
+    """デプロイ前の Pages は 404 を返す。
+
+    OPEN にすると「検索結果に載りうる」と嘘の警告が出るし、PROTECTED に
+    すると中身が入った瞬間に無防備でも気付けない。判断しないのが正しい。
+    """
+    c = httpx.Client(
+        transport=httpx.MockTransport(lambda req: httpx.Response(404)),
+        follow_redirects=True,
+    )
+    r = access.probe_noindex("https://example.pages.dev/", client=c)
+    assert r.state == access.UNKNOWN

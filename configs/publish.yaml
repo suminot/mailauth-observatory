@@ -72,7 +72,7 @@ access:
 
   # 公開サイトの基点 URL（例 https://mailauth-observatory.pages.dev）。
   # **未設定なら検査できないので、第2層は公開されない**
-  verify_base_url: null
+  verify_base_url: https://mailauth-observatory.pages.dev
 
 deploy:
   # Cloudflare Pages。認証情報は GitHub の secrets に置く。

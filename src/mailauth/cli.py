@@ -913,18 +913,23 @@ def noindex_check_cmd(
         raise typer.Exit(2)
 
     base = cfg.verify_base_url.rstrip("/")
-    ok = True
+    results = []
     for path in [p.strip() for p in paths.split(",") if p.strip()]:
         r = access_mod.probe_noindex(base + "/" + path.lstrip("/"))
+        results.append(r)
         mark = {"protected": "○", "open": "×", "unknown": "?"}.get(r.state, "?")
         typer.secho(
             f"  {mark} {r.url}  {r.detail}",
             fg={"protected": "green", "open": "red"}.get(r.state, "yellow"),
         )
-        if r.state != "protected":
-            ok = False
 
-    if not ok:
+    # **「載りうる」と「確かめられなかった」を混ぜない**（原則5）。
+    # デプロイ前はすべて unknown になるが、それは不備ではない。
+    # ここで「効いていない」と言うと、直すものが無いのに直そうとする
+    exposed = [r for r in results if r.state == access_mod.OPEN]
+    unknown = [r for r in results if r.state == access_mod.UNKNOWN]
+
+    if exposed:
         typer.secho(
             "\n検索避けが効いていない経路がある。"
             "site/static/_headers が dist/ に配られているか確認すること",
@@ -932,6 +937,14 @@ def noindex_check_cmd(
             err=True,
         )
         raise typer.Exit(1)
+    if unknown:
+        typer.secho(
+            "\n確かめられなかった経路がある。**効いていないとは限らない。**"
+            "デプロイ前ならこれが正常で、出てから実行し直すこと",
+            fg="yellow",
+            err=True,
+        )
+        raise typer.Exit(2)
     typer.secho("\nすべての経路に X-Robots-Tag が付いている", fg="green")
 
 
