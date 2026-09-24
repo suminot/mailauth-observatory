@@ -163,6 +163,40 @@ jobs:
             --run "${{ steps.run.outputs.id }}" \
             ${{ github.event.inputs.limit && format('--limit {0}', github.event.inputs.limit) || '' }}
 
+      # **5時間半の工程の途中経過を、終わるまで読めないのはつらい。**
+      #
+      # GitHub は実行中のジョブのログを返さない（404）。P1 のステップが
+      # 終わっていても、分母がどれだけ埋まったかは**ジョブ全体が終わるまで
+      # 分からない。** 2026-09 の見守りで実際に1時間以上待たされた。
+      #
+      # 成果物は実行中でも一覧・取得できるので、manifest をそのまま上げる。
+      # ステップ要約はページを見る人向け ── **こちらは API からは読めない**
+      # ので、両方置く。
+      - name: P1 の結果を先に出す
+        if: always()
+        continue-on-error: true
+        run: |
+          M="data/runs/${{ steps.run.outputs.id }}/p1_population/_manifest.json"
+          [ -f "$M" ] || exit 0
+          {
+            echo "## P1 母集団確定"
+            echo
+            echo '```json'
+            jq '{status, counts, warnings: [.warnings[].code],
+                 wikidata: .breakdown.wikidata_identity}' "$M"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: P1 の manifest を成果物にする
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: manifest-p1-${{ steps.run.outputs.id }}
+          path: data/runs/${{ steps.run.outputs.id }}/p1_population/_manifest.json
+          if-no-files-found: ignore
+          retention-days: 7
+
       # **P1 の直後に保存する。** 後続の工程で時間切れになっても、
       # 12分かけて集めた補完結果は残る（CT ログと同じ考え方）
       - name: 補完のキャッシュを保存

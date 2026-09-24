@@ -1835,3 +1835,37 @@ def test_切り替えの当たりが指の大きさを満たす():
     assert "min-height: 24px" in block, (
         "切り替えの当たりが 24px を下回りうる（WCAG 2.5.8）"
     )
+
+
+def test_p1_の結果を実行の途中で読める():
+    """**5時間半の工程の途中経過が、終わるまで読めなかった。**
+
+    GitHub は実行中のジョブのログを返さない（404）。P1 のステップが終わって
+    いても、分母がどれだけ埋まったかはジョブ全体が終わるまで分からない
+    （2026-09 の見守りで実際に1時間以上待たされた）。
+
+    成果物は実行中でも一覧・取得できる。**ステップ要約だけでは足りない**
+    ── あちらはページを見る人には見えるが、API からは読めない。
+    """
+    steps = _monthly_steps()
+    names = [s.get("name", "") for s in steps]
+
+    p1 = names.index("P1 母集団確定")
+    art = names.index("P1 の manifest を成果物にする")
+    summary = names.index("P1 の結果を先に出す")
+    assert p1 < summary < art, "P1 の直後に出していない"
+
+    upload = steps[art]
+    assert "upload-artifact" in upload["uses"], "成果物にしていない"
+    assert upload.get("if") == "always()", (
+        "**時間切れのときに走らない。** そのときこそ途中経過が要る"
+    )
+    assert "p1_population/_manifest.json" in upload["with"]["path"]
+    # 工程が落ちても実行全体を落とさない（記録を出すのが目的）
+    assert upload.get("continue-on-error") is True
+
+    body = steps[summary]["run"]
+    assert "GITHUB_STEP_SUMMARY" in body
+    assert "wikidata_identity" in body, (
+        "**この実行で一番知りたい数字**（起点がどれだけ埋まったか）が出ていない"
+    )
