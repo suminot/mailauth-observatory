@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from ..config import load_yaml
@@ -55,6 +57,37 @@ PHASE = "p3_domains"
 OUTPUT_FILENAME = "domains.parquet"
 INPUT_PHASE = "p2_candidates"
 INPUT_FILENAME = "domain_candidates.parquet"
+
+#: 同時に応答を待つドメイン数。**投げる間隔（qps）とは別のつまみ。**
+#: P4 と同じ理由（往復が直列に積み上がる）で、応答待ちだけを重ねる。
+#: 2026-09 の国内計測では 2,158ドメインで23分かかっていた
+DEFAULT_CONCURRENCY = 8
+
+#: 何ドメインぶんまとめて待ち合わせるか。同時本数より十分大きくしないと、
+#: 塊の終わりで待ち合わせるたびに並行の利きが落ちる
+PROBE_CHUNK = 64
+
+
+def _probe_in_order(
+    probe: Callable[[tuple[str, str]], Probe],
+    keys: list[tuple[str, str]],
+    concurrency: int,
+) -> Iterator[Probe]:
+    """応答待ちだけを重ね、**結果は入力順に返す。**
+
+    完了順に返すと、同じ入力から出力の並びが変わる（原則6）。
+    投げる間隔は `DnsResolver` が全スレッドで共有しているので、
+    権威DNSから見た単位時間あたりの本数は直列のときと変わらない。
+    """
+    if concurrency <= 1:
+        for key in keys:
+            yield probe(key)
+        return
+
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        for start in range(0, len(keys), PROBE_CHUNK):
+            # map は入力順に返す。完了順ではない
+            yield from pool.map(probe, keys[start : start + PROBE_CHUNK])
 
 
 class MissingInputError(RuntimeError):
@@ -131,6 +164,8 @@ def run(
 ) -> dict[str, Any]:
     cfg = load_yaml(config)
     res_cfg = cfg.get("resolver", {})
+    # **投げる間隔（qps）とは別のつまみ。** 応答待ちだけを重ねる
+    concurrency = max(int(res_cfg.get("concurrency", DEFAULT_CONCURRENCY)), 1)
     independent = set(
         (cfg.get("confidence") or {}).get("independent_methods")
         or ["official_url", "ct_log", "manual"]
@@ -210,12 +245,26 @@ def run(
         all_entities: set[str] = set()
         failed_probes = 0
 
-        for entity_id, domain in keys:
-            all_entities.add(entity_id)
-            methods = grouped[(entity_id, domain)]
-            probe = probe_domain(
-                domain, resolver, discovery_methods=methods, independent_methods=independent
+        def _probe(key: tuple[str, str]) -> Probe:
+            """1ドメインぶんの一次実証。**worker スレッドから呼ばれる。**
+
+            引くだけで、件数にも出力にも触らない。`DnsResolver` は投げる間隔と
+            キャッシュと統計を錠で守ってあるので、複数スレッドから呼んでよい。
+            """
+            _entity_id, domain = key
+            return probe_domain(
+                domain,
+                resolver,
+                discovery_methods=grouped[key],
+                independent_methods=independent,
             )
+
+        # **応答待ちだけを重ねる。** 結果は入力順に受け取る
+        # （完了順にすると出力の並びが実行ごとに変わる）
+        for (entity_id, domain), probe in zip(
+            keys, _probe_in_order(_probe, keys, concurrency), strict=True
+        ):
+            all_entities.add(entity_id)
             if not probe.observed:
                 failed_probes += 1
                 for failure in probe.failures:

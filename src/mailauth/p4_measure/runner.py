@@ -12,6 +12,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from typing import Any
 
 from ..config import load_measure_config
@@ -34,6 +37,59 @@ from .selectors import SelectorDictionary
 PHASE = "p4_measure"
 INPUT_PHASE = "p3_domains"
 INPUT_FILENAME = "domains.parquet"
+
+#: 同時に応答を待つドメイン数の既定値。**投げる間隔（qps）とは別のつまみ。**
+#:
+#: 2026-09 の国内計測で、1ドメイン 7.7秒・実効 7.5 qps しか出ていなかった。
+#: 1ドメイン約58本を1本ずつ引いており、**上流への往復（約130ミリ秒）が
+#: そのまま積み上がる。** 設定の `qps: 80` は一度も効いていない。
+#:
+#: 8本だと 8/7.5 ≒ 1.07ドメイン/秒 ＝ 約62 qps で、**設定の上限 80 の内側に
+#: 収まる。** これ以上増やすと qps の方が効きはじめ、速くならずに
+#: 権威DNSへの本数だけが上限に張り付く
+DEFAULT_CONCURRENCY = 8
+
+#: 何ドメインぶんまとめて待ち合わせるか。**全件を一度に投げない** ──
+#: 1ドメイン約58件の応答を保持するので、30,000ドメインを一度に抱えると
+#: メモリに乗らない。同時本数より十分大きくしないと、塊の終わりで
+#: 待ち合わせるたびに並行の利きが落ちる
+MEASURE_CHUNK = 64
+
+
+@dataclass
+class _Measured:
+    """1ドメインぶんの取得結果。**書き出しは呼び出し側（主スレッド）が行う。**"""
+
+    domain: str
+    answers: list[tuple[Any, Any]]
+    control_responded: bool
+    dkim_hit: bool
+
+
+def _in_input_order(
+    measure: Callable[[dict], _Measured], targets: list[dict], concurrency: int
+) -> Iterator[_Measured]:
+    """応答待ちだけを重ね、**結果は入力順に返す。**
+
+    完了順に返すと、bronze に並ぶ順が実行ごとに変わる。同じ入力から同じ
+    並びが出ないと、差分を取って中身を比べることができなくなる（原則6）。
+
+    投げる間隔は `DnsResolver` が全スレッドで共有しているので、権威DNSから
+    見た単位時間あたりの本数は直列のときと変わらない。変わるのは、
+    こちらが応答を待っている時間だけである。
+    """
+    if concurrency <= 1:
+        # **並行にしない経路を残す。** 注入したバックエンドで測る検査や、
+        # 1件ずつ追いたいときに使う
+        for target in targets:
+            yield measure(target)
+        return
+
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        for start in range(0, len(targets), MEASURE_CHUNK):
+            chunk = targets[start : start + MEASURE_CHUNK]
+            # map は入力順に返す。完了順ではない
+            yield from pool.map(measure, chunk)
 
 
 class MissingInputError(RuntimeError):
@@ -97,6 +153,7 @@ def run(
     dry_run: bool = False,
     backend=None,
     tier: str | None = None,
+    concurrency: int | None = None,
 ) -> dict[str, Any]:
     """P4 を実行し manifest の内容を返す。
 
@@ -105,6 +162,12 @@ def run(
     """
     measure_cfg = load_measure_config()
     rate = measure_cfg.get("rate", {})
+    # **投げる間隔（qps）とは別のつまみ。** 応答待ちだけを重ねる。
+    # 引数で渡せるのは検査のため（直列と並行で結果が同じことを確かめる）
+    concurrency = max(
+        int(rate.get("concurrency", DEFAULT_CONCURRENCY) if concurrency is None else concurrency),
+        1,
+    )
     extras = measure_cfg.get("extras", {})
     dkim_cfg = measure_cfg.get("dkim", {})
 
@@ -204,76 +267,79 @@ def run(
         # 実行中は何割まで進んだかも残り時間も分からない
         tracker = Progress(len(targets), f"P4 DNS計測({method})")
 
-        with BronzeWriter(bronze_dir(run_id), method) as writer:
-            for target in targets:
-                queries_before = queries_written
-                domain = target["domain"]
-                # まず MX と SPF を引いて L2 のセレクタ推定に使う。
-                # DANE の TLSA も MX ホストが分かってからでないと組めない
-                pre = [
-                    q
-                    for q in build_plan(domain, MeasureTier.C, selectors=[])
-                    if q.purpose in (QueryPurpose.MX, QueryPurpose.SPF)
-                ]
-                mx_values: list[str] = []
-                spf_inc: list[str] = []
-                for query in pre:
-                    answer = backend.query(query)
-                    raw = to_raw_response(
-                        query,
-                        answer,
-                        run_id=run_id,
-                        domain=domain,
-                        method=method,
-                        tool_version=getattr(backend, "version", "unknown"),
-                        resolver_label=getattr(backend, "resolver_label", method),
-                    )
-                    writer.write(raw)
-                    queries_written += 1
-                    by_rcode[answer.rcode] = by_rcode.get(answer.rcode, 0) + 1
-                    by_purpose[query.purpose] = by_purpose.get(query.purpose, 0) + 1
-                    if answer.used_tcp:
-                        tcp_fallback += 1
-                    if not answer.observed:
-                        manifest.add_failure(answer.rcode)
+        def measure_one(target: dict) -> _Measured:
+            """1ドメインぶんを引く。**worker スレッドから呼ばれる。**
 
-                    if query.purpose == QueryPurpose.MX and answer.record_present:
-                        mx_values = extract_mx_hosts(answer.values)
-                    if query.purpose == QueryPurpose.SPF and answer.record_present:
-                        records = [join_txt_strings(c) for c in answer.txt_strings] or answer.values
-                        for record in find_spf_records(records):
-                            spf_inc.extend(spf_includes(record))
+            ここでは引くだけで、書き出し・件数・進捗には触らない。
+            `BronzeWriter` も `RunManifest` も `Progress` もスレッド安全に
+            作っていないので、**触らせない**のが一番確実である。
+            """
+            domain = target["domain"]
+            out: list[tuple[object, object]] = []
 
-                # L2 で事業者を推定してセレクタを並べ替える
-                domain_selectors = (
-                    selectors.selectors_for(mx_values, spf_inc)
-                    if target["tier"] == MeasureTier.A
-                    else []
+            # まず MX と SPF を引いて L2 のセレクタ推定に使う。
+            # DANE の TLSA も MX ホストが分かってからでないと組めない。
+            # **この2段は1ドメインの中では直列である**ので、並行にするのは
+            # ドメイン単位にしてある（クエリ単位にすると段が崩れる）
+            pre = [
+                q
+                for q in build_plan(domain, MeasureTier.C, selectors=[])
+                if q.purpose in (QueryPurpose.MX, QueryPurpose.SPF)
+            ]
+            mx_values: list[str] = []
+            spf_inc: list[str] = []
+            for query in pre:
+                answer = backend.query(query)
+                out.append((query, answer))
+                if query.purpose == QueryPurpose.MX and answer.record_present:
+                    mx_values = extract_mx_hosts(answer.values)
+                if query.purpose == QueryPurpose.SPF and answer.record_present:
+                    records = [join_txt_strings(c) for c in answer.txt_strings] or answer.values
+                    for record in find_spf_records(records):
+                        spf_inc.extend(spf_includes(record))
+
+            # L2 で事業者を推定してセレクタを並べ替える
+            domain_selectors = (
+                selectors.selectors_for(mx_values, spf_inc)
+                if target["tier"] == MeasureTier.A
+                else []
+            )
+            plan = [
+                q
+                for q in build_plan(
+                    domain,
+                    target["tier"],
+                    selectors=domain_selectors,
+                    extras=extras,
+                    dkim_control=bool(dkim_cfg.get("negative_control", True)),
+                    dkim_wildcard=bool(dkim_cfg.get("wildcard_selector_probe", True)),
                 )
-                plan = [
-                    q
-                    for q in build_plan(
-                        domain,
-                        target["tier"],
-                        selectors=domain_selectors,
-                        extras=extras,
-                        dkim_control=bool(dkim_cfg.get("negative_control", True)),
-                        dkim_wildcard=bool(dkim_cfg.get("wildcard_selector_probe", True)),
-                    )
-                    if q.purpose not in (QueryPurpose.MX, QueryPurpose.SPF)
-                ]
-                if extras.get("dane") and target["tier"] == MeasureTier.A and mx_values:
-                    plan += build_dane_queries(mx_values)
+                if q.purpose not in (QueryPurpose.MX, QueryPurpose.SPF)
+            ]
+            if extras.get("dane") and target["tier"] == MeasureTier.A and mx_values:
+                plan += build_dane_queries(mx_values)
 
-                control_responded = False
-                dkim_hit = False
-                for query in plan:
-                    answer = backend.query(query)
+            control_responded = False
+            dkim_hit = False
+            for query in plan:
+                answer = backend.query(query)
+                out.append((query, answer))
+                if query.purpose == QueryPurpose.DKIM_CONTROL and answer.record_present:
+                    control_responded = True
+                if query.purpose == QueryPurpose.DKIM and answer.record_present:
+                    dkim_hit = True
+
+            return _Measured(domain, out, control_responded, dkim_hit)
+
+        with BronzeWriter(bronze_dir(run_id), method) as writer:
+            for result in _in_input_order(measure_one, targets, concurrency):
+                queries_before = queries_written
+                for query, answer in result.answers:
                     raw = to_raw_response(
                         query,
                         answer,
                         run_id=run_id,
-                        domain=domain,
+                        domain=result.domain,
                         method=method,
                         tool_version=getattr(backend, "version", "unknown"),
                         resolver_label=getattr(backend, "resolver_label", method),
@@ -287,16 +353,11 @@ def run(
                     if not answer.observed:
                         manifest.add_failure(answer.rcode)
 
-                    if query.purpose == QueryPurpose.DKIM_CONTROL and answer.record_present:
-                        control_responded = True
-                    if query.purpose == QueryPurpose.DKIM and answer.record_present:
-                        dkim_hit = True
-
-                if control_responded:
+                if result.control_responded:
                     # 実在しないセレクタに応答した。何にでも答えるDNSなので
                     # DKIM の検出結果は信用できない（偽陽性ガード）
-                    wildcard_domains.append(domain)
-                if dkim_hit:
+                    wildcard_domains.append(result.domain)
+                if result.dkim_hit:
                     dkim_detected_domains += 1
 
                 tracker.tick(クエリ=queries_written - queries_before)
