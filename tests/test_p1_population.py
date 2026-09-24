@@ -305,3 +305,142 @@ def test_segment_source_is_recorded_for_attribution(edinet_sample, tmp_path):
     run_p1("2026-08", edinet_sample, config=_config_with_segment_map(tmp_path, seg))
     df = entities("2026-08").set_index("entity_id")
     assert df.loc["jp:1234567890123", "market_segment_source"] == "有価証券報告書"
+
+
+# --------------------------------------------------------------------------
+# 公式サイトを Wikidata（CC0）で補う
+#
+# **国内上場企業の 47.7% で official_url が取れていない**（2026-09 実測）。
+# 起点ドメインが無い企業は P2 で候補ゼロになり、そのまま分母から消える。
+# --------------------------------------------------------------------------
+
+
+def _jp_entity(bangou: str, *, url: str | None = None):
+    from mailauth.contracts import Entity
+    from mailauth.normalize import domain_from_url
+
+    return Entity(
+        entity_id=f"jp:{bangou}",
+        run_id="2026-08",
+        population_ids=["jp-all-listed"],
+        name=f"会社{bangou[:3]}",
+        name_normalized=f"会社{bangou[:3]}",
+        country="JP",
+        houjin_bangou=bangou,
+        official_url=url,
+        # **eTLD+1 に正規化する。** システム全体がその粒度で動いている
+        official_domain=(domain_from_url(url) if url else None),
+    )
+
+
+def test_wikidata_は空欄だけを埋める(monkeypatch, tmp_path):
+    """**政府の一次情報を上書きしない。**
+
+    gBizINFO は政府が出している company_url で、Wikidata は利用者が編集する。
+    先に入っている値を後から書き換えると、どちらが採用されたか分からなくなる。
+    """
+    from mailauth.config import load_population
+    from mailauth.manifest import RunManifest
+    from mailauth.p1_population.runner import _fill_missing_urls_from_wikidata
+
+    filled = _jp_entity("1" * 13, url="https://gbiz-corp.jp")
+    empty = _jp_entity("2" * 13)
+    monkeypatch.setattr(
+        "mailauth.p1_population.wikidata.run_query",
+        lambda *a, **k: [
+            {"houjin_bangou": {"value": "1" * 13}, "website": {"value": "https://wikidata-corp.jp"}},
+            {"houjin_bangou": {"value": "2" * 13}, "website": {"value": "https://found-corp.jp"}},
+        ],
+    )
+    cfg = load_population("configs/populations/jp-all-listed.yaml")
+    with RunManifest(run_id="2026-08", phase="p1_population", out_dir=tmp_path) as manifest:
+        _fill_missing_urls_from_wikidata([filled, empty], cfg, manifest)
+
+    assert filled.official_url == "https://gbiz-corp.jp", "gBizINFO の値を上書きしている"
+    assert filled.official_domain == "gbiz-corp.jp"
+    assert empty.official_domain == "found-corp.jp", "空欄が埋まっていない"
+    stats = manifest.to_dict()["breakdown"]["wikidata_identity"]
+    assert stats["missing_before"] == 1 and stats["filled"] == 1
+    assert stats["still_missing"] == 0
+
+
+def test_桁数の違う法人番号は突合に使わない(monkeypatch):
+    """**正規化して通さない。** 別の会社の番号に化ける方が危ない。
+
+    突合できないのは「取れなかった」であって、誤った突合より安全である。
+    捨てた件数は記録する（被覆率が低い原因を「無い」と「読めない」で
+    分けられるようにする）。
+    """
+    from mailauth.p1_population.wikidata import fetch_identity
+
+    monkeypatch.setattr(
+        "mailauth.p1_population.wikidata.run_query",
+        lambda *a, **k: [
+            {"houjin_bangou": {"value": "1234567890123"}, "website": {"value": "https://a.jp"}},
+            {"houjin_bangou": {"value": "123"}, "website": {"value": "https://b.jp"}},
+            {"houjin_bangou": {"value": "1234-5678-90123"}, "website": {"value": "https://c.jp"}},
+        ],
+    )
+    identity, stats = fetch_identity(
+        "configs/populations/_sparql/jp_houjin_identity.rq", key="houjin_bangou"
+    )
+    assert set(identity) == {"1234567890123"}, "桁数の違う値を拾っている"
+    assert stats["unusable_keys"] == 1, "読めなかった件数を数えていない"
+    # ハイフン入りは桁が揃えば使う（表記ゆれであって別の番号ではない）
+    assert identity["1234567890123"]["website"] == "https://a.jp"
+
+
+def test_引けなかったことを空と区別する(monkeypatch, tmp_path):
+    """原則5。**「0件だった」と「引けなかった」を混ぜない。**"""
+    from mailauth.config import load_population
+    from mailauth.manifest import RunManifest
+    from mailauth.p1_population.runner import _fill_missing_urls_from_wikidata
+    from mailauth.p1_population.wikidata import WikidataError
+
+    def boom(*a, **k):
+        raise WikidataError("WDQS が 403 を返した")
+
+    monkeypatch.setattr("mailauth.p1_population.wikidata.run_query", boom)
+    cfg = load_population("configs/populations/jp-all-listed.yaml")
+    with RunManifest(run_id="2026-08", phase="p1_population", out_dir=tmp_path) as manifest:
+        _fill_missing_urls_from_wikidata([_jp_entity("3" * 13)], cfg, manifest)
+
+    codes = [w["code"] for w in manifest.to_dict()["warnings"]]
+    assert "ENRICH_SKIPPED_WIKIDATA" in codes, "引けなかったことが記録されていない"
+
+
+def test_1件も埋まらなければ知らせる(monkeypatch, tmp_path):
+    """**突合が効いていないことに気付けるようにする。**
+
+    法人番号の持ち方が想定と違えば、1件も埋まらないまま静かに通る。
+    """
+    from mailauth.config import load_population
+    from mailauth.manifest import RunManifest
+    from mailauth.p1_population.runner import _fill_missing_urls_from_wikidata
+
+    monkeypatch.setattr("mailauth.p1_population.wikidata.run_query", lambda *a, **k: [])
+    cfg = load_population("configs/populations/jp-all-listed.yaml")
+    with RunManifest(run_id="2026-08", phase="p1_population", out_dir=tmp_path) as manifest:
+        _fill_missing_urls_from_wikidata([_jp_entity("4" * 13)], cfg, manifest)
+
+    codes = [w["code"] for w in manifest.to_dict()["warnings"]]
+    assert "WIKIDATA_FILLED_NOTHING" in codes
+
+
+def test_国内母集団が_wikidata_を使うことと出典():
+    """使ったのに credit しないのは提供元の規約に反しうる（PR #45 の経路）。"""
+    from mailauth.config import load_population
+    from mailauth.p8_publish.runner import attribution_for
+
+    for pid in ("jp-all-listed", "jp-prime", "jp-standard", "jp-growth", "jp-nikkei225"):
+        cfg = load_population(f"configs/populations/{pid}.yaml")
+        enrich = [str(e) for e in cfg.source.enrich]
+        assert "wikidata_identity" in enrich, f"{pid} が Wikidata を使っていない"
+        # **gBizINFO より後。** 政府の一次情報を上書きしない
+        assert enrich.index("wikidata_identity") > enrich.index("gbizinfo"), (
+            f"{pid} で Wikidata が gBizINFO より先にある。一次情報を上書きする"
+        )
+        assert getattr(cfg.source, "wikidata_identity_query", None), f"{pid} に SPARQL が無い"
+
+    lines = attribution_for({"jp-all-listed"}, {"attribution": []})
+    assert any("Wikidata" in line for line in lines), "出典に Wikidata が出ていない"

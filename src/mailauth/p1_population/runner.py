@@ -259,12 +259,88 @@ def _apply_enrichment(
                 }
             )
 
+        elif name == "wikidata_identity":
+            _fill_missing_urls_from_wikidata(entities, cfg, manifest)
+
         else:
             manifest.add_warning(
                 "ENRICH_UNKNOWN",
                 sample=[name],
                 message=f"未知の enrich 指定のためスキップした: {name}",
             )
+
+
+def _fill_missing_urls_from_wikidata(
+    entities: list[Entity], cfg: PopulationConfig, manifest: RunManifest
+) -> None:
+    """公式サイトが取れなかった企業だけを Wikidata（CC0）で埋める。
+
+    **国内上場企業の 47.7% で official_url が取れていない**（2026-09 実測）。
+    gBizINFO の company_url が半分の企業で空で、起点ドメインが無い企業は
+    P2 で候補ゼロになり、**そのまま分母から黙って消える。**
+
+    **既にある値は上書きしない。** gBizINFO は政府の一次情報で、Wikidata は
+    利用者が編集するもの。埋めるのは空欄だけにして、どちらが入ったかを
+    件数で残す（原則4）。
+    """
+    query_path = getattr(cfg.source, "wikidata_identity_query", None)
+    if not query_path:
+        manifest.add_warning(
+            "ENRICH_SKIPPED_WIKIDATA",
+            message=(
+                f"{cfg.id} に source.wikidata_identity_query が無いため"
+                "公式サイトを補っていない。**「無い」のではなく「引いていない」**"
+            ),
+        )
+        return
+
+    from .wikidata import WikidataError, fetch_identity
+
+    missing_before = [e for e in entities if not e.official_domain]
+    try:
+        identity, stats = fetch_identity(query_path, key="houjin_bangou")
+    except WikidataError as exc:
+        # **取れなかったことを残す。** 空を返して「0件だった」と誤解させない
+        manifest.add_warning("ENRICH_SKIPPED_WIKIDATA", message=str(exc))
+        return
+
+    filled = 0
+    lei_filled = 0
+    for entity in missing_before:
+        extra = identity.get(entity.houjin_bangou or "")
+        if not extra:
+            continue
+        website = extra.get("website")
+        if website:
+            domain = domain_from_url(website)
+            if domain:
+                entity.official_url = website
+                entity.official_domain = domain
+                filled += 1
+        if extra.get("lei") and not entity.lei:
+            entity.lei = extra["lei"]
+            lei_filled += 1
+
+    manifest.set_breakdown(
+        wikidata_identity={
+            **stats,
+            "missing_before": len(missing_before),
+            "filled": filled,
+            "lei_filled": lei_filled,
+            "still_missing": sum(1 for e in entities if not e.official_domain),
+        }
+    )
+    if not filled and missing_before:
+        manifest.add_warning(
+            "WIKIDATA_FILLED_NOTHING",
+            count=len(missing_before),
+            message=(
+                f"公式サイトの無い {len(missing_before)} 社に対し、Wikidata から"
+                "1件も埋められなかった。**法人番号での突合が効いていない疑いがある** "
+                f"（Wikidata 側の法人番号 {stats['key_count']} 件、"
+                f"読めなかった値 {stats['unusable_keys']} 件）"
+            ),
+        )
 
 
 def _from_parquet(value: Any) -> Any:

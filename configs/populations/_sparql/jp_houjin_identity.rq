@@ -1,0 +1,24 @@
+#+ 法人番号を持つ企業の公式サイトを Wikidata（CC0）から引く。
+#+
+#+ **国内上場企業の 47.7% で official_url が取れていない**（2026-09 実測）。
+#+ gBizINFO の company_url が半分の企業で空で、起点ドメインが無い企業は
+#+ P2 で候補ゼロになり、そのまま分母から黙って消える。
+#+
+#+ 米国側と同じ形で補う（us_cik_identity.rq）。突合は法人番号（P3225）で、
+#+ EDINET のコードリストが持っている番号とそのまま突き合わせられる。
+#+
+#+ **1クエリで全件取る。** 3,800社を1社ずつ引くと WDQS に不当な負荷をかける。
+#+
+#+ LEI（P1278）も一緒に取る。国内では普及していないので期待はしていないが、
+#+ 取れるものを1回で取っておく（2度叩かない）。
+#+
+#+ **被覆率は未実測。** 開発環境からは WDQS が 403 を返す（出口 IP が
+#+ 弾かれており、User-Agent の問題ではない）。GitHub Actions から回すと
+#+ 通るので、次の月次計測の manifest で確かめること。
+#+ endpoint: https://query.wikidata.org/sparql
+
+SELECT ?houjin_bangou ?website ?lei WHERE {
+  ?company wdt:P3225 ?houjin_bangou .        # 法人番号
+  OPTIONAL { ?company wdt:P856  ?website }   # 公式サイト
+  OPTIONAL { ?company wdt:P1278 ?lei }       # Legal Entity Identifier
+}

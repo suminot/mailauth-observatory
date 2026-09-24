@@ -13,6 +13,7 @@ Wikidata Query Service の作法
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -167,38 +168,78 @@ def fetch(query_path: str | Path, *, client: httpx.Client | None = None):
     return parse_bindings(run_query(query, client=client))
 
 
-def fetch_cik_identity(
-    query_path: str | Path, *, client: httpx.Client | None = None
-) -> tuple[dict[str, dict[str, str]], dict[str, Any]]:
-    """CIK -> {website, lei} を1クエリで引く。
+def _cik_key(raw: str) -> str | None:
+    """Wikidata の CIK は桁揃えがまちまち。SEC に合わせて10桁に揃える。"""
+    try:
+        return f"{int(raw):010d}"
+    except ValueError:
+        return None
 
-    **1社ずつ引かない。** 6,000社を個別に照会すると WDQS に不当な負荷を
+
+def _houjin_bangou_key(raw: str) -> str | None:
+    """法人番号は13桁。**桁数が違うものは捨てる。**
+
+    Wikidata の値は利用者が入れたもので、ハイフン入りや桁落ちが混じる。
+    正規化して通すと、別の会社の番号に化ける危険があるので**捨てる方を選ぶ**
+    （突合できないのは「取れなかった」であって、誤った突合より安全）。
+    """
+    digits = "".join(c for c in raw if c.isdigit())
+    return digits if len(digits) == 13 else None
+
+
+#: 一次名簿ごとの突合鍵。**どの列で突き合わせるかは名簿によって違う。**
+IDENTITY_KEYS: dict[str, Callable[[str], str | None]] = {
+    "cik": _cik_key,
+    "houjin_bangou": _houjin_bangou_key,
+}
+
+
+def fetch_identity(
+    query_path: str | Path,
+    *,
+    key: str = "cik",
+    fields: tuple[str, ...] = ("website", "lei"),
+    client: httpx.Client | None = None,
+) -> tuple[dict[str, dict[str, str]], dict[str, Any]]:
+    """突合鍵 -> {website, lei, …} を**1クエリで**引く。
+
+    **1社ずつ引かない。** 数千社を個別に照会すると WDQS に不当な負荷を
     かける。全件を1回で取り、手元で突合する。
 
-    同じ CIK に複数の値があったら**最初のものを採って競合を数える**。
+    同じ鍵に複数の値があったら**最初のものを採って競合を数える。**
     黙って上書きすると、どちらが採用されたか分からなくなる。
+
+    鍵は名簿によって違う（米国は CIK、国内は法人番号）。正規化のしかたも
+    違うので `IDENTITY_KEYS` に分けてある。
     """
+    normalize = IDENTITY_KEYS.get(key)
+    if normalize is None:
+        raise WikidataError(f"突合鍵 {key!r} の正規化が定義されていません")
+
     bindings = run_query(load_query(query_path), client=client)
     out: dict[str, dict[str, str]] = {}
-    stats = {
+    stats: dict[str, Any] = {
         "bindings": len(bindings),
-        "cik_count": 0,
-        "website": 0,
-        "lei": 0,
+        "key": key,
+        "key_count": 0,
+        "unusable_keys": 0,
         "conflicts": 0,
     }
+    for field_name in fields:
+        stats[field_name] = 0
 
     for binding in bindings:
-        cik = _value(binding, "cik")
-        if not cik:
+        raw = _value(binding, key)
+        if not raw:
             continue
-        # Wikidata の CIK は桁揃えがまちまち。SEC に合わせて10桁に揃える
-        try:
-            key = f"{int(cik):010d}"
-        except ValueError:
+        normalized = normalize(raw)
+        if normalized is None:
+            # **黙って飛ばさない。** 突合できなかった数が見えないと、
+            # 被覆率が低い原因が「無い」のか「読めない」のか分からない
+            stats["unusable_keys"] += 1
             continue
-        entry = out.setdefault(key, {})
-        for field_name in ("website", "lei"):
+        entry = out.setdefault(normalized, {})
+        for field_name in fields:
             value = _value(binding, field_name)
             if not value:
                 continue
@@ -208,5 +249,15 @@ def fetch_cik_identity(
             elif entry[field_name] != value:
                 stats["conflicts"] += 1
 
-    stats["cik_count"] = len(out)
+    stats["key_count"] = len(out)
     return out, stats
+
+
+def fetch_cik_identity(
+    query_path: str | Path, *, client: httpx.Client | None = None
+) -> tuple[dict[str, dict[str, str]], dict[str, Any]]:
+    """CIK -> {website, lei}。`fetch_identity` の米国向けの呼び出し。"""
+    identity, stats = fetch_identity(query_path, key="cik", client=client)
+    # 既存の呼び出しと実行記録が読む名前を残す
+    stats["cik_count"] = stats["key_count"]
+    return identity, stats
