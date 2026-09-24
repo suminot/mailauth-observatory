@@ -863,6 +863,27 @@ form.observablehq-input > label {
 /* 右の目次をやめて、開いているページの節をここに一段下げて出す
  * （chrome.js）。**行き先を一箇所にまとめる。** */
 
+/* ------------------------------------------------ サンプルのことわり */
+/* **数字を見る前に目に入る位置に置く。** 題字より上にあり、地の色も
+   本文と変えてある。作り物の数字を観測値と取り違えるのは、このサイトが
+   最も避けたい誤解である。
+   `--attention` を使うのは「合否の橙」ではなく**注意を引くため**で、
+   ここには合否の意味は無い（本文の指標には使っていない） */
+.sample-banner {
+  margin: 0 0 28px;
+  padding: 12px 16px;
+  border: 1px solid var(--attention);
+  border-left-width: 3px;
+  border-radius: 2px;
+  background: var(--panel-alt);
+  color: var(--ink);
+  font-size: 13.5px;
+  line-height: 1.7;
+  max-width: 640px;
+}
+
+.sample-banner strong { color: var(--attention); }
+
 /* -------------------------------------------------- 左下の切り替え */
 
 .chrome-controls {

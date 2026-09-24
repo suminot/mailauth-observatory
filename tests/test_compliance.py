@@ -1503,3 +1503,114 @@ def test_the_time_series_does_not_colour_by_outcome():
             f"{name}: 凡例 {names} と実際の系列 {plotted} が食い違う。"
             "**ずれた系列には色が付かない**"
         )
+
+
+def _sample_page_module():
+    """サンプルページの生成器を読み込む（`site/scripts/` はパッケージではない）。"""
+    import importlib.util
+
+    path = repo_root() / "site" / "scripts" / "make_sample_page.py"
+    spec = importlib.util.spec_from_file_location("make_sample_page", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_sample_pages_are_generated_from_the_front_page():
+    """**サンプルは表紙から機械的に作る。**
+
+    「データが入るとこう見える」を見せるページなので、表紙と中身が
+    違っていたら嘘になる。手で複製すると、表紙を直したときにサンプルだけ
+    古くなり、**画面を開くまで気付けない。**
+
+    生成器（`site/scripts/make_sample_page.py`）の出力と一致することを
+    ここで縛る。表紙を直したら流し直すこと。
+    """
+    module = _sample_page_module()
+    for lang, (src, out, _) in module.PAGES.items():
+        expected = module.render(src.read_text(encoding="utf-8"), lang)
+        assert out.is_file(), f"{out.name} が無い。生成器を流すこと"
+        assert out.read_text(encoding="utf-8") == expected, (
+            f"{out.name} が表紙と食い違っている。"
+            "`python site/scripts/make_sample_page.py` を流し直すこと"
+        )
+
+
+def test_the_sample_page_never_reads_the_real_numbers():
+    """サンプルは作り物の数字だけを読む。**取り違えると観測値として出る。**
+
+    逆も縛る ── 表紙がサンプルを読んでいたら、実際の計測結果の代わりに
+    作り物が公開されることになる。
+    """
+    import re as _re
+
+    module = _sample_page_module()
+    for _lang, (src, out, _) in module.PAGES.items():
+        sample = out.read_text(encoding="utf-8")
+        reads = _re.findall(r'FileAttachment\("([^"]+)"', sample)
+        assert reads, f"{out.name} が何も読んでいない"
+        assert all("sample/" in r for r in reads), (
+            f"{out.name} が本物の数字を読んでいる: {reads}"
+        )
+
+        front = src.read_text(encoding="utf-8")
+        assert "sample/" not in front, (
+            f"{src.name}（表紙）がサンプルを読んでいる。作り物が観測値として出る"
+        )
+
+
+def test_the_sample_page_says_so_before_any_number():
+    """ことわりは**題字より上**に置く。数字を見る前に目に入らないと意味が無い。"""
+    module = _sample_page_module()
+    for _lang, (_, out, _) in module.PAGES.items():
+        text = out.read_text(encoding="utf-8")
+        assert "sample-banner" in text, f"{out.name} にことわりが無い"
+        assert text.index("sample-banner") < text.index("\n# "), (
+            f"{out.name} のことわりが題字より下にある"
+        )
+
+    css = (repo_root() / "site" / "src" / "styles.css").read_text(encoding="utf-8")
+    assert ".sample-banner" in css, "ことわりの見た目の指定が無い"
+
+    config = (repo_root() / "site" / "observablehq.config.js").read_text(encoding="utf-8")
+    for path in ("/sample", "/en/sample"):
+        assert f'path: "{path}"' in config, f"一覧に {path} が無い"
+
+
+def test_the_sample_numbers_match_the_published_contract():
+    """作り物でも**形は本物と同じ**にする。
+
+    数字は見た目の確認用でよいが、列の名前や日付の形が本番と違うと、
+    サンプルで動いたものが本番で動かない（逆も起きる）。生成器は契約の型と
+    P8 の書き出しを通しているので、ここではその結果を確かめる。
+    """
+    import json
+
+    from mailauth.contracts import StatsBySector, StatsOverall
+
+    root = repo_root() / "site" / "src" / "sample"
+    for name, model in (
+        ("stats_overall.json", StatsOverall),
+        ("stats_by_sector.json", StatsBySector),
+    ):
+        rows = json.loads((root / name).read_text(encoding="utf-8"))
+        assert rows, f"{name} が空"
+        allowed = set(model.model_fields)
+        extra = set(rows[0]) - allowed
+        assert not extra, f"{name} に契約に無い列がある: {sorted(extra)}"
+        missing = {
+            f for f, v in model.model_fields.items() if v.is_required()
+        } - set(rows[0])
+        assert not missing, f"{name} に必須の列が無い: {sorted(missing)}"
+        # 日付は ISO の文字列で入る（P8 の `_jsonable` がそうしている）
+        assert _DATE_RE.match(str(rows[0]["measured_month"])), (
+            f"{name} の measured_month が {rows[0]['measured_month']!r}。"
+            "本番は ISO の文字列で出る"
+        )
+
+    meta = json.loads((root / "meta.json").read_text(encoding="utf-8"))
+    for key in ("months", "latest_month", "attribution", "disclaimer", "detection_limits"):
+        assert key in meta, f"meta.json に {key} が無い。本番の meta と形が違う"
+
+
+_DATE_RE = __import__("re").compile(r"^\d{4}-\d{2}-\d{2}$")

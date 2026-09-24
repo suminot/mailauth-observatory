@@ -1,0 +1,38 @@
+{
+ "attribution": [
+  "金融庁 EDINET コードリスト（政府標準利用規約2.0）",
+  "経済産業省 gBizINFO（政府標準利用規約2.0）",
+  "国税庁 法人番号公表サイト（公共データ利用規約1.0）",
+  "Public Suffix List (Mozilla, MPL-2.0)",
+  "出典：EDINET（金融庁）",
+  "出典：国税庁法人番号公表サイト（国税庁）",
+  "出典：経済産業省gBizINFO"
+ ],
+ "detection_limits": [
+  "MX を変更せず API / OAuth で連携する製品は DNS に痕跡を残さないため、検出されなかったことは使っていないことを意味しない",
+  "DKIM のセレクタは DNS 上で列挙できないため、既知セレクタで検出できなかったことは未設定の証明にならない",
+  "観測できなかったドメインは率の分母から外している。「取れなかった」と「無かった」は別の事実として扱う"
+ ],
+ "detection_limits_en": [
+  "Products that integrate over an API or OAuth without changing the MX record leave no trace in DNS, so not detecting one does not mean it is not in use",
+  "DKIM selectors cannot be enumerated from DNS, so not finding one among the known selectors is not proof that DKIM is unset",
+  "Domains that could not be observed are left out of the denominator. “could not be observed” and “was not there” are treated as different facts"
+ ],
+ "disclaimer": "本サイトは標準準拠の計測であり、総合的セキュリティ評価ではない",
+ "excluded": {
+  "available": true,
+  "count": 0,
+  "note": "サンプルのため除外は無い"
+ },
+ "latest_month": "2026-09",
+ "license": "CC0-1.0",
+ "months": [
+  "2026-04",
+  "2026-05",
+  "2026-06",
+  "2026-07",
+  "2026-08",
+  "2026-09"
+ ],
+ "parquet_path": "gold/month=<YYYY-MM>/"
+}
