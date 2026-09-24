@@ -1136,3 +1136,69 @@ def test_the_default_colour_scheme_is_dark():
     assert '"data-theme", saved === "light" ? "light" : "dark"' in boot, (
         "保存が無いときにダークを既定にしていない"
     )
+
+
+def test_attribution_follows_the_populations_being_published():
+    """**出典表記は公開する母集団に応じて出す。**
+
+    `configs/publish.yaml` の一覧は国内の一次名簿を前提に書かれている。
+    固定で出していると、米国の母集団を公開したときに SEC EDGAR と
+    Wikidata が credit されない。出典表記は各提供元の規約に従う義務が
+    あり（利用規約のページに明記している）、**落ちても画面上は何も
+    起きないので気付けない。**
+    """
+    from mailauth.config import load_yaml
+    from mailauth.p8_publish.runner import attribution_for
+
+    cfg = load_yaml("configs/publish.yaml")
+
+    jp = attribution_for({"jp-all-listed"}, cfg)
+    assert any("EDINET" in a for a in jp), f"国内で EDINET が出ていない: {jp}"
+
+    us = attribution_for({"us-all-listed"}, cfg)
+    assert any("SEC" in a for a in us), f"米国で SEC EDGAR が出ていない: {us}"
+    assert any("Wikidata" in a for a in us), f"米国で Wikidata が出ていない: {us}"
+
+    # 両方公開すれば両方出る。重複はしない
+    both = attribution_for({"jp-all-listed", "us-all-listed"}, cfg)
+    assert any("EDINET" in a for a in both) and any("SEC" in a for a in both)
+    assert len(both) == len(set(both)), f"出典が重複している: {both}"
+
+    # **設定が無い母集団を黙って飛ばさない**
+    unknown = attribution_for({"no-such-population"}, cfg)
+    assert any("no-such-population" in a for a in unknown), (
+        "設定が見つからない母集団を黙って飛ばしている"
+    )
+
+    # **P8 が実際にこれを使っていること。**
+    # 仕組みだけ作って呼んでいないのが、このリポジトリで何度も起きた形。
+    # 最初この検査は helper を直接叩くだけで、固定リストに戻しても素通りした
+    import inspect
+
+    from mailauth.p8_publish import runner as p8
+
+    source = inspect.getsource(p8)
+    assert "attribution_for(populations" in source, (
+        "P8 が attribution_for を呼んでいない（固定リストのままになっている）"
+    )
+    assert 'manifest.attribution = list(cfg.get("attribution")' not in source, (
+        "出典を固定リストから取っている"
+    )
+
+
+def test_the_site_does_not_claim_edinet_covers_every_population():
+    """**EDINET は国内の名簿。** 米国の母集団には使っていない。
+
+    「P1 は EDINET から確定する」と書いていたが、米国は SEC EDGAR である。
+    業種も同じで、国内は EDINET の33業種、米国は SEC の SIC を写している。
+    """
+    for name in ("methodology.md", "sectors.md"):
+        for sub in ("", "en/"):
+            path = repo_root() / "site" / "src" / sub / name
+            text = path.read_text(encoding="utf-8")
+            if "EDINET" not in text:
+                continue
+            assert "SEC" in text, (
+                f"{sub}{name} が EDINET だけに触れている。"
+                "米国の母集団は SEC EDGAR なので、併記するか触れないこと"
+            )
