@@ -863,49 +863,6 @@ form.observablehq-input > label {
 /* 右の目次をやめて、開いているページの節をここに一段下げて出す
  * （chrome.js）。**行き先を一箇所にまとめる。** */
 
-/* **`#observablehq-sidebar` を頭に付けているのは詳細度のため。**
-   Framework 側が `#observablehq-sidebar ol` と `#observablehq-sidebar a`
-   で指定しているので、クラスだけでは負ける。実際、最初は字下げが
-   まったく効かず、節の方が親より左に出ていた（id が 1 つ入るだけで
-   クラス 1 つには勝つ）。 */
-#observablehq-sidebar .section-links {
-  list-style: none;
-  margin: 2px 0 10px;
-  /* Framework の親項目は本文が左から 24px の位置に出る（実測）。
-     節はそれより深くする */
-  padding: 0 0 0 24px;
-}
-
-#observablehq-sidebar .section-links li { margin: 0; }
-
-#observablehq-sidebar .section-links a {
-  /* **地を透かす。** Framework の `#observablehq-sidebar a` が本文の
-     地色を塗るので、そのままだと節の並びだけが不透明な帯になり、
-     選択中のページの範囲が帯の大きさに見えてしまう */
-  background: transparent;
-  display: block;
-  padding: 3px 0 3px 14px;
-  /* 縦の筋は各項目の左に置く。**いま読んでいる節だけ色が乗る** */
-  border-left: 2px solid var(--rule);
-  font-family: var(--body);
-  font-size: 12.5px;
-  line-height: 1.55;
-  color: var(--dim);
-  text-decoration: none;
-}
-
-#observablehq-sidebar .section-links a:hover {
-  color: var(--ink-strong);
-  background: var(--accent-bg);
-}
-
-/* いま読んでいる節。**印は左の棒だけ。** 地を塗ると、上の
-   ページ見出しと同じ強さになって、どちらが選択中か分からなくなる */
-#observablehq-sidebar .section-links a[aria-current="true"] {
-  color: var(--accent);
-  border-left-color: var(--accent);
-}
-
 /* -------------------------------------------------- 左下の切り替え */
 
 .chrome-controls {
@@ -917,9 +874,22 @@ form.observablehq-input > label {
   margin-top: auto;
   padding: 12px 14px 14px;
   border-top: 1px solid var(--rule);
+  /* **縦に積む。** 横に並べると2つの切り替えで一覧の幅をほぼ使い切り、
+     左側が重くなる（運営者の指摘）。縦なら各行が中身のぶんで済む */
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* 何から組んだか。切り替えの上に小さく置く。**操作するものではない**ので、
+   下の切り替えより弱く出す */
+.chrome-build {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .12em;
+  color: var(--faint);
+  padding-bottom: 2px;
 }
 
 .chrome-switch {
