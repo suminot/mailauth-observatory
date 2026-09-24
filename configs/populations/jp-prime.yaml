@@ -53,6 +53,13 @@ source:
   enrich:
     - houjin_bangou      # 国税庁：商号・所在地の裏取り
     - gbizinfo           # company_url の取得
+    # **gBizINFO のあとに置く。** 埋めるのは空欄だけで、政府の一次情報を
+    # 上書きしない。2026-09 の実測で official_url の欠損が 47.7% あり、
+    # 起点ドメインが無い企業は P2 で候補ゼロになって分母から消えていた
+    - wikidata_identity
+
+  # 法人番号（P3225）で突合して公式サイト（P856）を補う。CC0
+  wikidata_identity_query: configs/populations/_sparql/jp_houjin_identity.rq
 
   industry:
     primary_scheme: EDINET33
@@ -79,3 +86,4 @@ attribution:
   - "出典：EDINET（金融庁）"
   - "出典：国税庁法人番号公表サイト（国税庁）"
   - "出典：経済産業省gBizINFO"
+  - "Source: Wikidata (CC0)"

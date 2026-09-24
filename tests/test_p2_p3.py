@@ -90,6 +90,9 @@ def seeded_run(edinet_sample):
         config="configs/populations/jp-all-listed.yaml",
         run_id=RUN,
         source_file=str(edinet_sample),
+        # **テストはネットワークに出ない**（Wikidata は鍵が要らないので、
+        # 指定しないと本当に WDQS を叩く）
+        offline=True,
     )
     path = phase_output(RUN, "p1_population", "entities.parquet")
     df = pd.read_parquet(path)
@@ -189,6 +192,9 @@ def test_p2_warns_when_no_seed_domains_at_all(edinet_sample):
         config="configs/populations/jp-all-listed.yaml",
         run_id=RUN,
         source_file=str(edinet_sample),
+        # **テストはネットワークに出ない**（Wikidata は鍵が要らないので、
+        # 指定しないと本当に WDQS を叩く）
+        offline=True,
     )
     result = _run_p2()
     codes = {w["code"] for w in result["warnings"]}

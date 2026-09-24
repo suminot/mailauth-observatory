@@ -14,7 +14,12 @@ blocked_by: 構成銘柄リストの利用条件が未確認（日本経済新�
 source:
   primary: manual_securities_code_list
   manual_list: null
-  enrich: [houjin_bangou, gbizinfo]
+  # wikidata_identity は gBizINFO のあとに置く。**埋めるのは空欄だけで、
+  # 政府の一次情報を上書きしない**（2026-09 の実測で official_url の欠損が
+  # 47.7% あり、起点ドメインが無い企業は P2 で候補ゼロになっていた）
+  enrich: [houjin_bangou, gbizinfo, wikidata_identity]
+  # 法人番号（P3225）で突合して公式サイト（P856）を補う。CC0
+  wikidata_identity_query: configs/populations/_sparql/jp_houjin_identity.rq
   industry:
     primary_scheme: EDINET33
     common_mapping: configs/industry/edinet33_to_common12.csv
@@ -22,3 +27,6 @@ source:
 refresh:
   cadence: monthly
   method: manual
+
+attribution:
+  - "Source: Wikidata (CC0)"

@@ -12,6 +12,10 @@ from mailauth.paths import phase_dir, phase_output
 
 
 def run_p1(run_id: str, source, config="configs/populations/jp-all-listed.yaml", **kw):
+    # **offline で回す。テストは一切ネットワークに出ない。**
+    # gBizINFO と法人番号は認証情報が無ければ勝手に止まるが、
+    # Wikidata は鍵が要らないので、指定しないと本当に WDQS を叩く
+    kw.setdefault("offline", True)
     return run(config=config, run_id=run_id, source_file=source, **kw)
 
 
@@ -305,3 +309,267 @@ def test_segment_source_is_recorded_for_attribution(edinet_sample, tmp_path):
     run_p1("2026-08", edinet_sample, config=_config_with_segment_map(tmp_path, seg))
     df = entities("2026-08").set_index("entity_id")
     assert df.loc["jp:1234567890123", "market_segment_source"] == "有価証券報告書"
+
+
+# --------------------------------------------------------------------------
+# 公式サイトを Wikidata（CC0）で補う
+#
+# **国内上場企業の 47.7% で official_url が取れていない**（2026-09 実測）。
+# 起点ドメインが無い企業は P2 で候補ゼロになり、そのまま分母から消える。
+# --------------------------------------------------------------------------
+
+
+def _jp_entity(bangou: str, *, url: str | None = None):
+    from mailauth.contracts import Entity
+    from mailauth.normalize import domain_from_url
+
+    return Entity(
+        entity_id=f"jp:{bangou}",
+        run_id="2026-08",
+        population_ids=["jp-all-listed"],
+        name=f"会社{bangou[:3]}",
+        name_normalized=f"会社{bangou[:3]}",
+        country="JP",
+        houjin_bangou=bangou,
+        official_url=url,
+        # **eTLD+1 に正規化する。** システム全体がその粒度で動いている
+        official_domain=(domain_from_url(url) if url else None),
+    )
+
+
+def test_wikidata_は空欄だけを埋める(monkeypatch, tmp_path):
+    """**政府の一次情報を上書きしない。**
+
+    gBizINFO は政府が出している company_url で、Wikidata は利用者が編集する。
+    先に入っている値を後から書き換えると、どちらが採用されたか分からなくなる。
+    """
+    from mailauth.config import load_population
+    from mailauth.manifest import RunManifest
+    from mailauth.p1_population.runner import _fill_missing_urls_from_wikidata
+
+    filled = _jp_entity("1" * 13, url="https://gbiz-corp.jp")
+    empty = _jp_entity("2" * 13)
+    monkeypatch.setattr(
+        "mailauth.p1_population.wikidata.run_query",
+        lambda *a, **k: [
+            {"houjin_bangou": {"value": "1" * 13}, "website": {"value": "https://wikidata-corp.jp"}},
+            {"houjin_bangou": {"value": "2" * 13}, "website": {"value": "https://found-corp.jp"}},
+        ],
+    )
+    cfg = load_population("configs/populations/jp-all-listed.yaml")
+    with RunManifest(run_id="2026-08", phase="p1_population", out_dir=tmp_path) as manifest:
+        _fill_missing_urls_from_wikidata([filled, empty], cfg, manifest)
+
+    assert filled.official_url == "https://gbiz-corp.jp", "gBizINFO の値を上書きしている"
+    assert filled.official_domain == "gbiz-corp.jp"
+    assert empty.official_domain == "found-corp.jp", "空欄が埋まっていない"
+    stats = manifest.to_dict()["breakdown"]["wikidata_identity"]
+    assert stats["missing_before"] == 1 and stats["filled"] == 1
+    assert stats["still_missing"] == 0
+
+
+def test_桁数の違う法人番号は突合に使わない(monkeypatch):
+    """**正規化して通さない。** 別の会社の番号に化ける方が危ない。
+
+    突合できないのは「取れなかった」であって、誤った突合より安全である。
+    捨てた件数は記録する（被覆率が低い原因を「無い」と「読めない」で
+    分けられるようにする）。
+    """
+    from mailauth.p1_population.wikidata import fetch_identity
+
+    monkeypatch.setattr(
+        "mailauth.p1_population.wikidata.run_query",
+        lambda *a, **k: [
+            {"houjin_bangou": {"value": "1234567890123"}, "website": {"value": "https://a.jp"}},
+            {"houjin_bangou": {"value": "123"}, "website": {"value": "https://b.jp"}},
+            {"houjin_bangou": {"value": "1234-5678-90123"}, "website": {"value": "https://c.jp"}},
+        ],
+    )
+    identity, stats = fetch_identity(
+        "configs/populations/_sparql/jp_houjin_identity.rq", key="houjin_bangou"
+    )
+    assert set(identity) == {"1234567890123"}, "桁数の違う値を拾っている"
+    assert stats["unusable_keys"] == 1, "読めなかった件数を数えていない"
+    # ハイフン入りは桁が揃えば使う（表記ゆれであって別の番号ではない）
+    assert identity["1234567890123"]["website"] == "https://a.jp"
+
+
+def test_引けなかったことを空と区別する(monkeypatch, tmp_path):
+    """原則5。**「0件だった」と「引けなかった」を混ぜない。**"""
+    from mailauth.config import load_population
+    from mailauth.manifest import RunManifest
+    from mailauth.p1_population.runner import _fill_missing_urls_from_wikidata
+    from mailauth.p1_population.wikidata import WikidataError
+
+    def boom(*a, **k):
+        raise WikidataError("WDQS が 403 を返した")
+
+    monkeypatch.setattr("mailauth.p1_population.wikidata.run_query", boom)
+    cfg = load_population("configs/populations/jp-all-listed.yaml")
+    with RunManifest(run_id="2026-08", phase="p1_population", out_dir=tmp_path) as manifest:
+        _fill_missing_urls_from_wikidata([_jp_entity("3" * 13)], cfg, manifest)
+
+    codes = [w["code"] for w in manifest.to_dict()["warnings"]]
+    assert "ENRICH_SKIPPED_WIKIDATA" in codes, "引けなかったことが記録されていない"
+
+
+def test_1件も埋まらなければ知らせる(monkeypatch, tmp_path):
+    """**突合が効いていないことに気付けるようにする。**
+
+    法人番号の持ち方が想定と違えば、1件も埋まらないまま静かに通る。
+    """
+    from mailauth.config import load_population
+    from mailauth.manifest import RunManifest
+    from mailauth.p1_population.runner import _fill_missing_urls_from_wikidata
+
+    monkeypatch.setattr("mailauth.p1_population.wikidata.run_query", lambda *a, **k: [])
+    cfg = load_population("configs/populations/jp-all-listed.yaml")
+    with RunManifest(run_id="2026-08", phase="p1_population", out_dir=tmp_path) as manifest:
+        _fill_missing_urls_from_wikidata([_jp_entity("4" * 13)], cfg, manifest)
+
+    codes = [w["code"] for w in manifest.to_dict()["warnings"]]
+    assert "WIKIDATA_FILLED_NOTHING" in codes
+
+
+def test_国内母集団が_wikidata_を使うことと出典():
+    """使ったのに credit しないのは提供元の規約に反しうる（PR #45 の経路）。"""
+    from mailauth.config import load_population
+    from mailauth.p8_publish.runner import attribution_for
+
+    for pid in ("jp-all-listed", "jp-prime", "jp-standard", "jp-growth", "jp-nikkei225"):
+        cfg = load_population(f"configs/populations/{pid}.yaml")
+        enrich = [str(e) for e in cfg.source.enrich]
+        assert "wikidata_identity" in enrich, f"{pid} が Wikidata を使っていない"
+        # **gBizINFO より後。** 政府の一次情報を上書きしない
+        assert enrich.index("wikidata_identity") > enrich.index("gbizinfo"), (
+            f"{pid} で Wikidata が gBizINFO より先にある。一次情報を上書きする"
+        )
+        assert getattr(cfg.source, "wikidata_identity_query", None), f"{pid} に SPARQL が無い"
+
+    lines = attribution_for({"jp-all-listed"}, {"attribution": []})
+    assert any("Wikidata" in line for line in lines), "出典に Wikidata が出ていない"
+
+
+def test_offline_ならネットワークに出ない(edinet_sample, monkeypatch):
+    """**鍵の要らない補完は、黙って外に出る。**
+
+    gBizINFO と法人番号は認証情報が無ければ勝手に止まるので、テストは
+    偶然ネットワークに出ずに済んでいた。Wikidata は鍵が要らないため、
+    足した瞬間に**すべての P1 の検査が本当に WDQS を叩き始めた**
+    （CI が19分止まって気付いた）。
+
+    偶然守られていた経路と、明示的に守る経路を混ぜない。
+    """
+
+    def boom(*a, **k):
+        raise AssertionError("offline なのにネットワークに出た")
+
+    monkeypatch.setattr("mailauth.p1_population.wikidata.run_query", boom)
+    result = run_p1("2026-08", edinet_sample, offline=True)
+
+    codes = [w["code"] for w in result["warnings"]]
+    assert "ENRICH_SKIPPED_WIKIDATA" in codes, (
+        "引いていないことを記録していない。**「無い」と「引いていない」は別**"
+    )
+
+
+def test_offline_でなければ補完を試みる(edinet_sample, monkeypatch):
+    """**offline を外したら実際に引くこと。** 黙って何もしないのが一番悪い。"""
+    called: list[str] = []
+
+    def spy(*a, **k):
+        called.append("引いた")
+        return []
+
+    monkeypatch.setattr("mailauth.p1_population.wikidata.run_query", spy)
+    run_p1("2026-08", edinet_sample, offline=False)
+    assert called, "offline を外しても Wikidata を引いていない"
+
+
+# ---------------------------------------------------------------------------
+# プロセスの境界を越えて offline を渡す
+#
+# コンソールはフェーズを subprocess で起動する。子プロセスの中では
+# tests/conftest.py の遮断は効かない ── **別のプロセスだからである。**
+# 実際これで、同じコミットなのに CI が通ったり落ちたりした。
+
+
+def test_環境変数でも_offline_が立つ(edinet_sample, monkeypatch):
+    """旗を付け忘れた起動でも、環境変数が立っていれば外に出ないこと。
+
+    **起動のたびに `--offline` を足して回る形だと、後から足された起動を
+    必ず取りこぼす。** 環境変数なら黙って引き継がれる。
+    """
+    from mailauth.cli import _offline
+
+    monkeypatch.setenv("MAILAUTH_OFFLINE", "1")
+    assert _offline(False) is True
+
+
+@pytest.mark.parametrize("value", ["", "0", "false", "no", "off", "  "])
+def test_偽の値を立っていると読まない(monkeypatch, value):
+    """**`MAILAUTH_OFFLINE=0` を「立っている」と読むと、黙って補完が止まる。**"""
+    from mailauth.cli import _offline
+
+    monkeypatch.setenv("MAILAUTH_OFFLINE", value)
+    assert _offline(False) is False, f"{value!r} を立っていると読んでいる"
+
+
+def test_旗は環境変数より強い(monkeypatch):
+    """`--offline` を付けた実行を、環境変数が取り消さないこと。"""
+    from mailauth.cli import _offline
+
+    monkeypatch.setenv("MAILAUTH_OFFLINE", "0")
+    assert _offline(True) is True
+
+
+def test_子プロセスが環境変数を受け取る(edinet_sample):
+    """**子プロセスが、本当に offline で動くこと。**
+
+    ここだけは差し替えでは確かめられない。実際に起動して、引いていない
+    ことが manifest の警告に残るのを見る。
+    """
+    import subprocess
+    import sys
+
+    proc = subprocess.run(
+        [
+            sys.executable, "-m", "mailauth.cli", "p1-population",
+            "--run", "2026-08",
+            "--config", "configs/populations/jp-all-listed.yaml",
+            "--source-file", str(edinet_sample),
+        ],  # **--offline を付けない。** 環境変数だけで止まることを見る
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+    manifest = read_manifest(phase_dir("2026-08", "p1_population"))
+    assert manifest is not None, "子プロセスが manifest を書いていない"
+
+    # **「引いていない」と「引いて失敗した」は同じ符号で出る。**
+    # 符号だけ見ても区別できないので、理由まで見る ── 外に出て proxy に
+    # 蹴られた場合、ここには接続の失敗が入る
+    skipped = [
+        w for w in manifest["warnings"] if w["code"] == "ENRICH_SKIPPED_WIKIDATA"
+    ]
+    assert skipped, "Wikidata について何も記録されていない"
+    assert any("offline" in (w.get("message") or "") for w in skipped), (
+        "子プロセスが外に出ている。環境変数が渡っていない: "
+        f"{[w.get('message') for w in skipped]}"
+    )
+
+
+def test_遮断が子プロセスにも届くことを宣言だけで済ませない():
+    """conftest が**実際に**環境変数を立てていること。
+
+    この検査が無いと、フィクスチャから設定が落ちても誰も気付かない。
+    """
+    import os
+
+    from tests.conftest import DEAD_PROXY, PROXY_VARS
+
+    assert os.environ.get("MAILAUTH_OFFLINE") == "1"
+    for var in PROXY_VARS:
+        assert os.environ.get(var) == DEAD_PROXY, f"{var} が行き止まりを向いていない"

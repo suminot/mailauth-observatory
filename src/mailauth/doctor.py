@@ -192,18 +192,29 @@ def _population_readiness() -> list[PopulationReadiness]:
 
         enrich = list(src.enrich)
 
-        # official_url は複数経路がありうる。認証不要の経路があれば鍵は任意になる
+        # official_url は複数経路がありうる。
+        #
+        # **認証不要の経路があることだけを理由に、鍵付きの経路を任意にしない。**
+        # 国内の母集団に wikidata_identity（鍵不要）を足したとき、この判定は
+        # 「gBizINFO のトークンは要らない」と言い始めた。**それは支持できない** ──
+        # Wikidata の国内被覆率はまだ測れておらず（開発環境から WDQS が 403）、
+        # 米国では Wikidata だけだと公式サイトが 25.6% しか埋まらない。
+        # 鍵なしで回せば分母が大きく欠けるのに、doctor が「任意」と言うと
+        # 運営者はトークン無しで回してしまう。
+        #
+        # 判断の基準は**その母集団がどれだけの欠損を許しているか**にする。
+        # 大半が欠けてよい設定（閾値 50% 以上）なら、その経路はもともと
+        # 補助でしかないので任意でよい。ほぼ揃うことを期待している設定なら、
+        # 実際に揃えている経路が必須である。
         url_routes = [e for e in enrich if e in OFFICIAL_URL_SOURCES]
         if url_routes:
-            keyless = any(OFFICIAL_URL_SOURCES[e] is None for e in url_routes)
-            # 閾値が緩い（大半が欠けてよい）なら、そもそも必須にしない
             threshold = cfg.acceptance.max_missing_rate.get("official_url")
             tolerant = threshold is not None and threshold >= 0.5
             for route in url_routes:
                 key = OFFICIAL_URL_SOURCES[route]
                 if key is None or CREDENTIALS[key].present():
                     continue
-                if keyless or tolerant:
+                if tolerant:
                     optional.append(key)
                 else:
                     required.append(key)

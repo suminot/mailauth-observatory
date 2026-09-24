@@ -43,8 +43,9 @@ def test_populations_lists_implementation_state():
 def test_p1_runs_from_cli(edinet_sample, jp_config):
     result = runner.invoke(
         app,
+        # **テストはネットワークに出ない**（tests/conftest.py 参照）
         ["p1-population", "--config", jp_config, "--run", "2026-08",
-         "--source-file", str(edinet_sample)],
+         "--source-file", str(edinet_sample), "--offline"],
     )
     assert result.exit_code == 0, result.stdout
     assert "status=success" in result.stdout
@@ -54,8 +55,9 @@ def test_p1_runs_from_cli(edinet_sample, jp_config):
 def test_status_reports_not_run_phases(edinet_sample, jp_config):
     runner.invoke(
         app,
+        # **テストはネットワークに出ない**（tests/conftest.py 参照）
         ["p1-population", "--config", jp_config, "--run", "2026-08",
-         "--source-file", str(edinet_sample)],
+         "--source-file", str(edinet_sample), "--offline"],
     )
     result = runner.invoke(app, ["status", "--run", "2026-08"])
     assert result.exit_code == 0
@@ -121,8 +123,9 @@ def test_health(client):
 def test_runs_are_listed_after_a_run(client, edinet_sample, jp_config):
     runner.invoke(
         app,
+        # **テストはネットワークに出ない**（tests/conftest.py 参照）
         ["p1-population", "--config", jp_config, "--run", "2026-08",
-         "--source-file", str(edinet_sample)],
+         "--source-file", str(edinet_sample), "--offline"],
     )
     assert client.get("/api/runs").json()["runs"] == ["2026-08"]
 
@@ -131,8 +134,9 @@ def test_run_detail_shows_all_eight_phases(client, edinet_sample, jp_config):
     """画面1 は八工程を必ず並べる。未実行のフェーズも not_run として出す。"""
     runner.invoke(
         app,
+        # **テストはネットワークに出ない**（tests/conftest.py 参照）
         ["p1-population", "--config", jp_config, "--run", "2026-08",
-         "--source-file", str(edinet_sample)],
+         "--source-file", str(edinet_sample), "--offline"],
     )
     phases = client.get("/api/runs/2026-08").json()["phases"]
     assert len(phases) == 8
@@ -158,8 +162,9 @@ def test_inspect_returns_json_safe_rows(client, edinet_sample, jp_config):
     """Parquet の list 列や日付が JSON にできる形で返ること。"""
     runner.invoke(
         app,
+        # **テストはネットワークに出ない**（tests/conftest.py 参照）
         ["p1-population", "--config", jp_config, "--run", "2026-08",
-         "--source-file", str(edinet_sample)],
+         "--source-file", str(edinet_sample), "--offline"],
     )
     body = client.get("/api/inspect/2026-08/p1_population", params={"limit": 5}).json()
     assert body["total"] == 17
@@ -172,8 +177,9 @@ def test_inspect_returns_json_safe_rows(client, edinet_sample, jp_config):
 def test_inspect_filter(client, edinet_sample, jp_config):
     runner.invoke(
         app,
+        # **テストはネットワークに出ない**（tests/conftest.py 参照）
         ["p1-population", "--config", jp_config, "--run", "2026-08",
-         "--source-file", str(edinet_sample)],
+         "--source-file", str(edinet_sample), "--offline"],
     )
     body = client.get("/api/inspect/2026-08/p1_population", params={"q": "銀行"}).json()
     assert body["total"] == 1
@@ -290,8 +296,10 @@ def test_job_reports_failure_for_unimplemented_phase():
 def _run_p1(edinet_sample, jp_config, run_id="2026-08"):
     return runner.invoke(
         app,
+        # **offline で回す。テストは一切ネットワークに出ない**
+        # （Wikidata は鍵が要らないので、指定しないと WDQS を叩く）
         ["p1-population", "--config", jp_config, "--run", run_id,
-         "--source-file", str(edinet_sample)],
+         "--source-file", str(edinet_sample), "--offline"],
     )
 
 
@@ -772,8 +780,9 @@ def test_compare_api_requires_a_run(client):
 def test_compare_api_requires_p4_compare(client, edinet_sample, jp_config):
     runner.invoke(
         app,
+        # **テストはネットワークに出ない**（tests/conftest.py 参照）
         ["p1-population", "--config", jp_config, "--run", "2026-08",
-         "--source-file", str(edinet_sample)],
+         "--source-file", str(edinet_sample), "--offline"],
     )
     resp = client.get("/api/compare/2026-08")
     assert resp.status_code == 404
