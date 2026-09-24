@@ -70,9 +70,16 @@ access:
   # 検査が毎回警告を出す
   protected_paths: []
 
-  # 公開サイトの基点 URL（例 https://mailauth-observatory.pages.dev）。
+  # 公開サイトの基点 URL（例 https://<プロジェクト名>.pages.dev）。
   # **未設定なら検査できないので、第2層は公開されない**
-  verify_base_url: https://mailauth-observatory.pages.dev
+  #
+  # **ここは null のままにしておき、環境変数 MAILAUTH_SITE_BASE_URL で渡す。**
+  # 環境変数の方が優先される。これは実在するサイトの住所であって設定の意図では
+  # ないので、リポジトリに書き残すと、リポジトリを見た人がそのままサイトに
+  # たどり着ける。`noindex` で検索から外してある意図と噛み合わない。
+  # GitHub なら Settings → Secrets and variables → Actions → Variables に
+  # MAILAUTH_SITE_BASE_URL として置く（秘密ではないので Variables でよい）
+  verify_base_url: null
 
 deploy:
   # Cloudflare Pages。認証情報は GitHub の secrets に置く。

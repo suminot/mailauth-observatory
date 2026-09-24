@@ -911,7 +911,9 @@ def noindex_check_cmd(
     cfg = access_mod.load()
     if not cfg.verify_base_url:
         typer.secho(
-            "access.verify_base_url が未設定。configs/publish.yaml に公開 URL を入れること",
+            "公開サイトの URL が未設定。環境変数 MAILAUTH_SITE_BASE_URL に入れること"
+            "（configs/publish.yaml の access.verify_base_url でも読むが、"
+            "**リポジトリを public にするなら住所を書き残さない方がよい**）",
             fg="red",
             err=True,
         )

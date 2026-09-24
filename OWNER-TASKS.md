@@ -439,14 +439,23 @@ access:
   idp: entra_id
   allowed_email_domains: [mkilabo.com]
   protected_paths: []          # 試験中にサイト全体を閉じるなら "/" を足す
-  verify_base_url: https://<プロジェクト名>.pages.dev
+  verify_base_url: null        # ← 住所はここに書かない。下の環境変数で渡す
 ```
 
-`verify_base_url` を入れると検査できるようになる。
+公開サイトの URL は**環境変数で渡す**。`configs/publish.yaml` に書いても
+読むが、環境変数の方が優先される。
 
 ```bash
+export MAILAUTH_SITE_BASE_URL=https://<プロジェクト名>.pages.dev
 mailauth access-check
 ```
+
+**なぜ設定ファイルに書かないのか。** これは実在するサイトの住所であって、
+設定の意図ではない。リポジトリを public にすると、この1行を見た人が
+そのままサイトにたどり着ける。`_headers` の `noindex` で検索から外して
+ある意図と噛み合わない。GitHub 側に置くなら
+Settings → Secrets and variables → Actions → **Variables** に
+`MAILAUTH_SITE_BASE_URL` として入れる（秘密ではないので Secrets でなくてよい）。
 
 対象パスを**認証なしで叩いて、実際に弾かれること**を確かめる。
 
