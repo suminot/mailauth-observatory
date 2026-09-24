@@ -31,7 +31,12 @@ from ..resolver import DnsResolver, shuffled
 from .backends.base import to_raw_response
 from .backends.dnspython_backend import DnspythonBackend
 from .bronze import BronzeWriter, measured_domains
-from .plan import build_dane_queries, build_plan, estimate_queries
+from .plan import (
+    build_dane_queries,
+    build_plan,
+    estimate_queries,
+    restrict_to_configured,
+)
 from .selectors import SelectorDictionary
 
 PHASE = "p4_measure"
@@ -337,7 +342,11 @@ def run(
             # ドメイン単位にしてある（クエリ単位にすると段が崩れる）
             pre = [
                 q
-                for q in build_plan(domain, MeasureTier.C, selectors=[])
+                for q in restrict_to_configured(
+                    build_plan(domain, MeasureTier.C, selectors=[]),
+                    target["tier"],
+                    measure_cfg,
+                )
                 if q.purpose in (QueryPurpose.MX, QueryPurpose.SPF)
             ]
             mx_values: list[str] = []
@@ -372,6 +381,10 @@ def run(
             ]
             if extras.get("dane") and target["tier"] == MeasureTier.A and mx_values:
                 plan += build_dane_queries(mx_values)
+
+            # **設定に挙がっていない種類は投げない。** ここを通さないと
+            # `tiers.<階層>.queries` は書いてあるだけの項目になる（原則7）
+            plan = restrict_to_configured(plan, target["tier"], measure_cfg)
 
             control_responded = False
             dkim_hit = False

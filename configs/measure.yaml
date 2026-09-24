@@ -2,7 +2,11 @@
 # Sprint 3 で実装する。Sprint 1 時点では読み込みのみ検証する。
 
 resolver:
-  mode: local_unbound          # localhost に unbound を立てて上流にフォワード
+  # **未実装。** localhost に unbound を立てて上流にフォワードする構想だが、
+  # これを読むコードはまだ無い（いまは dnspython が上流を直接引く）。
+  # 書いてあるだけの設定を「効いている」と読ませないために状態を明示する
+  mode: local_unbound
+  mode_status: planned
   upstream:
     - 8.8.8.8                  # Google 公式既定 1,500 QPS/IP
     - 1.1.1.1                  # Cloudflare（公式値非公表、10 req/s で絞られる報告あり）
@@ -43,11 +47,16 @@ rate:
   backoff: [1, 3, 9]
   shuffle_domains: true        # 同一権威への連続クエリを避ける
 
-cache:
-  # SPF include 先は大手プロバイダに集中する
-  # キャッシュなしでは同一権威に不当な負荷をかける（倫理的義務）
-  spf_include: true
-  mx_host_resolution: true
+# キャッシュの項目はここには無い。**切れるようにしていないからである。**
+#
+# SPF include 先と MX ホストは大手プロバイダに集中するので、同じ名前を
+# 何度も引くと同一権威に不当な負荷をかける。これは設定ではなく**倫理的な
+# 義務**なので、`DnsResolver` が無条件に覚える（`resolver.py`）。
+#
+# 以前はここに `cache.spf_include: true` と `cache.mx_host_resolution: true`
+# と書いてあり、**それを読むコードは無かった。** 検査も「true と書いてある
+# こと」を見ていたので、実装を消しても通ってしまう状態だった。
+# いまは「同じ名前を2回引いても問い合わせは1本」を検査が直接見ている。
 
 dkim:
   # 決定: 当面 L1/L2 まで。L3（Tatang 3,498語）は GPL-3.0 の
@@ -65,7 +74,11 @@ extras:
   bimi: true
   dnssec: true
   dane: true                          # 取得はするが日米では指標化しない
-  https_fetch: false                  # 第2段で有効化（MTA-STSポリシー、BIMI SVG/VMC）
+  # **未実装。** MTA-STS の enforce と testing を見分けるには
+  # `https://mta-sts.<domain>/.well-known/mta-sts.txt` を取りに行く必要が
+  # あるが、その経路はまだ無い。false のままでも true にしても**何も変わらない**
+  https_fetch: false
+  https_fetch_status: planned
 
 tiers:
   # P3 が割り当てる measure_tier ごとの計測の深さ（DESIGN.md P4 表）

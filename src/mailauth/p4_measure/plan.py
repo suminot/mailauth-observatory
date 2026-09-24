@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 
+from ..config import load_measure_config
 from ..contracts import MeasureTier, QueryPurpose
 
 #: 対照クエリに使うラベル。実在しないセレクタを引いて、
@@ -108,6 +109,42 @@ def build_plan(
         queries.append(Query(f"default._bimi.{domain}", "TXT", QueryPurpose.BIMI))
 
     return queries
+
+def allowed_purposes(tier: str, measure_cfg: dict | None = None) -> set[str] | None:
+    """その階層で投げてよい種類。設定に無ければ None（絞らない）。
+
+    `configs/measure.yaml` の `tiers.<階層>.queries` を読む。**以前はここが
+    読まれておらず、設定を書き換えても投げる内容は1本も変わらなかった。**
+    設定がコードを変えないなら、それは設定ではなく感想である（原則7）。
+    """
+    cfg = measure_cfg if measure_cfg is not None else load_measure_config()
+    spec = ((cfg.get("tiers") or {}).get(tier) or {}).get("queries")
+    if not spec:
+        return None
+    known = {q.value for q in QueryPurpose}
+    unknown = [q for q in spec if q not in known]
+    if unknown:
+        # **黙って全部落とさない。** 綴り違いで計測が空になる方が重い
+        raise ValueError(
+            f"tiers.{tier}.queries に未知の種類がある: {unknown}。"
+            f"使えるのは {sorted(known)}"
+        )
+    return set(spec)
+
+
+def restrict_to_configured(
+    queries: list[Query], tier: str, measure_cfg: dict | None = None
+) -> list[Query]:
+    """設定に挙がっていない種類を落とす。
+
+    DANE は MX が分かってから足すので、P4 側から2度呼ばれる
+    （組んだ直後と、DANE を足したあと）。
+    """
+    allowed = allowed_purposes(tier, measure_cfg)
+    if allowed is None:
+        return queries
+    return [q for q in queries if q.purpose in allowed]
+
 
 
 def build_dane_queries(mx_hosts: list[str], limit: int = 9) -> list[Query]:
