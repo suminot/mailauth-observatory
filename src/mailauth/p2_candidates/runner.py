@@ -431,7 +431,9 @@ def run(
                             ct_stats["stale_cache"] += 1
                     if ct.error:
                         ct_stats["errors"] += 1
-                        manifest.add_failure("ct_log_error")
+                        # **失敗を一語にまとめない。** 時間切れなら待ち方、
+                        # HTTP エラーなら頼み方を変えることになる
+                        manifest.add_failure(f"ct_log_{ct.error_kind or 'error'}")
                     ct_max = int(ct_cfg.get("max_per_entity", 200))
                     for found in ct.found[:ct_max]:
                         collector.add(found, DiscoveryMethod.CT_LOG, f"crt.sh %.{official}")
@@ -598,6 +600,14 @@ def run(
             unique_domains=len(domain_to_entities),
             candidate_rows=len(candidates),
             ct=ct_stats,
+            # **crt.sh にどれだけ待たされたかを残す。** 2026-09 の実行は
+            # P2 に4時間21分かかったが、残っていたのは失敗の件数だけで、
+            # 時間切れだったのか重かったのかが分からなかった
+            ct_response=(
+                ct_source.response_stats()
+                if hasattr(ct_source, "response_stats")
+                else {"requests": 0, "note": "この CT ソースは応答時間を測らない"}
+            ),
             resolver=getattr(resolver, "stats", {}),
             shared_domains=len(shared),
             # rua が第三者サービスを指していた件数。P6 の dmarc_vendor 推定の材料

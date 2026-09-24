@@ -50,6 +50,7 @@ CT 経由でしか見つからないことがあるので、**候補生成が初
 from __future__ import annotations
 
 import json
+import statistics
 import threading
 import time
 from collections.abc import Callable, Iterable
@@ -78,6 +79,14 @@ class CtResult:
     #: **当月以外なら「今月の観測」ではない**（原則5）
     cache_month: str | None = None
     error: str | None = None
+    #: 失敗の種類。**「失敗」の一語にまとめない。**
+    #: timeout / http / transport / decode で手当てが違う
+    #: （時間切れなら待ち方、HTTP なら頼み方を変えることになる）
+    error_kind: str | None = None
+    #: 実際に応答が返るまでの秒数。キャッシュに当たった場合は None
+    duration_sec: float | None = None
+    #: 投げ直した回数。0 なら一発で返っている
+    attempts: int = 1
 
 
 #: 同時に応答を待つ本数の既定値。**投げる間隔（qps）とは別のつまみ。**
@@ -130,6 +139,13 @@ class CrtShClient:
         # **投げる間隔は全スレッドで共有する。** スレッドごとに持つと、
         # 本数ぶんだけ crt.sh への実効 qps が上がってしまう
         self._throttle_lock = threading.Lock()
+        # 応答時間と失敗の内訳。**prefetch は複数スレッドから書く**ので
+        # 間隔の錠とは別の錠で守る（同じ錠を使うと、記録のたびに投げる
+        # 権利を奪い合うことになる）
+        self._stats_lock = threading.Lock()
+        self._timings: list[float] = []
+        self._error_kinds: dict[str, int] = {}
+        self._retried = 0
 
     def _throttle(self) -> None:
         """次の1本を投げてよい時刻まで待つ。**全スレッドで1つの間隔。**
@@ -145,6 +161,51 @@ class CrtShClient:
             if wait > 0:
                 time.sleep(wait)
             self._last_call = time.monotonic()
+
+    def _record(self, elapsed: float, *, kind: str | None, attempts: int) -> None:
+        """1本ぶんの応答時間と結果を控える。**worker スレッドから呼ばれる。**"""
+        with self._stats_lock:
+            self._timings.append(elapsed)
+            if kind:
+                self._error_kinds[kind] = self._error_kinds.get(kind, 0) + 1
+            if attempts > 1:
+                self._retried += 1
+
+    def response_stats(self) -> dict[str, object]:
+        """応答時間の分布と失敗の内訳。**manifest に載せて次の判断に使う。**
+
+        2026-09 の実行では、P2 の実時間の大半が crt.sh の待ちだった可能性が
+        あるのに、残っていたのは `errors` の件数だけだった。**時間切れと
+        HTTP エラーの区別も、どれだけ待たされたかも無い。** 判断材料が
+        無いまま調整すると、次の実行も5時間かけて同じことを学ぶ。
+
+        取れた本数が0なら、0 で埋めずに**空を返す**（原則5：測っていない
+        ことと 0 秒だったことは別）。
+        """
+        with self._stats_lock:
+            timings = sorted(self._timings)
+            kinds = dict(sorted(self._error_kinds.items()))
+            retried = self._retried
+        if not timings:
+            return {"requests": 0, "note": "crt.sh に1本も投げていない"}
+
+        def pct(q: float) -> float:
+            idx = min(int(q * len(timings)), len(timings) - 1)
+            return round(timings[idx], 3)
+
+        return {
+            "requests": len(timings),
+            # 中央値は statistics.median に合わせる（P2 の他の分布と同じ流儀）
+            "p50_sec": round(statistics.median(timings), 3),
+            "p90_sec": pct(0.90),
+            "p99_sec": pct(0.99),
+            "max_sec": round(timings[-1], 3),
+            "mean_sec": round(sum(timings) / len(timings), 3),
+            # **時間切れは待ち方、HTTP は頼み方。** 一語にまとめない
+            "errors_by_kind": kinds,
+            "retried": retried,
+            "timeout_sec": self.timeout,
+        }
 
     def _cache_path(self, domain: str) -> Path | None:
         """キャッシュの置き場所。**月で区切る。**
@@ -182,6 +243,24 @@ class CrtShClient:
         client = given or httpx.Client(timeout=self.timeout, follow_redirects=True)
         close = given is None
         attempt = 0
+        started = time.monotonic()
+
+        def failed(kind: str, message: str) -> CtResult:
+            """失敗も**どれだけ待たされたか**を残す。
+
+            時間切れと HTTP エラーでは手当てが違う。件数だけ数えていると、
+            「待ち方を変えるべきか」「頼み方を変えるべきか」が分からない。
+            """
+            elapsed = time.monotonic() - started
+            self._record(elapsed, kind=kind, attempts=attempt + 1)
+            return CtResult(
+                domain=domain,
+                error=message,
+                error_kind=kind,
+                duration_sec=round(elapsed, 3),
+                attempts=attempt + 1,
+            )
+
         try:
             while True:
                 self._throttle()
@@ -191,30 +270,43 @@ class CrtShClient:
                         params={"q": f"%.{domain}", "output": "json"},
                         headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                     )
+                except httpx.TimeoutException as exc:
+                    # **時間切れは別に数える。** 相手が遅いだけなら、
+                    # 待ち時間を延ばす方が投げ直すより成功率が上がる
+                    if attempt < self.retries:
+                        attempt += 1
+                        time.sleep(2 ** attempt)
+                        continue
+                    return failed("timeout", f"timeout: {exc}"[:200])
                 except httpx.HTTPError as exc:
                     if attempt < self.retries:
                         attempt += 1
                         time.sleep(2 ** attempt)
                         continue
-                    return CtResult(domain=domain, error=f"request failed: {exc}"[:200])
+                    return failed("transport", f"request failed: {exc}"[:200])
 
                 if resp.status_code in (429, 502, 503, 504) and attempt < self.retries:
                     attempt += 1
                     time.sleep(2 ** attempt)
                     continue
                 if resp.status_code != 200:
-                    return CtResult(domain=domain, error=f"HTTP {resp.status_code}")
+                    return failed("http", f"HTTP {resp.status_code}")
                 try:
                     rows = resp.json()
                 except ValueError:
-                    return CtResult(domain=domain, error="JSON として解釈できない応答")
+                    return failed("decode", "JSON として解釈できない応答")
                 break
         finally:
             if close:
                 client.close()
 
+        elapsed = time.monotonic() - started
+        self._record(elapsed, kind=None, attempts=attempt + 1)
+
         result = _extract(domain, rows)
         result.cache_month = self.month
+        result.duration_sec = round(elapsed, 3)
+        result.attempts = attempt + 1
         if cached:
             cached.parent.mkdir(parents=True, exist_ok=True)
             cached.write_text(
