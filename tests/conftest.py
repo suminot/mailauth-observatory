@@ -14,6 +14,20 @@ P1 を回すすべての検査が本当に WDQS を叩き始め、**CI が19分�
 規約は言葉ではなく仕組みで守る。下の `no_real_network` が実際の送信層を
 塞いでいる。`httpx.MockTransport` を使う検査は通る ── 塞ぐのは
 「本当に外へ出る経路」だけである。
+
+**その遮断にも穴が空いていた。** コンソール（画面2）はフェーズを subprocess
+で起動する。子プロセスは別のプロセスなので、ここで差し替えた送信層は届かない。
+検査が1つ、そこから本当に WDQS を叩いており、**同じコミットで CI が通ったり
+落ちたりした**（30秒の待ちに間に合うかどうかの運だった）。
+
+子プロセスには環境変数で渡す。二重にしてある。
+
+  - `MAILAUTH_OFFLINE` ── 外部 API を引かせない（正しい振る舞いにする）
+  - proxy を行き止まりに向ける ── それでも出ようとしたら**即座に落ちる**
+
+前者だけだと、環境変数を見ない経路が後から足されたときに静かに外へ出る。
+後者だけだと、通信は失敗するが「引けなかった」として静かに進む。
+**正しく振る舞わせることと、破れたら気付けることは別の仕事である。**
 """
 
 from __future__ import annotations
@@ -26,6 +40,18 @@ import pytest
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EDINET_SAMPLE = FIXTURES / "EdinetcodeDlInfo_sample.csv"
+
+#: どこにも繋がらない宛て先。discard ポート（9番）は待たずに拒否される。
+#: **無応答の宛て先にしない** ── 落ちるのが遅いと、CI が無言で待つ形に戻る
+DEAD_PROXY = "http://127.0.0.1:9"
+PROXY_VARS = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+)
 
 
 @pytest.fixture(autouse=True)
@@ -48,6 +74,25 @@ def no_real_network(monkeypatch):
 
     monkeypatch.setattr(httpx.HTTPTransport, "handle_request", refuse)
     monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", refuse)
+
+
+@pytest.fixture(autouse=True)
+def no_network_in_subprocesses(monkeypatch):
+    """子プロセスも外に出さない。**差し替えた送信層は届かない。**
+
+    コンソールはフェーズを subprocess で起動する。そこは別のプロセスなので、
+    `no_real_network` の差し替えは何の効果も持たない。環境変数は引き継がれる
+    ので、こちらで渡す。
+
+    proxy を行き止まりに向けるのは、`MAILAUTH_OFFLINE` を見ない経路が後から
+    足されたときに**静かに外へ出るのを防ぐ**ため。localhost は除外する
+    （検査が立てるサーバまで潰すと、本題と関係ないところで落ちる）。
+    """
+    monkeypatch.setenv("MAILAUTH_OFFLINE", "1")
+    for var in PROXY_VARS:
+        monkeypatch.setenv(var, DEAD_PROXY)
+    for var in ("NO_PROXY", "no_proxy"):
+        monkeypatch.setenv(var, "localhost,127.0.0.1,::1")
 
 
 @pytest.fixture(autouse=True)

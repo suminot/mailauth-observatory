@@ -484,3 +484,92 @@ def test_offline_でなければ補完を試みる(edinet_sample, monkeypatch):
     monkeypatch.setattr("mailauth.p1_population.wikidata.run_query", spy)
     run_p1("2026-08", edinet_sample, offline=False)
     assert called, "offline を外しても Wikidata を引いていない"
+
+
+# ---------------------------------------------------------------------------
+# プロセスの境界を越えて offline を渡す
+#
+# コンソールはフェーズを subprocess で起動する。子プロセスの中では
+# tests/conftest.py の遮断は効かない ── **別のプロセスだからである。**
+# 実際これで、同じコミットなのに CI が通ったり落ちたりした。
+
+
+def test_環境変数でも_offline_が立つ(edinet_sample, monkeypatch):
+    """旗を付け忘れた起動でも、環境変数が立っていれば外に出ないこと。
+
+    **起動のたびに `--offline` を足して回る形だと、後から足された起動を
+    必ず取りこぼす。** 環境変数なら黙って引き継がれる。
+    """
+    from mailauth.cli import _offline
+
+    monkeypatch.setenv("MAILAUTH_OFFLINE", "1")
+    assert _offline(False) is True
+
+
+@pytest.mark.parametrize("value", ["", "0", "false", "no", "off", "  "])
+def test_偽の値を立っていると読まない(monkeypatch, value):
+    """**`MAILAUTH_OFFLINE=0` を「立っている」と読むと、黙って補完が止まる。**"""
+    from mailauth.cli import _offline
+
+    monkeypatch.setenv("MAILAUTH_OFFLINE", value)
+    assert _offline(False) is False, f"{value!r} を立っていると読んでいる"
+
+
+def test_旗は環境変数より強い(monkeypatch):
+    """`--offline` を付けた実行を、環境変数が取り消さないこと。"""
+    from mailauth.cli import _offline
+
+    monkeypatch.setenv("MAILAUTH_OFFLINE", "0")
+    assert _offline(True) is True
+
+
+def test_子プロセスが環境変数を受け取る(edinet_sample):
+    """**子プロセスが、本当に offline で動くこと。**
+
+    ここだけは差し替えでは確かめられない。実際に起動して、引いていない
+    ことが manifest の警告に残るのを見る。
+    """
+    import subprocess
+    import sys
+
+    proc = subprocess.run(
+        [
+            sys.executable, "-m", "mailauth.cli", "p1-population",
+            "--run", "2026-08",
+            "--config", "configs/populations/jp-all-listed.yaml",
+            "--source-file", str(edinet_sample),
+        ],  # **--offline を付けない。** 環境変数だけで止まることを見る
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+    manifest = read_manifest(phase_dir("2026-08", "p1_population"))
+    assert manifest is not None, "子プロセスが manifest を書いていない"
+
+    # **「引いていない」と「引いて失敗した」は同じ符号で出る。**
+    # 符号だけ見ても区別できないので、理由まで見る ── 外に出て proxy に
+    # 蹴られた場合、ここには接続の失敗が入る
+    skipped = [
+        w for w in manifest["warnings"] if w["code"] == "ENRICH_SKIPPED_WIKIDATA"
+    ]
+    assert skipped, "Wikidata について何も記録されていない"
+    assert any("offline" in (w.get("message") or "") for w in skipped), (
+        "子プロセスが外に出ている。環境変数が渡っていない: "
+        f"{[w.get('message') for w in skipped]}"
+    )
+
+
+def test_遮断が子プロセスにも届くことを宣言だけで済ませない():
+    """conftest が**実際に**環境変数を立てていること。
+
+    この検査が無いと、フィクスチャから設定が落ちても誰も気付かない。
+    """
+    import os
+
+    from tests.conftest import DEAD_PROXY, PROXY_VARS
+
+    assert os.environ.get("MAILAUTH_OFFLINE") == "1"
+    for var in PROXY_VARS:
+        assert os.environ.get(var) == DEAD_PROXY, f"{var} が行き止まりを向いていない"

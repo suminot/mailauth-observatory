@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -35,6 +36,28 @@ LimitOption = Annotated[
     typer.Option("--limit", help="処理件数の上限。開発中の高速反復に使う"),
 ]
 DryRunOption = Annotated[bool, typer.Option("--dry-run", help="出力を書かずに件数だけ確認する")]
+
+
+#: 偽と読む値。`MAILAUTH_OFFLINE=0` を「立っている」と読むと事故になる
+_FALSY = frozenset(("", "0", "false", "no", "off"))
+
+
+def _offline(flag: bool) -> bool:
+    """`--offline` は環境変数 `MAILAUTH_OFFLINE` でも立てられる。
+
+    **プロセスの境界を越える手段が要る。** コンソール（画面2）はフェーズを
+    subprocess で起動するし、検査もそれを通る。子プロセスの中では
+    `tests/conftest.py` の遮断は効かない ── 別のプロセスだからである。
+
+    実際これで CI が落ちた。起動のたびに `--offline` を足して回る形だと、
+    **後から足された起動を必ず取りこぼす。** 環境変数なら黙って引き継がれる。
+
+    旗が明示的に立っていればそれが勝つ。環境変数は既定値を下げるだけで、
+    `--offline` を付けた実行を取り消すことはない。
+    """
+    if flag:
+        return True
+    return os.environ.get("MAILAUTH_OFFLINE", "").strip().lower() not in _FALSY
 
 
 def _echo_summary(result: dict) -> None:
@@ -82,7 +105,10 @@ def p1_population(
         bool,
         typer.Option(
             "--offline",
-            help="外部 API に問い合わせない。補完しなかったことは manifest に残る",
+            help=(
+                "外部 API に問い合わせない。補完しなかったことは manifest に残る。"
+                "環境変数 MAILAUTH_OFFLINE でも立つ"
+            ),
         ),
     ] = False,
 ) -> None:
@@ -98,7 +124,7 @@ def p1_population(
             limit=limit,
             source_file=source_file,
             dry_run=dry_run,
-            offline=offline,
+            offline=_offline(offline),
         )
     except PopulationNotImplementedError as exc:
         typer.secho(f"未実装: {exc}", fg="red", err=True)
