@@ -273,3 +273,142 @@ def test_同時本数は1を下回らない(tmp_path, concurrency):
     assert c.concurrency == 1
     c.prefetch(["example.jp"])
     assert len(server.issued) == 1
+
+
+# ===========================================================================
+# 何に待たされたかを残す
+#
+# **2026-09 の P2 は4時間21分かかったが、残っていたのは失敗の件数だけ**
+# だった。時間切れと HTTP エラーの区別も、どれだけ待たされたかも無い。
+# 判断材料が無いまま調整すると、次の実行も5時間かけて同じことを学ぶ。
+
+
+def _mock_client(handler, **kw):
+    import httpx
+
+    from mailauth.ctlog import CrtShClient
+
+    return CrtShClient(
+        qps=0, retries=0, client=httpx.Client(transport=httpx.MockTransport(handler)), **kw
+    )
+
+
+def test_時間切れと_http_エラーを分けて数える():
+    import httpx
+
+    def handler(request):
+        if "slow" in str(request.url):
+            raise httpx.ReadTimeout("too slow", request=request)
+        return httpx.Response(502, text="bad gateway")
+
+    client = _mock_client(handler)
+    slow = client.search("slow.example.jp")
+    bad = client.search("bad.example.jp")
+
+    assert slow.error_kind == "timeout"
+    assert bad.error_kind == "http"
+    stats = client.response_stats()
+    assert stats["errors_by_kind"] == {"timeout": 1, "http": 1}, (
+        "失敗を一語にまとめている。**時間切れなら待ち方、HTTP なら頼み方**"
+    )
+
+
+def test_失敗にも待たされた時間が残る():
+    import httpx
+
+    def handler(request):
+        raise httpx.ReadTimeout("too slow", request=request)
+
+    client = _mock_client(handler)
+    result = client.search("slow.example.jp")
+    assert result.duration_sec is not None, (
+        "**待たされた時間が残っていない。** 実時間の大半がここなのに分からない"
+    )
+    assert client.response_stats()["requests"] == 1
+
+
+def test_応答時間の分布が出る():
+    import httpx
+
+    def handler(request):
+        return httpx.Response(200, json=[{"name_value": "a.example.jp"}])
+
+    client = _mock_client(handler)
+    for i in range(10):
+        client.search(f"d{i}.example.jp")
+
+    stats = client.response_stats()
+    assert stats["requests"] == 10
+    for key in ("p50_sec", "p90_sec", "p99_sec", "max_sec", "mean_sec"):
+        assert key in stats, f"{key} が無い"
+    assert stats["p50_sec"] <= stats["p90_sec"] <= stats["max_sec"]
+    # **どこまで待つ設定だったかも一緒に残す。** 分布だけ見ても、
+    # 時間切れが「設定が短い」のか「相手が遅い」のか判断できない
+    assert stats["timeout_sec"] == client.timeout
+
+
+def test_1本も投げていないことを_0秒と区別する():
+    """**測っていないことと、0 秒だったことは別である**（原則5）。"""
+    import httpx
+
+    client = _mock_client(lambda r: httpx.Response(200, json=[]))
+    stats = client.response_stats()
+    assert stats["requests"] == 0
+    assert "p50_sec" not in stats, "投げていないのに分布を出している"
+
+
+def test_キャッシュに当たった分を応答時間に混ぜない(tmp_path):
+    """**キャッシュは crt.sh の速さではない。** 混ぜると分布が嘘になる。"""
+    import httpx
+
+    def handler(request):
+        return httpx.Response(200, json=[{"name_value": "a.example.jp"}])
+
+    client = _mock_client(handler, cache_dir=tmp_path, month="2026-09")
+    client.search("d.example.jp")
+    assert client.response_stats()["requests"] == 1
+
+    again = client.search("d.example.jp")
+    assert again.from_cache, "この検査の前提（2度目がキャッシュに当たる）が崩れている"
+    assert client.response_stats()["requests"] == 1, (
+        "キャッシュに当たった分を crt.sh の応答として数えている"
+    )
+
+
+def test_投げ直した件数を数えている():
+    import httpx
+
+    state = {"n": 0}
+
+    def handler(request):
+        state["n"] += 1
+        if state["n"] == 1:
+            return httpx.Response(503, text="try later")
+        return httpx.Response(200, json=[{"name_value": "a.example.jp"}])
+
+    import mailauth.ctlog as mod
+    from mailauth.ctlog import CrtShClient
+
+    # 投げ直しの待ちで検査を止めない
+    original = mod.time.sleep
+    mod.time.sleep = lambda _s: None
+    try:
+        client = CrtShClient(
+            qps=0, retries=2, client=httpx.Client(transport=httpx.MockTransport(handler))
+        )
+        result = client.search("d.example.jp")
+    finally:
+        mod.time.sleep = original
+
+    assert result.attempts == 2
+    assert client.response_stats()["retried"] == 1
+
+
+def test_p2_の実行記録に応答時間が入っている():
+    """**manifest に出ていなければ、実行のあとで読めない。**"""
+    import inspect
+
+    from mailauth.p2_candidates import runner as mod
+
+    source = inspect.getsource(mod.run)
+    assert "ct_response" in source, "P2 の manifest に応答時間を載せていない"
