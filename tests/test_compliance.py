@@ -1733,3 +1733,60 @@ def test_総括から方法論への案内が実在する見出しを指して�
             assert anchor.lower() in slugs, (
                 f"{page}: #{anchor} に当たる見出しが {target} に無い（{sorted(slugs)}）"
             )
+
+
+def test_工程の出力が時間切れを生き延びる():
+    """**2026-09 の実行は P4 で殺され、P1〜P3 と bronze がすべて消えた。**
+
+    残ったのは CT ログのキャッシュだけで、5時間ぶんの成果が無くなった。
+    工程の出力そのものを持ち越さないと、何度流しても同じところで終わる。
+    """
+    steps = _monthly_steps()
+    by_name = {s.get("name", ""): s for s in steps}
+    run_id = "${{ steps.run.outputs.id }}"
+
+    restore = by_name.get("工程の出力を復元")
+    assert restore, "工程の出力を持ち越していない"
+    assert restore["with"]["path"].strip() == f"data/runs/{run_id}"
+    assert run_id in restore["with"]["key"], "鍵が月で区切られていない"
+    assert f"runs-{run_id}-" in restore["with"]["restore-keys"], (
+        "**月を跨いで復元している。** 別の月の出力が混ざる"
+    )
+
+    saves = [n for n in by_name if n.startswith("工程の出力を保存")]
+    assert len(saves) >= 2, "P4 の前後で確保していない"
+    keys = {by_name[n]["with"]["key"] for n in saves}
+    assert len(keys) == len(saves), (
+        "**保存の鍵が重なっている。** 同じ鍵には一度しか書けないので、"
+        "2つ目が黙って捨てられる"
+    )
+    for name in saves:
+        assert by_name[name].get("if") == "always()", (
+            f"{name} が時間切れのときに走らない。**確保できないなら意味が無い**"
+        )
+
+
+def test_p4_の保存が_p4_の直後にある():
+    """**一番高くつく工程の直後に確保する。** 後ろに置くと、そこへ辿り着く前に殺される。"""
+    steps = _monthly_steps()
+    names = [s.get("name", "") for s in steps]
+    p4 = names.index("P4 DNS計測")
+    save = names.index("工程の出力を保存（P4 まで）")
+    assert save == p4 + 1, "P4 と保存の間に別の工程が挟まっている"
+
+    p3 = names.index("P3 メールドメイン確定")
+    save_p3 = names.index("工程の出力を保存（P3 まで）")
+    assert p3 < save_p3 < p4, "P3 までの確保が P4 の前に無い"
+
+
+def test_月次の_p4_は続きから測る():
+    """**bronze は不変・追記のみ。** --resume 無しで流し直すと二重に測る。
+
+    相手の DNS に無駄な負荷をかけ、件数の意味も壊れる。工程の出力を
+    持ち越すようにした以上、ここが付いていないと前より悪くなる。
+    """
+    steps = _monthly_steps()
+    p4 = next(s for s in steps if s.get("name") == "P4 DNS計測")
+    assert "--resume" in p4["run"], (
+        "P4 が続きから測らない。**持ち越した bronze に二重に書く**"
+    )

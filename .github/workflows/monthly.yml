@@ -140,6 +140,21 @@ jobs:
           restore-keys: |
             enrich-${{ steps.run.outputs.id }}-
 
+      # 工程の出力そのものを実行間で持ち越す。**ここまで無かった。**
+      # 2026-09 の実行は P4 で時間切れになり、P1（12分）・P2（4時間21分）・
+      # P3（23分）の出力と、245ドメインぶんの bronze が**すべて消えた。**
+      # 残ったのは CT ログのキャッシュだけだった。
+      #
+      # 復元できれば P4 は `--resume` で続きから測れる。**キャッシュは
+      # 月で区切る**（run_id が YYYY-MM なので、別の月は別の鍵になる）。
+      - name: 工程の出力を復元
+        uses: actions/cache/restore@v4
+        with:
+          path: data/runs/${{ steps.run.outputs.id }}
+          key: runs-${{ steps.run.outputs.id }}-${{ github.run_id }}
+          restore-keys: |
+            runs-${{ steps.run.outputs.id }}-
+
       - name: P1 母集団確定
         continue-on-error: true
         run: |
@@ -179,9 +194,32 @@ jobs:
         continue-on-error: true
         run: mailauth p3-domains --run "${{ steps.run.outputs.id }}"
 
+      # **P4 に入る前に確保する。** ここから先で時間切れになっても、
+      # P1〜P3 の出力（合計5時間ぶん）は次の実行に渡る
+      - name: 工程の出力を保存（P3 まで）
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/runs/${{ steps.run.outputs.id }}
+          key: runs-${{ steps.run.outputs.id }}-${{ github.run_id }}-p3
+
+      # **--resume を既定にする。** bronze は不変・追記のみなので、
+      # 付けずに流し直すと同じドメインを二重に測る（相手の DNS に無駄な
+      # 負荷をかけ、件数の意味も壊れる）。続きが無ければ警告が出るだけで、
+      # 最初から測る。
       - name: P4 DNS計測
         continue-on-error: true
-        run: mailauth p4-measure --run "${{ steps.run.outputs.id }}"
+        run: mailauth p4-measure --run "${{ steps.run.outputs.id }}" --resume
+
+      # **一番高くつく工程の直後に確保する。** P4 は 2,153 ドメインで
+      # 35分前後かかる見込みで、途中で殺されてもここまでの bronze は残る。
+      # `--resume` がこれを読んで続きから測る
+      - name: 工程の出力を保存（P4 まで）
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/runs/${{ steps.run.outputs.id }}
+          key: runs-${{ steps.run.outputs.id }}-${{ github.run_id }}-p4
 
       - name: P5 パース
         continue-on-error: true

@@ -6,6 +6,17 @@ JSON Lines を zstd で固める。ここに書いたものは以後**一切変�
 過去12か月分を遡って再判定できる。
 
 追記のみ。既存ファイルを開き直して書き換える経路は作らない。
+
+## 途中で殺されたときに、どこまで書けたかが分かること
+
+P4 は GitHub Actions の時間上限に当たって殺される工程である。zstd は
+明示的に区切らない限りフレームを閉じないので、**何も区切らずに書いていると
+殺された時点で末尾が丸ごと読めなくなる。**
+
+そこで1ドメインぶんを書き終えるたびにフレームを閉じる（`checkpoint`）。
+**閉じたフレームに入っているドメインは「最後まで書けた」ことが保証される** ──
+再開はこれを根拠にする。閉じ損ねた末尾は読み飛ばす（`read_bronze` は
+途中で切れたフレームを黙って捨てる。既に書けた分は返す）。
 """
 
 from __future__ import annotations
@@ -121,15 +132,51 @@ class BronzeWriter:
         self.records += 1
         self._in_part += 1
 
+    def checkpoint(self) -> None:
+        """ここまでが読み出せることを確定させる。
+
+        **1ドメインぶんを書き終えたところで呼ぶ。** zstd のフレームを閉じる
+        ので、この時点より前の行は、以降プロセスが殺されても読み出せる。
+
+        再開はこれを根拠にする ── 閉じたフレームに入っているドメインは
+        「最後まで書けた」。閉じていない末尾は、**途中まで測ったドメイン**で
+        あり得るので、読み手が捨てられるようになっている。
+        """
+        if self._writer is None:
+            return
+        self._writer.flush(zstandard.FLUSH_FRAME)
+        if self._fh is not None:
+            self._fh.flush()
+
 
 def read_bronze(path: Path) -> list[dict]:
-    """bronze を読み戻す。P5 がこれを使う。"""
+    """bronze を読み戻す。P5 がこれを使う。
+
+    **途中で切れたフレームは捨てて、そこまでを返す。** 時間切れで殺された
+    実行が残したパートを読むための挙動である。壊れた末尾ごと例外にすると、
+    **既に書けている数千行まで一緒に失う。**
+    """
+    return _read_tolerant(Path(path))[0]
+
+
+def _read_tolerant(path: Path) -> tuple[list[dict], bool]:
+    """(読めた行, 末尾を捨てたか)。
+
+    捨てたかどうかを返すのは、**「全部読めた」と「途中までしか読めなかった」を
+    呼び手が区別できるようにする**ため（原則5）。再開の判断がこれで変わる。
+    """
     out: list[dict] = []
-    with Path(path).open("rb") as fh:
+    truncated = False
+    buffered = b""
+    with path.open("rb") as fh:
         reader = zstandard.ZstdDecompressor().stream_reader(fh)
-        buffered = b""
         while True:
-            chunk = reader.read(1 << 16)
+            try:
+                chunk = reader.read(1 << 16)
+            except zstandard.ZstdError:
+                # 最後のフレームが閉じていない。**ここまでは読めている**
+                truncated = True
+                break
             if not chunk:
                 break
             buffered += chunk
@@ -137,9 +184,36 @@ def read_bronze(path: Path) -> list[dict]:
             for line in lines:
                 if line.strip():
                     out.append(json.loads(line))
-        if buffered.strip():
+    if buffered.strip():
+        try:
             out.append(json.loads(buffered))
-    return out
+        except json.JSONDecodeError:
+            # 行の途中で切れている。**半分の行を1件として数えない**
+            truncated = True
+    return out, truncated
+
+
+def measured_domains(bronze_dir: Path, method: str) -> tuple[set[str], int]:
+    """**最後まで書けたことが確実なドメイン**と、読めた行数を返す。
+
+    再開の判断に使う。切れたフレームに入っていたドメインは含めない ──
+    **途中まで測ったドメインを「測り終えた」と数えると、そのドメインは
+    永久に欠けたまま**になり、しかも数字の上では揃って見える（原則5）。
+    """
+    root = Path(bronze_dir) / f"method={method}"
+    domains: set[str] = set()
+    rows = 0
+    for part in sorted(root.glob("part-*.jsonl.zst")):
+        records, truncated = _read_tolerant(part)
+        rows += len(records)
+        names = [str(r.get("domain") or "") for r in records]
+        if truncated and names:
+            # 末尾を捨てた。**最後のドメインは途中までしか書けていない**
+            # 可能性があるので、測り直す側に倒す
+            last = names[-1]
+            names = [n for n in names if n != last]
+        domains.update(n for n in names if n)
+    return domains, rows
 
 
 def iter_bronze_files(bronze_dir: Path) -> list[Path]:

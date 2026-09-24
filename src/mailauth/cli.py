@@ -193,6 +193,16 @@ def p4_measure(
     ] = None,
     limit: LimitOption = None,
     dry_run: DryRunOption = False,
+    resume: Annotated[
+        bool,
+        typer.Option(
+            "--resume",
+            help=(
+                "同じ run の続きから測る。時間切れで殺された実行が残した bronze を読み、"
+                "最後まで書けたドメインを飛ばす"
+            ),
+        ),
+    ] = False,
 ) -> None:
     """P4 DNS計測 ── メール認証レコードを取得し bronze に生保存。"""
     from .p4_measure import MissingInputError, UnknownBackendError
@@ -200,7 +210,14 @@ def p4_measure(
 
     run_id = validate_run_id(run or default_run_id())
     try:
-        result = run_p4(run_id=run_id, method=method, tier=tier, limit=limit, dry_run=dry_run)
+        result = run_p4(
+            run_id=run_id,
+            method=method,
+            tier=tier,
+            limit=limit,
+            dry_run=dry_run,
+            resume=resume,
+        )
     except (MissingInputError, UnknownBackendError) as exc:
         typer.secho(str(exc), fg="red", err=True)
         raise typer.Exit(code=2) from exc
