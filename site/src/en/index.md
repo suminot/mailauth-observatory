@@ -95,7 +95,7 @@ display(
   Plot.plot({
     marginLeft: 260,
     height: 260,
-    x: { domain: [0, 1], percent: true, label: "share of domains observed (%)" },
+    x: { domain: [0, 100], percent: true, label: "share of domains observed (%)" },
     y: { label: null },
     marks: [
       Plot.barX(checklist(current ?? {}, "en"), {
@@ -166,9 +166,15 @@ display(
     ? html`<p>A trend will appear once two or more months have been observed. There ${months.length === 1 ? "is" : "are"} currently ${months.length}.</p>`
     : Plot.plot({
         height: 300,
-        y: { label: "share of domains observed (%)", percent: true, domain: [0, 1] },
+        y: { label: "share of domains observed (%)", percent: true, domain: [0, 100] },
         x: { label: null, type: "band" },
-        color: { legend: true },
+        color: {
+          legend: true,
+          // The three series are nested (SPF ⊃ DMARC ⊃ enforced), so they are
+          // shaded rather than coloured by outcome
+          domain: ["SPF", "DMARC", "DMARC enforcing"],
+          range: ["var(--series-1)", "var(--series-2)", "var(--series-3)"],
+        },
         marks: [
           Plot.lineY(
             series.flatMap((d) => [

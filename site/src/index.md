@@ -90,7 +90,7 @@ display(
   Plot.plot({
     marginLeft: 260,
     height: 260,
-    x: { domain: [0, 1], percent: true, label: "観測できたドメインに対する割合 (%)" },
+    x: { domain: [0, 100], percent: true, label: "観測できたドメインに対する割合 (%)" },
     y: { label: null },
     marks: [
       Plot.barX(checklist(current ?? {}), {
@@ -159,9 +159,16 @@ display(
     ? html`<p>複数月の観測が揃うと推移を表示します。現在は ${months.length} か月分です。</p>`
     : Plot.plot({
         height: 300,
-        y: { label: "観測できたドメインに対する割合 (%)", percent: true, domain: [0, 1] },
+        y: { label: "観測できたドメインに対する割合 (%)", percent: true, domain: [0, 100] },
         x: { label: null, type: "band" },
-        color: { legend: true },
+        color: {
+          legend: true,
+          // **入れ子の関係を濃淡で示す。** 合否の配色を使うと「広い集合ほど
+          // 合格」に見え、Plot の既定（赤・青・橙）だと、このサイトが
+          // 「未対応」の意味で使っている赤が一番達成している指標に付く
+          domain: ["SPF", "DMARC", "DMARC 強制"],
+          range: ["var(--series-1)", "var(--series-2)", "var(--series-3)"],
+        },
         marks: [
           Plot.lineY(
             series.flatMap((d) => [

@@ -944,6 +944,8 @@ PALETTE_TOKENS = (
     "--ink", "--ink-strong", "--dim", "--faint",
     "--accent", "--accent-dim", "--accent-bg", "--accent-glow",
     "--pass", "--attention", "--absent", "--neutral",
+    # 時系列の3本。片方の配色に無いと、その配色でだけ線の色が消える
+    "--series-1", "--series-2", "--series-3",
 )
 
 
@@ -1362,3 +1364,71 @@ def test_bold_markers_actually_close_in_the_published_pages():
         "強調の閉じ記号が閉じない位置にある。アスタリスクがそのまま公開される:\n  "
         + "\n  ".join(found)
     )
+
+
+def test_percentage_axes_are_scaled_in_percent_units():
+    """**`percent: true` は値を100倍する。`domain` は変換後の単位で読まれる。**
+
+    `domain: [0, 1]` と併記していたため、0.905（90.5%）が 90.5 として
+    [0,1] の軸に置かれ、**枠の90倍先**に描かれていた。症状は図によって違う。
+
+      棒グラフ   全部の棒が枠の外まで伸び、**どれも同じ長さに見えた。**
+                 DNSSEC（1.6%）と SPF（90.5%）の区別が付かない
+      折れ線     線が枠の上に外れ、**何も描かれていないように見えた**
+
+    **空の画面より悪い。** 棒グラフはもっともらしく見えて全部間違っている。
+    データが1か月でも入らないと出ない不具合で、gold が空のうちは気付けない。
+    """
+    import re as _re
+
+    for name in ("index.md", "en/index.md"):
+        text = (repo_root() / "site" / "src" / name).read_text(encoding="utf-8")
+        for scale in _re.findall(r"[xy]:\s*\{[^}]*percent:\s*true[^}]*\}", text):
+            domain = _re.search(r"domain:\s*\[\s*0\s*,\s*([\d.]+)\s*\]", scale)
+            assert domain, f"{name}: percent 軸に domain が無い → {scale}"
+            assert domain.group(1) == "100", (
+                f"{name}: percent: true の軸に domain: [0, {domain.group(1)}] を"
+                "書いている。percent は値を100倍するので軸も 100 で取ること。"
+                "**1 のままだと図形が枠の外に出る**"
+            )
+
+
+def test_the_time_series_does_not_colour_by_outcome():
+    """時系列の3本は**入れ子**（SPF ⊃ DMARC ⊃ DMARC 強制）で、優劣ではない。
+
+    Plot の既定は赤・青・橙。**このサイトは赤を「未対応」の意味で使っている**
+    ので、一番達成している SPF が赤い線になり、凡例と意味が食い違う。
+    合否の配色（--pass / --attention / --absent）も使えない ── 使うと
+    「広い集合ほど合格」に見える。同じ色相の濃淡で包含を示す。
+
+    **凡例の名前は、実際に描いている系列名と一致していなければならない。**
+    ずれるとその系列だけ色が付かず、画面を見るまで分からない。
+    """
+    import re as _re
+
+    for name in ("index.md", "en/index.md"):
+        text = (repo_root() / "site" / "src" / name).read_text(encoding="utf-8")
+        block = _re.search(r"color:\s*\{(.*?)\n\s*\},", text, _re.S)
+        assert block, f"{name}: 時系列の color 指定が見つからない"
+        body = block.group(1)
+
+        colours = _re.findall(r'"(var\(--series-\d\)|#[0-9a-fA-F]{3,8})"', body)
+        assert len(colours) == 3 and all(c.startswith("var(--series-") for c in colours), (
+            f"{name}: 時系列の色を --series-* で指定していない（{colours}）。"
+            "既定のままだと赤が「未対応」以外の意味で出る"
+        )
+        for band in ("--pass", "--attention", "--absent"):
+            assert band not in body, (
+                f"{name}: 時系列に合否の配色 {band} を使っている。"
+                "3本は入れ子であって優劣ではない"
+            )
+
+        declared = _re.findall(r'domain:\s*\[([^\]]*)\]', body)
+        assert declared, f"{name}: 凡例の domain が無い"
+        names = [s.strip().strip('"') for s in declared[0].split(",")]
+        plotted = _re.findall(r'(?:指標|Indicator):\s*"([^"]+)"', text)
+        assert plotted, f"{name}: 描いている系列名が読み取れない"
+        assert names == plotted, (
+            f"{name}: 凡例 {names} と実際の系列 {plotted} が食い違う。"
+            "**ずれた系列には色が付かない**"
+        )
