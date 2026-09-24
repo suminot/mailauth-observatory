@@ -1006,3 +1006,48 @@ def test_ct進捗の取得件数はキャッシュ命中を数えない(seeded_r
     assert failed == 1, last
     # **この行だけで失敗率が出せること。** 出せないなら分母を出した意味がない
     assert 0 < failed / got <= 1
+
+
+class _DownCtSource:
+    """相手が落ちていることを申告する CT ソース。"""
+
+    upstream_down = "crt.sh に 20 本投げて1本も成功していない（http=20）"
+
+    def search(self, domain: str):
+        from mailauth.ctlog import CtResult
+
+        return CtResult(
+            domain=domain,
+            error="crt.sh が応答していないため取りにいっていない",
+            error_kind="upstream_down",
+            attempts=0,
+        )
+
+    def prefetch(self, domains, *, on_result=None):
+        from mailauth.ctlog import _serial_prefetch
+
+        return _serial_prefetch(self.search, domains, on_result)
+
+    def response_stats(self):
+        return {"requests": 20, "errors_by_kind": {"http": 20}, "upstream_down": self.upstream_down}
+
+
+def test_相手が落ちていた月をそう記録する(seeded_run):
+    """**「候補が少ない月」と「CT が使えなかった月」を混ぜない**（原則5）。
+
+    2026-09-24 に crt.sh はトップページごと 502 を返していた。この区別が
+    無いと、その月の結果が「そういう分布だった」として残る。
+    """
+    out = run_p2(run_id=RUN, resolver=StaticResolver(ANSWERS), ct_source=_DownCtSource())
+    codes = [w["code"] for w in out["warnings"]]
+    assert "CT_UPSTREAM_UNAVAILABLE" in codes, codes
+    msg = next(w["message"] for w in out["warnings"] if w["code"] == "CT_UPSTREAM_UNAVAILABLE")
+    # **次の一手が書いてあること。** 症状だけでは読み手が動けない
+    assert "流し直す" in msg
+
+
+def test_落ちていなければその警告は出さない(seeded_run):
+    """**当てはまらない説明を添えない。** 添えると次から読まれなくなる。"""
+    out = _run_p2()
+    codes = [w["code"] for w in out["warnings"]]
+    assert "CT_UPSTREAM_UNAVAILABLE" not in codes, codes

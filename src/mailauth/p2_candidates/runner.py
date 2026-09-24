@@ -29,7 +29,14 @@ from ..contracts import (
     DomainCandidate,
     EntityStatus,
 )
-from ..ctlog import DEFAULT_CONCURRENCY, CrtShClient, CtResult, CtSource, DisabledCtSource
+from ..ctlog import (
+    DEFAULT_CONCURRENCY,
+    DEFAULT_DOWN_AFTER,
+    CrtShClient,
+    CtResult,
+    CtSource,
+    DisabledCtSource,
+)
 from ..exclusions import ExclusionRegistry, require_available
 from ..exclusions import load as load_exclusions
 from ..io import read_parquet, write_parquet
@@ -302,6 +309,8 @@ def run(
                     retries=int(ct_cfg.get("retries", 2)),
                     # **投げる間隔（qps）とは別のつまみ。** 応答待ちだけを重ねる
                     concurrency=int(ct_cfg.get("concurrency", DEFAULT_CONCURRENCY)),
+                    # **相手が落ちているなら叩き続けない。** 0 で無効
+                    down_after=int(ct_cfg.get("down_after", DEFAULT_DOWN_AFTER)),
                 )
                 if discovery.get("ct_log")
                 else DisabledCtSource()
@@ -628,6 +637,22 @@ def run(
             # **除外は黙って行わない。** 分母から抜いた分を記録する（原則4）
             excluded=excluded.to_dict(),
         )
+        # **「候補が少ない月」と「CT が使えなかった月」を混ぜない**（原則5）。
+        # 前者は数字として読めるが、後者は計測が成立していない。
+        # 2026-09-24 に crt.sh はトップページごと 502 を返しており、この
+        # 区別が無いと、その月の結果が「そういう分布だった」として残る
+        down = getattr(ct_source, "upstream_down", None)
+        if down:
+            manifest.add_warning(
+                "CT_UPSTREAM_UNAVAILABLE",
+                message=(
+                    f"{down}。**この月の CT 由来の候補はキャッシュにあった分だけ**で、"
+                    "少ないのは実態ではなく相手が落ちていたためである。"
+                    "crt.sh が戻ってから同じ run_id で流し直すと、"
+                    "キャッシュに積み上がっている分はそのまま使われる"
+                ),
+            )
+
         dropped_domains = sum(c.skipped_excluded for c in collectors.values())
         if dropped_domains or excluded.hits.get("entity"):
             manifest.add_warning(
