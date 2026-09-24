@@ -1989,3 +1989,45 @@ def test_ブラウザ検査が本番のヘッダを付けている():
     assert "Content Security Policy" in script or "Refused to" in script, (
         "CSP 違反を拾っていない（違反はコンソールにしか出ない）"
     )
+
+
+def test_workflowのsteps参照は実在するidだけを指す():
+    """**`steps.<id>.outputs` は id が無くても空文字で通る。**
+
+    誤記や id の付け忘れは失敗せず、**その行が黙って空になる**だけである。
+    復元できたキャッシュの鍵を成果物に書き出す仕組みは、まさにこの形で
+    壊れると「何も復元できなかった」ように見える ── 区別が付かない（原則5）。
+
+    ワークフロー全体を見て、参照されている id が実在することを確かめる。
+    """
+    import re as _re
+
+    for name in ("monthly.yml", "ci.yml", "deploy.yml"):
+        path = repo_root() / ".github" / "workflows" / name
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        declared = set(_re.findall(r"^\s*id:\s*([A-Za-z0-9_-]+)\s*$", text, _re.M))
+        referenced = set(_re.findall(r"steps\.([A-Za-z0-9_-]+)\.outputs", text))
+        missing = referenced - declared
+        assert not missing, f"{name}: 実在しない step id を参照している: {sorted(missing)}"
+
+
+def test_復元できたものが実行中に読める():
+    """**5時間の実行が「何を持って始めたか」を、終わるまで読めないのは困る。**
+
+    P2 の所要はほぼ CT キャッシュの件数で決まるのに、復元の成否はログに
+    しか出ず、実行中のログは GitHub が返さない（404）。成果物は実行中でも
+    取れるので、そちらに出す。
+    """
+    text = (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "upload-artifact" in text
+    # 成果物として上がっていること。**ステップ要約だけでは API から読めない**
+    block = text[text.index("復元できたものを先に出す") :]
+    block = block[: block.index("P1 母集団確定")]
+    assert "ct_entries" in block, "CT キャッシュの件数を出していない"
+    assert "uses: actions/upload-artifact" in block, (
+        "要約に書いているだけで成果物になっていない（API から読めない）"
+    )

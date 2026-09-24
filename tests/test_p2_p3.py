@@ -937,3 +937,72 @@ def test_原因でないときは原因を言わない():
             if w["code"] == "ACCEPTANCE_MEDIAN_OUT_OF_RANGE"
         )
     assert "候補ゼロ" not in msg, "関係のない原因を挙げている"
+
+
+class _MixedCtSource:
+    """キャッシュ命中・取得成功・取得失敗が混ざった CT 取得を模す。
+
+    **失敗はキャッシュ命中では起きない。** 進捗の行に分母が出ているか
+    どうかを見るための道具なので、3種類が必ず1件ずつ出るようにする。
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def search(self, domain: str):
+        from mailauth.ctlog import CtResult
+
+        self.calls.append(domain)
+        if domain == "sample-info.co.jp":
+            return CtResult(domain=domain, found=[domain], from_cache=True, cache_month=RUN)
+        if domain == "sample-motor.co.jp":
+            return CtResult(domain=domain, found=[], error="timed out", error_kind="timeout")
+        return CtResult(domain=domain, found=[domain], raw_names=1)
+
+    def prefetch(self, domains, *, on_result=None):
+        from mailauth.ctlog import _serial_prefetch
+
+        return _serial_prefetch(self.search, domains, on_result)
+
+
+def _ct_progress_lines(seeded_run, capsys) -> list[str]:
+    run_p2(
+        run_id=RUN,
+        resolver=StaticResolver(ANSWERS),
+        ct_source=_MixedCtSource(),
+    )
+    return [ln for ln in capsys.readouterr().err.splitlines() if "P2 CT取得" in ln]
+
+
+def test_ct進捗が失敗の分母を同じ行に出す(seeded_run, capsys):
+    """**失敗率の分母は処理件数ではない。**
+
+    失敗はキャッシュ命中では起きないので、分母は「実際に取りにいった件数」
+    である。同じ行に並べておかないと、読み手は手近にある処理件数で割る ──
+    2026-09 の run 9 で実際にそう読み違えた（419/1861 = 22.5% と読んだが、
+    正しくは 419/722 = 58%）。
+    """
+    lines = _ct_progress_lines(seeded_run, capsys)
+    assert lines, "CT取得の進捗が1行も出ていない"
+    last = lines[-1]
+    assert "失敗=" in last
+    assert "取得=" in last, f"失敗の分母が同じ行に無い: {last}"
+
+
+def test_ct進捗の取得件数はキャッシュ命中を数えない(seeded_run, capsys):
+    """**キャッシュ命中を「取得」に数えると分母が膨らみ、失敗率が薄まる。**"""
+    lines = _ct_progress_lines(seeded_run, capsys)
+    last = lines[-1]
+    fields = dict(
+        part.split("=", 1)
+        for part in last.split("（")[-1].rstrip("）").split()
+        if "=" in part
+    )
+    got = int(fields["取得"])
+    cached = int(fields["キャッシュ"])
+    failed = int(fields["失敗"])
+    assert cached == 1, f"キャッシュ命中が1件のはず: {last}"
+    assert got == 2, f"取得はキャッシュ命中を除いた件数のはず: {last}"
+    assert failed == 1, last
+    # **この行だけで失敗率が出せること。** 出せないなら分母を出した意味がない
+    assert 0 < failed / got <= 1

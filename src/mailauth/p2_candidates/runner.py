@@ -395,6 +395,13 @@ def run(
             if ct_tracker is not None:
                 ct_tracker.tick(
                     キャッシュ=1 if result.from_cache else 0,
+                    # **失敗の分母を同じ行に出す。** 失敗はキャッシュ命中では
+                    # 起きないので、分母は処理件数ではなく「実際に取りにいった
+                    # 件数」である。並べておかないと、読み手は手近にある
+                    # 処理件数で割ってしまう ── 2026-09 の run 9 では
+                    # 419/1861 = 22.5% と読み違えた。正しくは 419/722 = 58%
+                    # で、**2件に1件以上が失敗している**という別の話になる
+                    取得=0 if result.from_cache else 1,
                     失敗=1 if result.error else 0,
                 )
 
