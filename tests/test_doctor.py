@@ -271,3 +271,63 @@ def test_設定が終わっていなければそちらが先(monkeypatch, tmp_pa
     monkeypatch.setenv("MAILAUTH_DATA_ROOT", str(tmp_path / "data"))
 
     assert "Cloudflare" in doctor.diagnose().next_action.headline
+
+
+# ===========================================================================
+# CT ログの取得先が落ちていた月
+#
+# 2026-09-24、crt.sh はトップページごと 502 を返していた。その最中に
+# 回した月は**計測が成立していない** ── 候補が少ないのは実態ではない。
+# 放っておくと、その月が翌月以降の比較の基準になる。
+
+
+def _write_p2_manifest(tmp_path, run_id, *, codes):
+    import json as _json
+
+    d = tmp_path / "data" / "runs" / run_id / "p2_candidates"
+    d.mkdir(parents=True)
+    (d / "_manifest.json").write_text(
+        _json.dumps({"warnings": [{"code": c, "message": c} for c in codes]}),
+        encoding="utf-8",
+    )
+
+
+def test_相手が落ちていた月を次の一手に出す(monkeypatch, tmp_path):
+    _all_set_up(monkeypatch)
+    _write_gold_with_coverage(tmp_path, "2026-09", total=3818, with_domains=3700)
+    _write_p2_manifest(tmp_path, "2026-09", codes=["CT_UPSTREAM_UNAVAILABLE"])
+    monkeypatch.setenv("MAILAUTH_GOLD_ROOT", str(tmp_path / "gold"))
+    monkeypatch.setenv("MAILAUTH_DATA_ROOT", str(tmp_path / "data"))
+
+    action = doctor.diagnose().next_action
+    assert "2026-09" in action.headline
+    assert "落ちている" in action.headline
+    # **同じ run_id で流し直せばキャッシュが効く**ことが書いてあること。
+    # 書いていないと、読み手は最初から取り直すと思って先延ばしにする
+    assert any("同じ run_id" in s for s in action.steps), action.steps
+
+
+def test_分母の欠けより先に出す(monkeypatch, tmp_path):
+    """**「そういう月だった」と「測れていない月」では、後者が先。**
+
+    分母の欠けは数字として読めるが、相手が落ちていた月は読めない。
+    しかも流し直すならキャッシュが温かいうちが一番安い。
+    """
+    _all_set_up(monkeypatch)
+    _write_gold_with_coverage(tmp_path, "2026-09", total=3818, with_domains=1992)
+    _write_p2_manifest(tmp_path, "2026-09", codes=["CT_UPSTREAM_UNAVAILABLE"])
+    monkeypatch.setenv("MAILAUTH_GOLD_ROOT", str(tmp_path / "gold"))
+    monkeypatch.setenv("MAILAUTH_DATA_ROOT", str(tmp_path / "data"))
+
+    assert "計測に現れていない" not in doctor.diagnose().next_action.headline
+
+
+def test_落ちていなければその話をしない(monkeypatch, tmp_path):
+    """**当てはまらない説明を毎月添えると、次から読まれなくなる。**"""
+    _all_set_up(monkeypatch)
+    _write_gold_with_coverage(tmp_path, "2026-09", total=3818, with_domains=3700)
+    _write_p2_manifest(tmp_path, "2026-09", codes=["ACCEPTANCE_MEDIAN_OUT_OF_RANGE"])
+    monkeypatch.setenv("MAILAUTH_GOLD_ROOT", str(tmp_path / "gold"))
+    monkeypatch.setenv("MAILAUTH_DATA_ROOT", str(tmp_path / "data"))
+
+    assert "落ちている" not in doctor.diagnose().next_action.headline

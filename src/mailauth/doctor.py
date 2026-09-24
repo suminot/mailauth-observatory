@@ -20,6 +20,7 @@ Wikidata（CC0）だけで組めるので、必要なのは連絡先メールア
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -328,6 +329,34 @@ def _worst_entity_gap() -> tuple[str, int, int] | None:
     return worst
 
 
+def _ct_outage_months() -> list[str]:
+    """CT ログの取得先が落ちていた月。新しい順。
+
+    **「候補が少ない月」と「CT が使えなかった月」は別である**（原則5）。
+    前者は数字として読めるが、後者は計測が成立していない。放っておくと、
+    その月が翌月以降の比較の基準になる。
+
+    2026-09-24 に crt.sh はトップページごと 502 を返していた。相手が
+    落ちているときは、待ち方も頼み方も効かない。**出直すしかない。**
+    """
+    root = runs_root()
+    if not root.is_dir():
+        return []
+    months: list[str] = []
+    for d in sorted(root.iterdir(), reverse=True):
+        m = d / "p2_candidates" / "_manifest.json"
+        if not m.is_file():
+            continue
+        try:
+            payload = json.loads(m.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        codes = {w.get("code") for w in payload.get("warnings", [])}
+        if "CT_UPSTREAM_UNAVAILABLE" in codes:
+            months.append(d.name)
+    return months
+
+
 def _gold_population(month_dir: Path) -> str | None:
     """その月がどの母集団で回ったか。**空振りの原因は母集団ごとに違う。**"""
     f = month_dir / "stats_overall.parquet"
@@ -574,6 +603,28 @@ def _next_action(
             steps=[
                 "Cloudflare → R2 → Manage R2 API Tokens",
                 "副は別事業者（Backblaze B2 / Wasabi / AWS S3）",
+            ],
+        )
+
+    # **相手が落ちていた月は、分母の話より先に出す。**
+    # 分母の欠けは「そういう月だった」と読めるが、こちらは計測が成立して
+    # いない。しかも**キャッシュが温かいうちに流し直す**のが一番安い
+    outages = _ct_outage_months()
+    if outages:
+        month = outages[0]
+        return NextAction(
+            headline=f"{month} は CT ログの取得先が落ちている最中に回っている",
+            why=(
+                "crt.sh が応答しなかったため、その月の CT 由来の候補は"
+                "キャッシュにあった分だけになっている。**少ないのは実態ではない。**"
+                "このまま置くと、その月が翌月以降の比較の基準になる（原則5）"
+            ),
+            steps=[
+                "https://crt.sh/ が 200 を返すか見る",
+                f"戻っていたら Actions → 月次計測 → run_id: {month} で流し直す",
+                "**同じ run_id なら、積み上がっているキャッシュはそのまま使われる**",
+                f"runs/{month}.md の CT_UPSTREAM_UNAVAILABLE と "
+                "breakdown.ct_response.upstream_down に理由が残っている",
             ],
         )
 
