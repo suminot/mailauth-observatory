@@ -1790,3 +1790,48 @@ def test_月次の_p4_は続きから測る():
     assert "--resume" in p4["run"], (
         "P4 が続きから測らない。**持ち越した bronze に二重に書く**"
     )
+
+
+def test_公開サイトを実際に押す検査が_ci_にある():
+    """**要素があることと、指で押せることは別である。**
+
+    iPhone で左下の切り替えが押せなかった不具合は、要素の存在・属性・
+    CSS 変数を全部確認したうえで見逃した ── 押していなかったからである。
+    文字列の検査は `z-index` を消せば落ちるが、**Observable Framework が
+    構造を変えたら文字列は残ったまま挙動だけ壊れる。**
+    """
+    import yaml
+
+    ci = (repo_root() / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    steps = yaml.safe_load(ci)["jobs"]["site"]["steps"]
+    runs = "\n".join(str(s.get("run", "")) for s in steps)
+    assert "check-browser.mjs" in runs, "CI が画面を押していない"
+    assert "playwright install" in runs, "CI にブラウザが入っていない"
+
+    names = [s.get("name", "") for s in steps]
+    build = names.index("ビルド")
+    check = names.index("画面の操作を確認")
+    assert build < check, "ビルドより前に画面を確認しようとしている"
+
+    script = repo_root() / "site" / "scripts" / "check-browser.mjs"
+    assert script.is_file(), "検査の本体が無い"
+    text = script.read_text(encoding="utf-8")
+    # **本物の操作であること。** DOM を書き換えて「開いた」ことにすると、
+    # 指で開けるかを確かめたことにならない
+    assert "devices[\"iPhone 13\"]" in text, "電話の画面で確かめていない"
+    assert "elementFromPoint" in text, "下敷きになっていないかを見ていない"
+    assert ".tap(" in text, "押していない"
+
+
+def test_切り替えの当たりが指の大きさを満たす():
+    """WCAG 2.5.8 Target Size (Minimum) は 24x24 CSS px。
+
+    11px の文字に padding 6px だと **23px で 1px 足りなかった**。
+    押せたり押せなかったりする大きさなので、明示して確かめられる形にする。
+    """
+    css = (repo_root() / "site" / "src" / "styles.css").read_text(encoding="utf-8")
+    block = css[css.index(".chrome-switch > * {") :]
+    block = block[: block.index("}")]
+    assert "min-height: 24px" in block, (
+        "切り替えの当たりが 24px を下回りうる（WCAG 2.5.8）"
+    )

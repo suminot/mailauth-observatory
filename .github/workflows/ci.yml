@@ -88,3 +88,17 @@ jobs:
 
       - name: ビルド
         run: npm run build
+
+      # **実際に開いて、実際に押す。**
+      #
+      # iPhone で左下の切り替えが押せなかった不具合は、要素の存在・属性・
+      # CSS 変数を全部確認したうえで見逃した。押していなかったからである。
+      # 文字列の検査は `z-index` を消せば落ちるが、Framework が構造を
+      # 変えたら**文字列は残ったまま挙動だけ壊れる。**
+      #
+      # ブラウザは chromium だけ入れる（3つ入れると1分では済まない）。
+      - name: ブラウザを用意
+        run: npx playwright install --with-deps chromium
+
+      - name: 画面の操作を確認
+        run: node scripts/check-browser.mjs
