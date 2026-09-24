@@ -943,6 +943,13 @@ form.observablehq-input > label {
   font-size: 11px;
   letter-spacing: .08em;
   line-height: 1;
+  /* **指の当たりを 24px 以上にする**（WCAG 2.5.8 Target Size (Minimum)）。
+     11px の文字に padding 6px だと 23px で、1px 足りなかった。
+     押せたり押せなかったりする大きさなので、高さを明示して確かめられる形にする */
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 6px 10px;
   color: var(--dim);
   text-decoration: none;
