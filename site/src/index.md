@@ -32,6 +32,13 @@ const series = overall
   .filter((d) => d.population_id === population)
   .sort((a, b) => a.measured_month.localeCompare(b.measured_month));
 const current = series.at(-1);
+// 起点ドメインが取れず、一度も計測に現れなかった企業数。
+// **率の分母にはこの企業が入っていない。**伏せると、読み手は
+// total_entities 社を測ったと読む（原則5）
+const entityGap = Math.max(
+  0,
+  (current?.total_entities ?? 0) - (current?.entities_with_domains ?? 0)
+);
 ```
 
 <div class="legend">
@@ -50,7 +57,9 @@ display(
     <div class="readout">
       <span class="label">企業</span>
       <span class="value">${num(current?.total_entities)}<span class="unit">社</span></span>
-      <span class="readout-cap">${population}</span>
+      <span class="readout-cap">${entityGap > 0
+        ? html`${population}<br><strong>うち ${num(entityGap)} 社は起点が取れず、率に入っていない</strong>`
+        : population}</span>
     </div>
     <div class="readout">
       <span class="label">計測対象ドメイン</span>
@@ -80,6 +89,20 @@ display(coverageRing(current?.observed_domains, current?.total_domains));
 率の分母には**観測できたドメインだけ**を使っています。SERVFAIL などで
 何も取れなかったドメインを分母に入れると、「取れなかった」が「未対応」として
 集計されてしまうためです。
+
+```js
+// 欠けが無ければ何も出さない。**無い月に「0社欠けています」と書くと、
+// 注意書きが背景になって読まれなくなる**
+display(
+  entityGap > 0
+    ? html`<p class="gap-note">起点となる公式サイトが取れなかった
+        <strong>${num(entityGap)} 社</strong>は、候補ドメインが1件も無いため
+        上の率には含まれていません。率は
+        ${num(current?.entities_with_domains)} 社についての観測です。
+        <a href="./methodology#起点ドメインが取れなかった企業">測り方</a></p>`
+    : html``
+);
+```
 
 <div class="observed">
 

@@ -45,6 +45,7 @@ TRACKED_METRICS = (
     "total_entities",
     "total_domains",
     "observed_domains",
+    "entities_with_domains",
     "spf_adopted_domains",
     "dmarc_adopted_domains",
     "dmarc_enforced_domains",

@@ -191,3 +191,83 @@ def test_鍵の一覧に取得元と影響が全部ある():
         assert cred.where
         assert cred.stops
         assert cred.cost in doctor.COST_LABELS
+
+
+# ===========================================================================
+# 起点が取れていない企業がいることを、doctor が次の一手に出す
+#
+# **47.7% 欠けていても status=success で通っていた**（2026-09）。
+# observed_domains が 0 のときだけ official_url を疑う作りだったため、
+# 「半分測れている」は正常として素通りしていた。
+
+
+def _all_set_up(monkeypatch):
+    """公開も退避も済ませる。**設定の残件が無い状態で何を言うかを見る。**"""
+    for name in ("CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_PAGES_PROJECT"):
+        monkeypatch.setenv(name, "x")
+    from mailauth.offload import DESTINATION_ENV
+
+    for envs in DESTINATION_ENV.values():
+        for e in envs:
+            monkeypatch.setenv(e, "x")
+
+
+def _write_gold_with_coverage(tmp_path, month, *, total, with_domains, observed=1200):
+    import pandas as pd
+
+    d = tmp_path / "gold" / f"month={month}"
+    d.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "population_id": "jp-all-listed",
+                "observed_domains": observed,
+                "total_entities": total,
+                "entities_with_domains": with_domains,
+            }
+        ]
+    ).to_parquet(d / "stats_overall.parquet")
+    return d
+
+
+def test_起点が取れていない企業がいることを次の一手に出す(monkeypatch, tmp_path):
+    _all_set_up(monkeypatch)
+    _write_gold_with_coverage(tmp_path, "2026-09", total=3818, with_domains=1992)
+    monkeypatch.setenv("MAILAUTH_GOLD_ROOT", str(tmp_path / "gold"))
+    monkeypatch.setenv("MAILAUTH_DATA_ROOT", str(tmp_path / "data"))
+
+    action = doctor.diagnose().next_action
+    assert "1826 社が計測に現れていない" in action.headline
+    assert "月次の確認だけでよい" not in action.headline
+
+
+def test_ほとんど取れていれば黙っている(monkeypatch, tmp_path):
+    """**欠けが小さい月まで毎回指摘すると、注意書きが背景になる。**"""
+    _all_set_up(monkeypatch)
+    _write_gold_with_coverage(tmp_path, "2026-09", total=3818, with_domains=3700)
+    monkeypatch.setenv("MAILAUTH_GOLD_ROOT", str(tmp_path / "gold"))
+    monkeypatch.setenv("MAILAUTH_DATA_ROOT", str(tmp_path / "data"))
+
+    assert "月次の確認だけでよい" in doctor.diagnose().next_action.headline
+
+
+def test_列が無い月を全社欠けていると読まない(monkeypatch, tmp_path):
+    """この指標より前に回した gold には列が無い。
+
+    **無い列を 0 と読むと「全社が計測に現れていない」ことになる**（原則5）。
+    """
+    _all_set_up(monkeypatch)
+    _write_gold(tmp_path, "2026-08", observed=1200, population="jp-all-listed")
+    monkeypatch.setenv("MAILAUTH_GOLD_ROOT", str(tmp_path / "gold"))
+    monkeypatch.setenv("MAILAUTH_DATA_ROOT", str(tmp_path / "data"))
+
+    assert "計測に現れていない" not in doctor.diagnose().next_action.headline
+
+
+def test_設定が終わっていなければそちらが先(monkeypatch, tmp_path):
+    """公開先すら無い段階で分母の話を出さない。**手順が前後する。**"""
+    _write_gold_with_coverage(tmp_path, "2026-09", total=3818, with_domains=1992)
+    monkeypatch.setenv("MAILAUTH_GOLD_ROOT", str(tmp_path / "gold"))
+    monkeypatch.setenv("MAILAUTH_DATA_ROOT", str(tmp_path / "data"))
+
+    assert "Cloudflare" in doctor.diagnose().next_action.headline

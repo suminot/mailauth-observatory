@@ -723,6 +723,19 @@ form.observablehq-input > label {
 .coverage-note p:last-child { margin-bottom: 0; }
 .coverage-note strong { color: var(--ink-strong); font-variant-numeric: tabular-nums; }
 
+/* 母集団のうち、起点が取れず計測に現れなかった企業の注記。
+   **赤は使わない**（公開サイトの表現規約：赤の面積は最小限）。
+   限界の表示なので、数字と同じ視野に入る位置に置く */
+.gap-note {
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--dim);
+  border-left: 2px solid var(--rule);
+  padding: 2px 0 2px 14px;
+  margin: 14px 0 0;
+}
+.gap-note strong { color: var(--ink-strong); font-variant-numeric: tabular-nums; }
+
 .coverage-empty {
   font-size: 13px;
   color: var(--dim);

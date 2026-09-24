@@ -674,3 +674,69 @@ def test_既存ファイルが無ければそのまま書く(tmp_path):
         what="stats_overall",
     )
     assert merged == rows
+
+
+# ===========================================================================
+# 起点ドメインが取れなかった企業を分母の外に出したまま黙らない
+#
+# **サイトは「企業 3,818 社」と出しながら、実際に測れたのはその半分だった**
+# （2026-09 実測）。total_entities は母集団の社数で、そのうち何社が計測に
+# 現れたかは別に数えないと分からない。原則5 が公開物の入口で破れていた。
+
+
+def test_計測に現れた企業数を数えている():
+    rows = [
+        _row(domain_id="d:1", entity_id="jp:1"),
+        _row(domain_id="d:2", entity_id="jp:1"),  # 同じ企業の2本目は数えない
+        _row(domain_id="d:3", entity_id="jp:2"),
+    ]
+    stats = aggregate(
+        rows, measured_month=MONTH, population_id=POP, total_entities=5
+    )
+    assert stats.total_entities == 5, "母集団の社数は縮めない"
+    assert stats.entities_with_domains == 2
+    # 差の3社が「測ったことになっていた」企業
+    assert stats.total_entities - stats.entities_with_domains == 3
+
+
+def test_観測できなかった企業も計測には現れている():
+    """**SERVFAIL は「起点が無い」とは別の欠け方である。**
+
+    候補ドメインはあって、引いたが答えが返らなかった企業を「一度も現れて
+    いない」に混ぜると、二つの違う問題が一つの数字に潰れる。
+    """
+    rows = [
+        _row(domain_id="d:1", entity_id="jp:1", observed=True),
+        _row(domain_id="d:2", entity_id="jp:2", observed=False),
+    ]
+    stats = aggregate(
+        rows, measured_month=MONTH, population_id=POP, total_entities=2
+    )
+    assert stats.observed_domains == 1
+    assert stats.entities_with_domains == 2, (
+        "観測できなかった企業を、起点が無い企業と同じ扱いにしている"
+    )
+
+
+def test_gold_の列に入っている():
+    """公開データセットに出ていなければ、読み手には届かない。"""
+    from mailauth.contracts import (
+        STATS_BY_SECTOR_ARROW_SCHEMA,
+        STATS_OVERALL_ARROW_SCHEMA,
+    )
+
+    assert "entities_with_domains" in STATS_OVERALL_ARROW_SCHEMA.names
+    assert "entities_with_domains" in STATS_BY_SECTOR_ARROW_SCHEMA.names
+
+
+def test_前月比と変更履歴が追っている():
+    from mailauth.changelog import TRACKED_METRICS
+    from mailauth.p7_aggregate.delta import diff_stats
+
+    assert "entities_with_domains" in TRACKED_METRICS
+
+    now = aggregate(
+        [_row(entity_id="jp:1")], measured_month=MONTH, population_id=POP, total_entities=9
+    )
+    before = aggregate([], measured_month=MONTH, population_id=POP, total_entities=9)
+    assert diff_stats(now, before)["entities_with_domains"] == 1
