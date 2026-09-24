@@ -381,10 +381,20 @@ Alt-K で検索欄に合う、横はみ出し 0、コンソールエラー 0。�
 
 ## 9. 小さいもの
 
-- `site/static/_headers` に `Strict-Transport-Security` と
-  `Content-Security-Policy` が無い。フォントを Google Fonts から読んでいるので、
-  訪問者の IP が Google に渡る。`Referrer-Policy: no-referrer` を置いている意図と
-  噛み合わない。フォントを同梱すれば CSP も `self` だけで組める
+- ~~`site/static/_headers` に `Strict-Transport-Security` と
+  `Content-Security-Policy` が無い~~ **ヘッダは対応済み。**
+  CSP は「いま読んでいる先をそのまま書いたもの」で、絞るためではなく
+  **知らないうちに増えたら止まるようにする**ために置いた。ブラウザ検査が
+  本番と同じヘッダを付けて配り、違反が出たら落ちる。
+  HSTS は2年・サブドメイン込み、preload は付けていない（外すのに時間が
+  かかるので運営者が判断する）
+- **Google Fonts の件は開いたまま。** ヘッダを足しても訪問者の IP が
+  Google に渡ることは変わらない。閉じるにはフォントを同梱するしかない。
+  **読み先は思っていたより多い** ── 設定に書いた3つ（Chakra Petch /
+  Noto Sans JP / JetBrains Mono）に加えて、**Observable Framework 自身が
+  Source Serif 4 を読んでいる**（ブラウザ検査の CSP 違反ログで分かった）。
+  Noto Sans JP は日本語なので同梱すると重い。やるなら字形の絞り込みと
+  セットで、**別の作業として見積もること**
 - P2 の受け入れ基準（中央値 1〜5）は起点の被覆が前提になっている。1 が直るまで
   `ACCEPTANCE_MEDIAN_OUT_OF_RANGE` は毎回出る。原因が分かっている警告は、
   原因の方を指す文言にする

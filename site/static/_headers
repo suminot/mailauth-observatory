@@ -9,7 +9,22 @@
 # **索引から外れるまでには時間がかかる**ので、一度載ったものは
 # 消えるのを待つことになる。載せない状態で出すほうが安い。
 
+# Content-Security-Policy は**いま読んでいる先をそのまま書いたもの**である。
+# 絞るためではなく、**知らないうちに増えたら止まるようにする**ために置く。
+#
+# **これは Google Fonts の件を解いていない。** フォントを
+# fonts.googleapis.com / fonts.gstatic.com から読んでいる限り、訪問者の IP は
+# Google に渡る。`Referrer-Policy: no-referrer` を置いている意図と噛み合わない。
+# 閉じるにはフォントを同梱するしかなく、それは別の作業である（BACKLOG 9）。
+# ここで許可先に挙げてあるのは、**いま実際にそうなっているから**であって、
+# そうあるべきだからではない。
+#
+# Strict-Transport-Security は2年・サブドメイン込み。preload は付けない
+# （一度載せると外すのに時間がかかる。載せる判断は運営者がする）。
+
 /*
   X-Robots-Tag: noindex, nofollow, noarchive, nosnippet
   Referrer-Policy: no-referrer
   X-Content-Type-Options: nosniff
+  Strict-Transport-Security: max-age=63072000; includeSubDomains
+  Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'

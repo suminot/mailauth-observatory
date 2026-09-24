@@ -1922,3 +1922,70 @@ def test_ジョブの上限が文書と一致する():
     assert f"{int(hours)}時間{int(minutes % 60)}分" in text, (
         f"OWNER-TASKS.md が実際の打ち切り（{minutes}分）に触れていない"
     )
+
+
+def test_csp_が実際の読み先を覆っている():
+    """**CSP は、いま読んでいる先をそのまま書いたものである。**
+
+    絞るためではなく、知らないうちに増えたら止まるようにするために置く。
+    設定に外部の読み先を足して CSP を直し忘れると、公開してから画面が
+    壊れる（配色も字も当たらない）。
+    """
+    import re
+
+    headers = (repo_root() / "site" / "static" / "_headers").read_text(encoding="utf-8")
+    csp = next(
+        (
+            ln.split(":", 1)[1].strip()
+            for ln in headers.splitlines()
+            if ln.startswith(" ") and ln.strip().startswith("Content-Security-Policy:")
+        ),
+        None,
+    )
+    assert csp, "CSP が無い"
+    for directive in ("default-src", "style-src", "font-src", "script-src"):
+        assert directive in csp, f"{directive} が無い"
+    # 埋め込みを禁じる。公開サイトを別のページの枠に入れさせない
+    assert "frame-ancestors 'none'" in csp
+
+    config = (repo_root() / "site" / "observablehq.config.js").read_text(encoding="utf-8")
+    origins = {
+        f"https://{m}" for m in re.findall(r"https://([a-z0-9.-]+)", config)
+    }
+    for origin in origins:
+        assert origin in csp, (
+            f"**{origin} を読んでいるのに CSP が許していない。** "
+            "公開すると画面が壊れる"
+        )
+
+
+def test_hsts_を出している():
+    """**平文へ落とされる余地を残さない。**
+
+    preload は付けない ── 一度載せると外すのに時間がかかるので、
+    載せる判断は運営者がする。
+    """
+    headers = (repo_root() / "site" / "static" / "_headers").read_text(encoding="utf-8")
+    # **注記の行を拾わない。** ヘッダは字下げされた行にだけ書いてある
+    line = next(
+        (
+            ln
+            for ln in headers.splitlines()
+            if ln.startswith(" ") and "Strict-Transport-Security" in ln
+        ),
+        None,
+    )
+    assert line, "HSTS が無い"
+    assert "max-age=" in line and "includeSubDomains" in line
+    assert "preload" not in line, "preload は運営者が判断する"
+
+
+def test_ブラウザ検査が本番のヘッダを付けている():
+    """**CSP を文字列で書いただけでは、効くかどうか分からない。**"""
+    script = (repo_root() / "site" / "scripts" / "check-browser.mjs").read_text(
+        encoding="utf-8"
+    )
+    assert "_headers" in script, "本番のヘッダを読んでいない"
+    assert "Content Security Policy" in script or "Refused to" in script, (
+        "CSP 違反を拾っていない（違反はコンソールにしか出ない）"
+    )
