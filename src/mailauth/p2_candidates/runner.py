@@ -29,7 +29,7 @@ from ..contracts import (
     DomainCandidate,
     EntityStatus,
 )
-from ..ctlog import CrtShClient, CtSource, DisabledCtSource
+from ..ctlog import DEFAULT_CONCURRENCY, CrtShClient, CtResult, CtSource, DisabledCtSource
 from ..exclusions import ExclusionRegistry, require_available
 from ..exclusions import load as load_exclusions
 from ..io import read_parquet, write_parquet
@@ -45,6 +45,14 @@ from ..records import (
     spf_redirect,
 )
 from ..resolver import DnsResolver, Resolver, shuffled
+
+#: CT ログを何社ぶんまとめて先回りして取るか。
+#:
+#: **全件を先に取らない。** 候補総数の上限で途中で打ち切られることがあり、
+#: そのとき使わないドメインまで crt.sh に投げたことになる。塊で区切れば
+#: 取りすぎは最大1塊ぶんで済む。同時本数（既定4）より十分大きくしないと、
+#: 塊の終わりで待ち合わせるたびに並行の利きが落ちる
+PREFETCH_CHUNK = 64
 
 PHASE = "p2_candidates"
 OUTPUT_FILENAME = "domain_candidates.parquet"
@@ -292,6 +300,8 @@ def run(
                     qps=float(ct_cfg.get("qps", 0.5)),
                     timeout=float(ct_cfg.get("timeout_sec", 60)),
                     retries=int(ct_cfg.get("retries", 2)),
+                    # **投げる間隔（qps）とは別のつまみ。** 応答待ちだけを重ねる
+                    concurrency=int(ct_cfg.get("concurrency", DEFAULT_CONCURRENCY)),
                 )
                 if discovery.get("ct_log")
                 else DisabledCtSource()
@@ -354,15 +364,46 @@ def run(
         # （GitHub Actions の API は実行中のジョブのログを返さない）
         tracker = Progress(len(order), "P2 候補生成")
 
-        for idx in order:
+        # -- CT ログの取得を先回りする ---------------------------------------
+        # **1件ずつ取ると、応答を待っている時間がそのまま実時間になる。**
+        # 実測（2026-09 の国内計測）で1件9.5秒以上、3,818社で5時間17分を
+        # 超えてもまだ終わらなかった。投げる間隔は 0.5 qps のままにして、
+        # 応答待ちだけを重ねる（ctlog.py 冒頭参照）。
+        #
+        # **塊に区切って取る。** 候補総数の上限で途中で打ち切られることが
+        # あるので、全件を先に取ると、使わないドメインまで crt.sh に
+        # 投げることになる。1塊ぶんの取りすぎで済ませる
+        ct_enabled = bool(discovery.get("ct_log"))
+
+        def _seed(i: int) -> str | None:
+            value = rows.iloc[i].get("official_domain")
+            return None if not value or str(value) == "nan" else str(value)
+
+        ct_ready: dict[str, CtResult] = {}
+        ct_tracker: Progress | None = None
+        if ct_enabled:
+            n_seeds = len({d for d in (_seed(i) for i in order) if d})
+            ct_tracker = Progress(n_seeds, "P2 CT取得")
+
+        def _note_ct(_domain: str, result: CtResult) -> None:
+            # **呼び出し側のスレッドから順に呼ばれる。** Progress は
+            # スレッド安全に作っていないので、worker から触らせない
+            if ct_tracker is not None:
+                ct_tracker.tick(
+                    キャッシュ=1 if result.from_cache else 0,
+                    失敗=1 if result.error else 0,
+                )
+
+        def _process(idx: int) -> None:
+            """1社ぶんを組み立てる。CT の結果は先回りして取ったものを使う。"""
+            nonlocal total
             row = rows.iloc[idx]
             cache_before = ct_stats["from_cache"]
             entity_id = str(row["entity_id"])
             collector = _Collector(entity_id, per_entity_limit, excluded=excluded)
             collectors[entity_id] = collector
 
-            official = row.get("official_domain")
-            official = None if not official or str(official) == "nan" else str(official)
+            official = _seed(idx)
 
             if discovery.get("official_url") and official:
                 collector.add(official, DiscoveryMethod.OFFICIAL_URL, "P1 gBizINFO company_url")
@@ -372,8 +413,10 @@ def run(
                     collector.add(domain, DiscoveryMethod.MANUAL, note or "manual dictionary")
 
             if official:
-                if discovery.get("ct_log"):
-                    ct = ct_source.search(official)
+                if ct_enabled:
+                    # 先回りで取れていればそれを使う。取れていなければここで取る
+                    # （**取りこぼしを黙って「候補なし」にしない**）
+                    ct = ct_ready.get(official) or ct_source.search(official)
                     ct_stats["searched"] += 1
                     ct_stats["raw_names"] += ct.raw_names
                     if ct.from_cache:
@@ -405,14 +448,27 @@ def run(
             total += len(collector.found)
             tracker.tick(
                 候補=len(collector.found),
-                CT取得=1 if (official and discovery.get("ct_log")) else 0,
+                CT取得=1 if (official and ct_enabled) else 0,
                 キャッシュ=ct_stats["from_cache"] - cache_before,
             )
-            if total >= total_limit:
-                hit_total_limit = True
+
+        for start in range(0, len(order), PREFETCH_CHUNK):
+            chunk = order[start : start + PREFETCH_CHUNK]
+            if ct_enabled:
+                ct_ready = ct_source.prefetch(
+                    [d for d in (_seed(i) for i in chunk) if d], on_result=_note_ct
+                )
+            for idx in chunk:
+                _process(idx)
+                if total >= total_limit:
+                    hit_total_limit = True
+                    break
+            if hit_total_limit:
                 break
 
         # 打ち切られた場合も最後に1行出す
+        if ct_tracker is not None:
+            ct_tracker.finish()
         tracker.finish()
 
         if hit_total_limit:
