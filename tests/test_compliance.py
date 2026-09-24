@@ -1052,3 +1052,87 @@ def test_the_sidebar_is_not_hidden_when_scripts_do_not_run():
     )
     boot = (repo_root() / "site" / "src" / "theme-boot.js").read_text(encoding="utf-8")
     assert "data-js" in boot, "theme-boot.js が data-js を付けていない"
+
+
+def test_the_bottom_controls_are_not_buried_under_the_search_overlay():
+    """**左下の切り替えが押せなかった原因を、二度と踏まないための検査。**
+
+    Framework の `#observablehq-search-results` は
+    `position:absolute; top:6.5rem; bottom:0` で、**中身が空のときも
+    サイドバーの下端まで伸びている。** 検索していないときは透明な板が
+    乗っているだけで、下端に何も置かなければ無害だった。切り替えを
+    下端に置いた瞬間、その下敷きになって指が届かなくなる。
+
+    手当ては2段構え。**片方だけでは足りない。**
+
+      1. 空のときは当たり判定を外す（検索していないとき）
+      2. 切り替え自体を結果枠より前に出す（検索中）
+
+    1 だけだと、一度検索を使ったあとにまた押せなくなる。結果が入ると
+    `:empty` が外れるため。
+
+    **これは見た目の検査では捕まらない。** 描画は正しく、状態も正しく、
+    押したときだけ何も起きない。実際に押して確かめるしかない。
+    """
+    css = (repo_root() / "site" / "src" / "styles.css").read_text(encoding="utf-8")
+    assert "#observablehq-search-results:empty" in css and "pointer-events: none" in css, (
+        "空の検索結果枠の当たり判定を外していない"
+    )
+    import re as _re
+
+    # **同じセレクタの塊が複数あることがある。** 最初の1つだけ見ると見落とす
+    blocks = _re.findall(r"\.chrome-controls\s*\{(.*?)\}", css, _re.S)
+    assert blocks, ".chrome-controls の定義が見つからない"
+    assert any("z-index" in b for b in blocks), (
+        ".chrome-controls が検索結果枠より前に出ていない（検索中に押せなくなる）"
+    )
+
+
+def test_the_search_shortcut_label_is_one_that_works():
+    """iPhone で `⌘K` と表示されたうえ、押しても何も起きなかった。
+
+    Framework は `navigator.platform` が Mac / iPhone なら `⌘K` と出すが、
+    その keydown は `metaKey` しか見ない。**押せば動くものだけを表示する。**
+    """
+    import re as _re
+
+    chrome = (repo_root() / "site" / "src" / "chrome.js").read_text(encoding="utf-8")
+    assert 'setAttribute("data-shortcut", "Alt-K")' in chrome, (
+        "表示を Alt-K に揃えていない"
+    )
+    # **コメントは対象外。** なぜそうしたかの説明まで弾かない
+    code = _re.sub(r"//.*|/\*.*?\*/", "", chrome, flags=_re.S)
+    assert "navigator.platform" not in code, (
+        "環境で処理を分けている。表示と実装が食い違う元になる"
+    )
+
+
+def test_the_sidebar_title_is_larger_than_the_page_links():
+    """題字が下のページ名より小さいと、題字に見えない（iPhone で指摘された）。"""
+    import re as _re
+
+    css = (repo_root() / "site" / "src" / "styles.css").read_text(encoding="utf-8")
+    title = _re.search(
+        r"#observablehq-sidebar > ol:first-of-type > li\.observablehq-link > a\s*\{(.*?)\}",
+        css,
+        _re.S,
+    )
+    assert title, "題字の指定が無い"
+    size = _re.search(r"font-size:\s*([\d.]+)px", title.group(1))
+    assert size, "題字に font-size が無い"
+
+    link = _re.search(r"#observablehq-sidebar a\s*\{(.*?)\}", css, _re.S)
+    assert link, "一覧のリンクの指定が無い"
+    base = _re.search(r"font-size:\s*([\d.]+)px", link.group(1))
+    assert base, "一覧のリンクに font-size が無い"
+    assert float(size.group(1)) > float(base.group(1)), (
+        f"題字 {size.group(1)}px が一覧 {base.group(1)}px より大きくない"
+    )
+
+
+def test_the_default_colour_scheme_is_dark():
+    """**既定はダーク。** 端末の設定が明るくても暗いまま出す（運営者の指示）。"""
+    boot = (repo_root() / "site" / "src" / "theme-boot.js").read_text(encoding="utf-8")
+    assert '"data-theme", saved === "light" ? "light" : "dark"' in boot, (
+        "保存が無いときにダークを既定にしていない"
+    )
