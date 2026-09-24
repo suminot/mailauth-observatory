@@ -1202,3 +1202,163 @@ def test_the_site_does_not_claim_edinet_covers_every_population():
                 f"{sub}{name} が EDINET だけに触れている。"
                 "米国の母集団は SEC EDGAR なので、併記するか触れないこと"
             )
+
+
+def test_tables_are_not_capped_at_the_prose_width():
+    """**本文と表で必要な幅が違う。**
+
+    Framework のテーマは `p, table, figure, h1…` をまとめて 640px で止める。
+    本文はそれでよい ── 15px で 640px は1行65〜70字で、読むための幅として
+    妥当である。**表は別で、640px に押し込めると列が折り返す。**
+
+    実測（1440px の画面）では本文カラムが 1072px あり、**右に 432px 空けた
+    まま「P3 メールドメイン確定」が2行になっていた。** 表は中身に合わせて
+    伸ばす（`width: auto`）。`max-width: 100%` は本文カラムに対する 100% なので、
+    狭い端末でも画面からはみ出さない。
+    """
+    import re as _re
+
+    css = (repo_root() / "site" / "src" / "styles.css").read_text(encoding="utf-8")
+    blocks = _re.findall(r"#observablehq-main table\s*\{(.*?)\}", css, _re.S)
+    assert blocks, "#observablehq-main table の定義が見つからない"
+    body = "\n".join(blocks)
+    assert _re.search(r"max-width:\s*100%", body), (
+        "表の上限を外していない。Framework の 640px が効いたままで、"
+        "本文カラムに余白があるのに列が折り返す"
+    )
+    assert _re.search(r"width:\s*auto", body), (
+        "表に width: auto が無い。Framework の width:100% が残ると、"
+        "2列しかない表まで画面幅いっぱいに引き伸ばされる"
+    )
+
+
+def test_the_first_table_column_does_not_wrap_on_wide_screens():
+    """1列目は見出しの役をしている（工程名・母集団名・列名）。
+
+    **ここが折れるとどの行の話か読み取れなくなる。** 全ページの1列目は
+    最長26文字（190px 程度）なので、広い画面では折らずに収まる。
+
+    **狭い画面では戻すこと。** 折らないまま置くと表が画面より広くなり、
+    横スクロールが出る。読みにくい折り返しの方がまだ扱える。
+    """
+    import re as _re
+
+    css = (repo_root() / "site" / "src" / "styles.css").read_text(encoding="utf-8")
+    nowrap = _re.search(
+        r"#observablehq-main td:first-child\s*\{(.*?)\}", css, _re.S
+    )
+    assert nowrap and "nowrap" in nowrap.group(1), "1列目を折り返さない指定が無い"
+
+    narrow = _re.search(r"@media \(max-width: 640px\)\s*\{(.*?)\n\}", css, _re.S)
+    assert narrow, "狭い画面向けの指定が見つからない"
+    assert _re.search(
+        r"td:first-child[^{]*\{[^}]*white-space:\s*normal", narrow.group(1)
+    ), (
+        "狭い画面で折り返しを戻していない。表が画面より広くなり横スクロールが出る"
+    )
+
+    # 1列目が本当に 26 文字以内か。**長い見出しを足したらこの検査が教える**
+    longest = ""
+    for path in sorted((repo_root() / "site" / "src").glob("**/*.md")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.lstrip().startswith("|"):
+                continue
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if not cells or set(cells[0]) <= set("-: "):
+                continue
+            if len(cells[0]) > len(longest):
+                longest = cells[0]
+    assert len(longest) <= 30, (
+        f"表の1列目が {len(longest)} 文字ある（{longest!r}）。折り返さない指定を"
+        "掛けているので、長すぎると表が広がりすぎる。短くするか指定を見直すこと"
+    )
+
+
+def test_bold_markers_actually_close_in_the_published_pages():
+    """**書いた強調が、そのままアスタリスクとして表に出ていた。**
+
+    方法論の表に `（**母集団ごとに名簿が違う。**下記）` と書いたものが、
+    アスタリスクごと表示されていた。CommonMark では閉じ記号が
+    right-flanking でなければ閉じと見なされず、**句読点の直後で、かつ
+    直後が文字**だとその条件を満たさない（CommonMark 6.2
+    left/right-flanking delimiter run）。
+
+    つまり2つ目の `**` も「開き」としてしか働けず、対応する閉じが無いまま
+    literal になる。**黙って通るので、書いた側は気付けない。**
+    閉じ記号の直後には空白か区切りを置くこと（`**…違う** ── 下記`）。
+
+    開きと閉じは位置で決まるので、**その場の文字だけでは判定できない。**
+    CommonMark の規則で1つずつ分類して対応を取る。
+    """
+    import re as _re
+
+    PUNCT = set("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
+    PUNCT |= set("。、，．・：；！？「」『』（）【】〔〕〈〉《》…―‐−–—“”‘’")
+
+    def _flanking(text: str, i: int, n: int) -> tuple[bool, bool]:
+        """`text[i:i+n]` の `*` 連が開きになれるか・閉じになれるかを返す。"""
+        before = text[i - 1] if i > 0 else " "
+        after = text[i + n] if i + n < len(text) else " "
+        b_ws, a_ws = before.isspace(), after.isspace()
+        b_p, a_p = before in PUNCT, after in PUNCT
+        left = not a_ws and (not a_p or b_ws or b_p)
+        right = not b_ws and (not b_p or a_ws or a_p)
+        return left, right
+
+    def _unclosed(chunk: str) -> bool:
+        """開いたまま閉じていない `**` があるか。"""
+        # 行内コードの中は素通し。**規約どおり literal で出るのが正しい**
+        chunk = _re.sub(r"`[^`]*`", lambda m: "x" * len(m.group(0)), chunk)
+        depth = 0
+        i = 0
+        while i < len(chunk):
+            if chunk[i] != "*":
+                i += 1
+                continue
+            n = len(chunk[i:]) - len(chunk[i:].lstrip("*"))
+            if n >= 2:
+                left, right = _flanking(chunk, i, n)
+                if depth and right:
+                    depth -= 1
+                elif left:
+                    depth += 1
+            i += n
+        return depth > 0
+
+    def _chunks(text: str):
+        """強調が閉じるべき範囲ごとに切り出す。
+
+        表の桝、段落の単位で見る。**段落をまたいで閉じることはできない**し、
+        桝をまたいで対応させると、隣の桝の記号で相殺されて見逃す。
+        """
+        para: list[str] = []
+        fenced = False
+        for line in text.splitlines():
+            if line.lstrip().startswith("```"):
+                fenced = not fenced
+                continue
+            if fenced:
+                continue  # コードブロックは markdown として解釈されない
+            stripped = line.strip()
+            if stripped.startswith("|"):
+                if para:
+                    yield " ".join(para)
+                    para = []
+                yield from stripped.strip("|").split("|")
+            elif stripped:
+                para.append(stripped)
+            elif para:
+                yield " ".join(para)
+                para = []
+        if para:
+            yield " ".join(para)
+
+    found = []
+    for path in sorted((repo_root() / "site" / "src").glob("**/*.md")):
+        for chunk in _chunks(path.read_text(encoding="utf-8")):
+            if _unclosed(chunk):
+                found.append(f"{path.name}: {chunk.strip()[:90]}")
+    assert not found, (
+        "強調の閉じ記号が閉じない位置にある。アスタリスクがそのまま公開される:\n  "
+        + "\n  ".join(found)
+    )

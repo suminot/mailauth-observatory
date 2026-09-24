@@ -298,11 +298,24 @@ pre {
 
 /* --------------------------------------------------------- 表 */
 
+/* **本文と表で必要な幅が違う。**
+ *
+ * Framework のテーマは `p, table, figure, h1…` をまとめて 640px で止める。
+ * 本文はそれでよい ── 15px で 640px は1行65〜70字で、読むための幅として
+ * 妥当である。**表は別で、640px に押し込めると列が折り返す。** 本文カラムは
+ * 1440px の画面で 1072px あるので、右に 432px 空けたまま
+ * 「P3 メールドメイン確定」が2行になっていた。
+ *
+ * 表だけ上限を外す。`width: auto` にして**中身に合わせて伸ばす**ので、
+ * 2列しかない表が画面幅まで引き伸ばされることもない。`max-width: 100%` は
+ * 本文カラムに対する 100% なので、横幅が狭い端末でも画面からはみ出さない。 */
 #observablehq-main table {
   font-family: var(--mono);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
   border-collapse: collapse;
+  width: auto;
+  max-width: 100%;
 }
 
 #observablehq-main th {
@@ -315,11 +328,20 @@ pre {
   background: rgba(46, 230, 255, .04);
   border-bottom: 1px solid var(--accent-dim);
   padding: 9px 12px;
+  /* 見出しは短い語なので折らない。折ると罫の高さが行ごとに揃わなくなる */
+  white-space: nowrap;
 }
 
 #observablehq-main td {
   border-bottom: 1px solid var(--rule-soft);
   padding: 7px 12px;
+}
+
+/* 1列目は見出しの役をしている（工程名・母集団名・列名）。**ここが折れると
+ * どの行の話か読み取れなくなる。** 全ページで最長26文字（190px 程度）なので
+ * 折らずに収まる。狭い画面では下の media query で解除する */
+#observablehq-main td:first-child {
+  white-space: nowrap;
 }
 
 /* 1行おきに地を敷く。**罫を濃くする代わりの手当て。**
@@ -577,6 +599,12 @@ figure svg text {
   #observablehq-main h2 { margin-top: 32px; }
   .readout .value { font-size: 25px; }
   .readout-grid { gap: 9px; }
+  /* **狭い画面では折り返しを戻す。** 折らないまま置くと、表が画面より広く
+     なって横スクロールが出る。読みにくい折り返しの方がまだ扱える */
+  #observablehq-main th,
+  #observablehq-main td:first-child { white-space: normal; }
+  #observablehq-main th,
+  #observablehq-main td { padding-left: 8px; padding-right: 8px; }
 }
 
 /* 動きを減らす設定を尊重する。**そもそも動かしていない**が、
