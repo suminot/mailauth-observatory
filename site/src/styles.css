@@ -1,14 +1,21 @@
 /* 計測端末としての見え方（DESIGN.md P8「表現上の規約」）。
  *
- * 暗い地に読み取り色を1色だけ置く構成にしている。理由は装飾ではない。
+ * 管制卓（コックピット）の計器盤として作る。暗い地に、枠で囲った計器を
+ * 並べ、読み取り色を1色だけ光らせる。ただし**見た目の都合で規約を
+ * 曲げない。** 具体的には次を守る。
  *
- *   - **意味色と差し色を分ける。** ティールは「ここを読め」という印で、
+ *   - **意味色と差し色を分ける。** シアンは「ここを読め」という印で、
  *     合格・要改善・未対応の3段階とは別系統に置く。同じ色域で混ぜると、
  *     強調しただけの箇所が評価に見える
  *   - **赤の面積を最小化する**（DESIGN.md P8）。未対応は彩度を落とした
  *     赤寄りのグレーにする。彩度の高い赤で塗ると、標準への準拠状況の
  *     提示が「危険な企業の告発」に見える
- *   - **動かさない。** 計測結果を読む場所なので、注意を引く動きを足さない
+ *   - **動かさない。** 参考にした計器盤の意匠は走査線やリングが回るが、
+ *     ここは計測結果を読む場所である。光らせるのは静止した発光だけにし、
+ *     注意を引く動きは足さない
+ *
+ * 枠と発光は**面ではなく線**でやる。面を光らせると、その区画自体が
+ * 「重要」に見えて、中身の3段階と競合する。
  */
 
 :root {
@@ -16,25 +23,28 @@
      背景色を指定しても、select の描画は OS のテーマ側が持っていく */
   color-scheme: dark;
 
-  /* 地と面 */
-  --bg:        #05080c;
-  --panel:     #0a1017;
-  --panel-alt: #0c141d;
-  --rule:      #16232e;
-  --rule-soft: #101a23;
+  /* 地と面。**紺に寄せる。** 黒に近いと枠の発光が浮いて安っぽくなる */
+  --bg:        #040a16;
+  --bg-deep:   #020610;
+  --panel:     #081326;
+  --panel-alt: #0a1830;
+  --rule:      #17304f;
+  --rule-soft: #0f2137;
 
   /* 文字 */
-  --ink:       #cfdde7;
-  --ink-strong:#eaf3f9;
-  --dim:       #6d8294;
-  --faint:     #445868;
+  --ink:       #c7d8ea;
+  --ink-strong:#eaf4ff;
+  --dim:       #6d8aa8;
+  --faint:     #415d7a;
 
   /* 読み取り色。**評価ではない。** */
-  --accent:    #3fd8c4;
-  --accent-dim:#1f6f66;
-  --accent-bg: rgba(63, 216, 196, .07);
+  --accent:    #2ee6ff;
+  --accent-dim:#1a6e88;
+  --accent-bg: rgba(46, 230, 255, .06);
+  --accent-glow: rgba(46, 230, 255, .30);
 
-  /* 3段階。差し色とは別系統 */
+  /* 3段階。差し色とは別系統。
+     **シアンと緑を近づけない** ── 近いと差し色が合格に見える */
   --pass:      #3aa981;
   --attention: #d4a33c;
   --absent:    #8a626a;
@@ -68,13 +78,18 @@
 
 body {
   background-color: var(--bg);
-  /* 地のテクスチャ。**表の罫と競合させない。** 最初に 64px の格子を
-     --rule-soft で引いたところ、罫線として読めてしまい、データ表の
-     境界と混ざった。構造ではなく質感として残る濃さまで落としている */
+  /* 地のテクスチャ。**表の罫と競合させない。**
+     64px の格子をはっきり引いたときは、罫線として読めてデータ表の境界と
+     混ざった。上の暈しを足して明るくしたら今度は、格子の交点が見出しを
+     囲む枠に見えた（節見出しの周りに箱があるように読めた）。
+     **地の格子は、本文の列では見えない濃さまで落とす。**
+     質感は本文の外側（左右の余白）で出す */
   background-image:
-    linear-gradient(rgba(140, 200, 220, .018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(140, 200, 220, .018) 1px, transparent 1px);
-  background-size: 96px 96px, 96px 96px;
+    radial-gradient(ellipse 120% 80% at 50% 0%,
+      rgba(24, 74, 122, .28) 0%, transparent 60%),
+    linear-gradient(rgba(90, 170, 210, .013) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(90, 170, 210, .013) 1px, transparent 1px);
+  background-size: 100% 100%, 96px 96px, 96px 96px;
   background-attachment: fixed;
   color: var(--ink);
   font-family: var(--body);
@@ -87,8 +102,8 @@ body {
   background: linear-gradient(
     90deg,
     transparent 0,
-    rgba(5, 8, 12, .92) 40px,
-    rgba(5, 8, 12, .92) calc(100% - 40px),
+    rgba(4, 10, 22, .965) 40px,
+    rgba(4, 10, 22, .965) calc(100% - 40px),
     transparent 100%
   );
 }
@@ -106,29 +121,76 @@ h1, h2, h3, h4 {
   text-wrap: balance;
 }
 
+/* 題字。計器盤の銘板として、上下を細い線で挟む */
 #observablehq-main h1 {
+  position: relative;
   font-size: clamp(26px, 3.4vw, 38px);
-  font-weight: 600;
-  letter-spacing: .04em;
-  border-bottom: 1px solid var(--rule);
+  font-weight: 700;
+  letter-spacing: .06em;
+  border-bottom: 1px solid var(--accent-dim);
   padding-bottom: 14px;
   margin-bottom: 8px;
+  text-shadow: 0 0 24px var(--accent-glow);
 }
 
-/* 節の頭に読み取り色の細い印を置く。装飾だが、**節の切れ目を
-   罫線より弱く示す**ことで、表の罫と競合しない */
+/* 題字の下線の左端だけを光らせる。全長を光らせると、下の表の罫まで
+   同じ強さに見えて、どこが区切りか分からなくなる */
+#observablehq-main h1::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 92px;
+  height: 1px;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+/* 節見出しは計器の見出し札にする。左の縦棒＋角の印 */
 #observablehq-main h2 {
-  font-size: 19px;
+  position: relative;
+  font-size: 18px;
   font-weight: 600;
-  margin-top: 44px;
-  padding-left: 14px;
-  border-left: 2px solid var(--accent-dim);
+  letter-spacing: .1em;
+  margin-top: 48px;
+  margin-bottom: 14px;
+  padding: 6px 0 6px 18px;
   line-height: 1.5;
+  border-left: 2px solid var(--accent);
+}
+
+/* 左端の縦棒だけを光らせる。
+   **box-shadow でやると四辺に漏れる。** 負の spread を付けても blur は
+   全方向に広がるので、見出しを囲む薄い箱が見えてしまっていた
+   （節見出しの周りに枠があるように読めた）。光は左端に限定して置く */
+#observablehq-main h2::before {
+  content: "";
+  position: absolute;
+  left: -2px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+  filter: blur(4px);
+  opacity: .75;
+  pointer-events: none;
+}
+
+/* 見出しの右へ細い線を伸ばして、区画の幅を示す */
+#observablehq-main h2::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 1px;
+  background: linear-gradient(90deg, var(--rule) 0%, transparent 70%);
 }
 
 #observablehq-main h3 {
   font-size: 15.5px;
   font-weight: 600;
+  letter-spacing: .06em;
   color: var(--ink);
   margin-top: 28px;
 }
@@ -137,9 +199,11 @@ h1, h2, h3, h4 {
 .subtitle {
   font-family: var(--mono);
   font-size: 12.5px;
-  letter-spacing: .18em;
+  letter-spacing: .28em;
+  text-transform: uppercase;
   color: var(--accent);
   margin: -2px 0 22px;
+  text-shadow: 0 0 14px var(--accent-glow);
 }
 
 /* --------------------------------------------------------- 本文 */
@@ -185,6 +249,52 @@ pre {
   border-radius: 3px;
 }
 
+/* -------------------------------------------------- 計器の枠 */
+/* 四隅に鉤括弧を置く。**枠線を全周に引くより区画が数えやすい。**
+   全周の実線を重ねると、中の表の罫と同じ見え方になって混ざる。
+   `.panel` を付けた要素と、下の各区画で使い回す */
+
+.panel,
+.observed,
+.inferred,
+.limits,
+.readout {
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(23, 48, 79, .22) 0%, transparent 42%),
+    var(--panel);
+  border: 1px solid var(--rule);
+}
+
+/* 四隅の鉤。::before と ::after を左上と右下に置き、
+   背景に線を2本描いて L 字にする */
+.panel::before, .observed::before, .inferred::before,
+.limits::before, .readout::before,
+.panel::after, .observed::after, .inferred::after,
+.limits::after, .readout::after {
+  content: "";
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  pointer-events: none;
+  border-color: var(--accent);
+  opacity: .75;
+}
+
+.panel::before, .observed::before, .inferred::before,
+.limits::before, .readout::before {
+  top: -1px; left: -1px;
+  border-top: 1px solid;
+  border-left: 1px solid;
+}
+
+.panel::after, .observed::after, .inferred::after,
+.limits::after, .readout::after {
+  bottom: -1px; right: -1px;
+  border-bottom: 1px solid;
+  border-right: 1px solid;
+}
+
 /* --------------------------------------------------------- 表 */
 
 #observablehq-main table {
@@ -198,11 +308,12 @@ pre {
   font-family: var(--sans);
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: .12em;
+  letter-spacing: .14em;
   text-transform: uppercase;
-  color: var(--dim);
+  color: var(--accent);
+  background: rgba(46, 230, 255, .04);
   border-bottom: 1px solid var(--accent-dim);
-  padding: 8px 12px;
+  padding: 9px 12px;
 }
 
 #observablehq-main td {
@@ -210,31 +321,98 @@ pre {
   padding: 7px 12px;
 }
 
-#observablehq-main tr:hover td { background: var(--panel); }
+/* 1行おきに地を敷く。**罫を濃くする代わりの手当て。**
+   計器盤は行が詰まるので、罫を強くすると格子が主役になる */
+#observablehq-main tbody tr:nth-child(even) td {
+  background: rgba(23, 48, 79, .16);
+}
+
+#observablehq-main tr:hover td {
+  background: var(--accent-bg);
+  color: var(--ink-strong);
+}
+
+/* ------------------------------------------------------ 数値盤 */
+/* 主要な件数を大きく並べる区画。index.md の `.readout` が使う。
+   **ここに出すのは観測した件数だけ。** 率や評価を大書きすると、
+   総合スコアのように読まれる（DESIGN.md P8 で禁じている） */
+
+.readout-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  margin: 18px 0 24px;
+}
+
+.readout {
+  padding: 16px 18px 14px;
+}
+
+.readout .label {
+  display: block;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 6px;
+}
+
+.readout .value {
+  display: block;
+  font-family: var(--mono);
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-strong);
+  text-shadow: 0 0 18px var(--accent-glow);
+}
+
+.readout .unit {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--dim);
+  margin-left: 4px;
+  text-shadow: none;
+}
+
+.readout .readout-cap {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .04em;
+  color: var(--faint);
+  margin-top: 6px;
+}
 
 /* --------------------------------------------------------- 左の一覧 */
 
 #observablehq-sidebar {
-  background: linear-gradient(180deg, var(--panel) 0%, var(--bg) 100%);
+  background:
+    linear-gradient(180deg, var(--panel) 0%, var(--bg-deep) 100%);
   border-right: 1px solid var(--rule);
+  box-shadow: inset -1px 0 0 rgba(46, 230, 255, .10);
 }
 
 #observablehq-sidebar > ol > li.observablehq-link-active > a,
 #observablehq-sidebar a[aria-current="page"] {
   color: var(--accent);
   background: var(--accent-bg);
-  box-shadow: inset 2px 0 0 var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent), inset 10px 0 20px -14px var(--accent);
 }
 
 #observablehq-sidebar a {
   font-family: var(--sans);
   font-size: 13.5px;
-  letter-spacing: .02em;
+  letter-spacing: .04em;
 }
 
 #observablehq-sidebar #observablehq-sidebar-header {
   font-family: var(--sans);
-  letter-spacing: .06em;
+  letter-spacing: .1em;
+  color: var(--ink-strong);
 }
 
 #observablehq-header, #observablehq-footer {
@@ -261,12 +439,13 @@ pre {
   gap: 18px;
   font-family: var(--mono);
   font-size: 12px;
-  letter-spacing: .04em;
+  letter-spacing: .06em;
   color: var(--dim);
   margin: 10px 0 18px;
-  padding: 8px 0;
-  border-top: 1px solid var(--rule-soft);
-  border-bottom: 1px solid var(--rule-soft);
+  padding: 9px 14px;
+  background: var(--panel);
+  border: 1px solid var(--rule-soft);
+  border-left: 2px solid var(--rule);
 }
 
 .legend span::before {
@@ -285,32 +464,32 @@ pre {
 /* ------------------------------------------- 事実と推察の視覚的分離 */
 /* DESIGN.md P8。**同じ枠の中で「観測値」と「推定」を混ぜて見せない。**
    実線＝観測、破線＝推定。罫の種類そのもので区別しているので、
-   色が見えない環境でも分かれる。 */
+   色が見えない環境でも分かれる。
+   鉤括弧は両方に付くので、**区別は枠線の種類に持たせる。** */
 
 .observed,
-.inferred {
-  position: relative;
-  padding: 14px 18px;
-  margin: 16px 0;
-  background: var(--panel);
+.inferred,
+.limits {
+  padding: 16px 20px;
+  margin: 18px 0;
 }
 
-.observed {
-  border: 1px solid var(--rule);
-  border-left: 2px solid var(--pass);
-}
+.observed { border-left: 2px solid var(--pass); }
 
 .inferred {
   border: 1px dashed var(--rule);
   border-left: 2px dashed var(--neutral);
 }
 
+/* 推定側は鉤括弧も弱くする。**同じ強さで囲むと同格に見える** */
+.inferred::before, .inferred::after { opacity: .35; }
+
 .observed > h3,
 .inferred > h3 {
   margin-top: 0;
   font-family: var(--sans);
   font-size: 13px;
-  letter-spacing: .08em;
+  letter-spacing: .14em;
   text-transform: uppercase;
 }
 
@@ -336,10 +515,6 @@ pre {
   line-height: 1.8;
   color: var(--dim);
   background: var(--panel-alt);
-  border: 1px solid var(--rule);
-  border-radius: 3px;
-  padding: 14px 18px;
-  margin: 20px 0;
 }
 
 .limits strong { color: var(--ink); }
@@ -377,7 +552,7 @@ figure { margin: 22px 0; }
 figcaption {
   font-family: var(--mono);
   font-size: 11.5px;
-  letter-spacing: .05em;
+  letter-spacing: .06em;
   color: var(--dim);
 }
 
@@ -391,9 +566,11 @@ figure svg text {
 /* --------------------------------------------------------- 画面幅 */
 
 @media (max-width: 640px) {
-  body { background-size: 40px 40px, 40px 40px; }
+  body { background-size: 100% 100%, 40px 40px, 40px 40px; }
   #observablehq-main table { font-size: 12px; }
   #observablehq-main h2 { margin-top: 32px; }
+  .readout .value { font-size: 25px; }
+  .readout-grid { gap: 9px; }
 }
 
 /* 動きを減らす設定を尊重する。**そもそも動かしていない**が、
@@ -409,8 +586,8 @@ figure svg text {
   /* 既定の矢印は明るい地を前提にしているので、自前で描く */
   appearance: none;
   background-image:
-    linear-gradient(45deg, transparent 50%, var(--dim) 50%),
-    linear-gradient(135deg, var(--dim) 50%, transparent 50%);
+    linear-gradient(45deg, transparent 50%, var(--accent) 50%),
+    linear-gradient(135deg, var(--accent) 50%, transparent 50%);
   background-position: calc(100% - 15px) 50%, calc(100% - 10px) 50%;
   background-size: 5px 5px, 5px 5px;
   background-repeat: no-repeat;
@@ -433,13 +610,14 @@ figure svg text {
 #observablehq-main select:hover,
 #observablehq-main input:hover {
   border-color: var(--accent-dim);
+  box-shadow: 0 0 0 1px rgba(46, 230, 255, .12);
 }
 
 #observablehq-main label,
 form.observablehq-input > label {
   font-family: var(--sans);
   font-size: 11px;
-  letter-spacing: .12em;
+  letter-spacing: .14em;
   text-transform: uppercase;
   color: var(--dim);
 }
@@ -451,4 +629,58 @@ form.observablehq-input > label {
   color: var(--ink);
   font-family: var(--mono);
   font-size: 13px;
+}
+
+/* --------------------------------------------------- 観測できた割合 */
+/* **これは達成度ではない。** この計測がどこまで届いたかを示す。
+   色は読み取り色1色で、3段階の意味色は使わない（gauge.js 冒頭） */
+
+.coverage {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  flex-wrap: wrap;
+  margin: 20px 0 24px;
+  padding: 18px 20px;
+  background: var(--panel);
+  border: 1px solid var(--rule-soft);
+  border-left: 2px solid var(--accent-dim);
+}
+
+.coverage svg { flex: none; }
+.coverage .track { stroke: var(--rule); }
+.coverage .arc {
+  stroke: var(--accent);
+  stroke-linecap: butt;
+  filter: drop-shadow(0 0 5px var(--accent-glow));
+}
+.coverage .big {
+  font-family: var(--mono);
+  font-size: 23px;
+  font-weight: 700;
+  fill: var(--ink-strong);
+}
+.coverage .cap {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .18em;
+  fill: var(--dim);
+}
+
+.coverage-note {
+  flex: 1 1 320px;
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--dim);
+}
+.coverage-note p { margin: 0 0 6px; }
+.coverage-note p:last-child { margin-bottom: 0; }
+.coverage-note strong { color: var(--ink-strong); font-variant-numeric: tabular-nums; }
+
+.coverage-empty {
+  font-size: 13px;
+  color: var(--dim);
+  padding: 14px 18px;
+  border: 1px dashed var(--rule);
+  margin: 18px 0;
 }

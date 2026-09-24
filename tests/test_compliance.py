@@ -848,3 +848,58 @@ def test_the_operator_check_actually_matches_something():
     # 実在の文字列であることを、復号した値だけで確かめる
     assert any(len(n) == 2 for n in needles), "日本語の姓が入っていない"
     assert any("@" not in n and "." in n for n in needles), "ドメインが入っていない"
+
+
+#: Observable Framework が自前で持っている部品のクラス名。
+#:
+#: **ここと同じ名前を styles.css で使うと、向こうの装飾が乗ってくる。**
+#: 実際に `.note` でぶつかった。Framework の `.note` は ::before で
+#: 「Note」という文字を差し込み、枠と 1rem 2rem の余白まで付けるので、
+#: 数値盤の小さな注記が、いきなり注記ボックスとして描かれた。
+#: 名前を変えるだけで直るが、**気付くのは画面を見たときだけ**である。
+FRAMEWORK_COMPONENT_CLASSES = frozenset(
+    {"note", "tip", "warning", "caution", "card", "grid", "observablehq"}
+)
+
+
+def _site_css() -> str:
+    return (repo_root() / "site" / "src" / "styles.css").read_text(encoding="utf-8")
+
+
+def test_the_site_css_does_not_reuse_framework_component_class_names():
+    import re as _re
+
+    # `.name {` や `.name,` の形で自前に定義しているクラスを拾う。
+    # 子孫セレクタ（`.readout .label`）の右側も対象にする
+    defined = set(_re.findall(r"\.([a-z][a-z0-9-]*)\b", _site_css()))
+    clash = sorted(defined & FRAMEWORK_COMPONENT_CLASSES)
+    assert not clash, (
+        f"Observable Framework の部品と同じクラス名を使っている: {clash}。"
+        "向こうの装飾が乗るので別の名前にすること"
+    )
+
+
+#: 合格・要改善・未対応の3段階に使う色。**計器の意匠に流用しない。**
+EVALUATIVE_COLOR_VARS = ("--pass", "--attention", "--absent")
+
+
+def test_the_coverage_ring_does_not_use_evaluative_colors():
+    """**リングが緑や赤に変わると、見た人はそれを成績として読む。**
+
+    観測できた割合は「この計測がどこまで届いたか」であって達成度ではない。
+    色で評価に見せると、DESIGN.md P8 が禁じている総合グレードの表示と
+    実質同じものになる。リングは読み取り色1色で描く。
+    """
+    import re as _re
+
+    gauge = (repo_root() / "site" / "src" / "components" / "gauge.js").read_text(encoding="utf-8")
+    # コメントは対象外。**書いてはいけない理由の説明まで弾かない**
+    code = _re.sub(r"//.*", "", gauge)
+    used = [v for v in EVALUATIVE_COLOR_VARS if v in code]
+    assert not used, f"リングに意味色を使っている: {used}"
+
+    # CSS 側（.coverage 配下）も同じ
+    block = _re.search(r"\.coverage\b.*?(?=\n/\* -|\Z)", _site_css(), _re.S)
+    assert block, ".coverage の定義が見つからない"
+    used = [v for v in EVALUATIVE_COLOR_VARS if v in block.group(0)]
+    assert not used, f".coverage に意味色を使っている: {used}"
