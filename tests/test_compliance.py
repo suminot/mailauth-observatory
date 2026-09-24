@@ -903,3 +903,81 @@ def test_the_coverage_ring_does_not_use_evaluative_colors():
     assert block, ".coverage の定義が見つからない"
     used = [v for v in EVALUATIVE_COLOR_VARS if v in block.group(0)]
     assert not used, f".coverage に意味色を使っている: {used}"
+
+
+def test_the_search_shortcut_label_matches_a_real_handler():
+    """**押しても何も起きないショートカットを表示しない。**
+
+    Observable Framework は検索欄の脇に Mac 以外で `Alt-K` と出すが、
+    向こうの keydown は `e.metaKey && !e.altKey` という条件で、
+    **Alt を明示的に除外している。** 拾われるのは ⌘K（Mac）と `/` だけで、
+    表示どおりに Alt-K を押しても何も起きない。`chrome.js` で補っている。
+
+    Framework を上げたときに向こうが直せば二重に効くが、
+    **どちらも同じ動作（検索欄に合わせる）なので実害は無い。**
+    逆にこちらを消すと、また何も起きないラベルに戻る。
+    """
+    chrome = (repo_root() / "site" / "src" / "chrome.js").read_text(encoding="utf-8")
+    assert "altKey" in chrome, "Alt キーを見ていない"
+    assert "KeyK" in chrome, "K を見ていない"
+    assert "focus()" in chrome, "検索欄に合わせていない"
+
+
+def test_the_site_shows_one_navigation_not_two():
+    """右の目次は出さない。**左の一覧に節を畳んで出している。**
+
+    同じ行き先が画面の両端にあると、どちらを見ればよいかを読むたびに
+    考えることになる。`chrome.js` が左に節を足しているので、
+    Framework の目次を戻すと二重になる。
+    """
+    config = (repo_root() / "site" / "observablehq.config.js").read_text(encoding="utf-8")
+    assert "toc: false" in config, "右の目次が有効になっている"
+
+    chrome = (repo_root() / "site" / "src" / "chrome.js").read_text(encoding="utf-8")
+    assert "section-links" in chrome, "左の一覧に節を出す処理が無い"
+
+
+#: 配色ごとに定義しなければならない色。**片方に無いと、その配色で
+#: 前の配色の値が残る**（暗い地の文字色が白いまま明るい地に出る等）。
+PALETTE_TOKENS = (
+    "--bg", "--bg-deep", "--panel", "--panel-alt", "--rule", "--rule-soft",
+    "--ink", "--ink-strong", "--dim", "--faint",
+    "--accent", "--accent-dim", "--accent-bg", "--accent-glow",
+    "--pass", "--attention", "--absent", "--neutral",
+)
+
+
+def test_both_color_schemes_define_the_whole_palette():
+    """**片方の配色で色が1つ抜けると、そこだけ前の配色の値が残る。**
+
+    暗い地のための文字色が明るい地に出ると読めない。見落としやすく、
+    しかも「その配色で開いた人」にしか見えない。
+    """
+    import re as _re
+
+    css = (repo_root() / "site" / "src" / "styles.css").read_text(encoding="utf-8")
+
+    def tokens_in(selector: str) -> set[str]:
+        # **同じセレクタの塊が複数ある。** 最初の1つだけ見ると、
+        # `color-scheme` だけの塊を拾って「色が全部無い」と誤検出する
+        blocks = _re.findall(_re.escape(selector) + r"\s*\{(.*?)\}", css, _re.S)
+        assert blocks, f"{selector} の定義が見つからない"
+        found: set[str] = set()
+        for body in blocks:
+            found |= set(_re.findall(r"(--[a-z0-9-]+)\s*:", body))
+        return found
+
+    # 引数に `{` を含めない。**正規表現側で足している**
+    dark = tokens_in(":root")
+    light_attr = tokens_in(':root[data-theme="light"]')
+    missing = [t for t in PALETTE_TOKENS if t not in dark]
+    assert not missing, f"暗い配色に無い色がある: {missing}"
+    missing = [t for t in PALETTE_TOKENS if t not in light_attr]
+    assert not missing, f"明るい配色に無い色がある: {missing}"
+
+    # 端末の設定で明るい配色になる経路も同じ色を持つこと。
+    # **属性を付けた場合だけ直して、こちらを忘れる**のが起きやすい
+    assert ":root:not([data-theme=\"dark\"])" in css, (
+        "端末の設定が明るいときの指定が無い。"
+        "属性で選んだ場合しか効かないと、何も選んでいない人に届かない"
+    )

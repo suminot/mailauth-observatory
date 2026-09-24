@@ -20,7 +20,8 @@
 
 :root {
   /* **これが無いとフォーム部品とスクロールバーが明るいまま残る。**
-     背景色を指定しても、select の描画は OS のテーマ側が持っていく */
+     背景色を指定しても、select の描画は OS のテーマ側が持っていく。
+     明るい配色では下の方で light に切り替える */
   color-scheme: dark;
 
   /* 地と面。**紺に寄せる。** 黒に近いと枠の発光が浮いて安っぽくなる */
@@ -396,11 +397,16 @@ pre {
   box-shadow: inset -1px 0 0 rgba(46, 230, 255, .10);
 }
 
+/* 選択中のページ。**縦の棒は重ねない。**
+   Framework が `li.observablehq-link-active::before` で3pxの棒を
+   引いており、それは li 全体＝ページとその節をまとめて囲む高さになる
+   （実測264px）。こちらで行にも棒を入れると二重になるうえ、
+   「節まで含めた塊」という括りが読み取れなくなる。地の色だけ変える */
 #observablehq-sidebar > ol > li.observablehq-link-active > a,
 #observablehq-sidebar a[aria-current="page"] {
   color: var(--accent);
   background: var(--accent-bg);
-  box-shadow: inset 2px 0 0 var(--accent), inset 10px 0 20px -14px var(--accent);
+  box-shadow: inset 10px 0 20px -14px var(--accent);
 }
 
 #observablehq-sidebar a {
@@ -684,3 +690,212 @@ form.observablehq-input > label {
   border: 1px dashed var(--rule);
   margin: 18px 0;
 }
+
+/* ------------------------------------------------------- 明るい配色 */
+/* この画面は暗い地が本来の姿なので、**:root は暗いまま**にして、
+ * 明るい側を上書きとして書く。標準的な書き方（:root が明るい）の
+ * 裏返しだが、そうしないと「既定が明るくて、暗いのが特別扱い」という
+ * 構造になり、設計の意図と食い違う。
+ *
+ * 三段階で当てる。
+ *   1. 端末の設定が明るい     → data-theme が付いていないときだけ
+ *   2. 明るいを選んだ         → 端末の設定より優先
+ *   3. 暗いを選んだ           → 上の 1 を打ち消す（:not で除外済み）
+ *
+ * **単純に反転させない。** シアン #2ee6ff は白地では読めないので、
+ * 読み取り色は濃い青緑に差し替える。意味色（3段階）も、白地で
+ * 4.5:1 を確保できる濃さに落とす。**赤の面積は最小のまま。**
+ * 発光は消す ── 白地で光らせると滲んで読みにくくなるだけで、
+ * 計器らしさにはならない。
+ */
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) { color-scheme: light; }
+}
+:root[data-theme="light"] { color-scheme: light; }
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg:        #eaeff5;
+    --bg-deep:   #dde5ee;
+    --panel:     #ffffff;
+    --panel-alt: #f4f7fb;
+    --rule:      #bccadb;
+    --rule-soft: #dbe3ed;
+
+    --ink:       #1d2d40;
+    --ink-strong:#08131f;
+    --dim:       #556b84;
+    --faint:     #7b90a8;
+
+    --accent:    #0a6f88;
+    --accent-dim:#8fbccb;
+    --accent-bg: rgba(10, 111, 136, .07);
+    --accent-glow: rgba(10, 111, 136, .16);
+
+    --pass:      #1d7355;
+    --attention: #8a6209;
+    --absent:    #8a5560;
+    --neutral:   #4d637a;
+  }
+}
+
+:root[data-theme="light"] {
+  --bg:        #eaeff5;
+  --bg-deep:   #dde5ee;
+  --panel:     #ffffff;
+  --panel-alt: #f4f7fb;
+  --rule:      #bccadb;
+  --rule-soft: #dbe3ed;
+
+  --ink:       #1d2d40;
+  --ink-strong:#08131f;
+  --dim:       #556b84;
+  --faint:     #7b90a8;
+
+  --accent:    #0a6f88;
+  --accent-dim:#8fbccb;
+  --accent-bg: rgba(10, 111, 136, .07);
+  --accent-glow: rgba(10, 111, 136, .16);
+
+  --pass:      #1d7355;
+  --attention: #8a6209;
+  --absent:    #8a5560;
+  --neutral:   #4d637a;
+}
+
+/* 発光と地の暈しを明るい側で外す。**白地の光は滲むだけ** */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) body {
+    background-image:
+      radial-gradient(ellipse 120% 80% at 50% 0%,
+        rgba(10, 111, 136, .10) 0%, transparent 60%),
+      linear-gradient(rgba(40, 80, 120, .05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(40, 80, 120, .05) 1px, transparent 1px);
+  }
+  :root:not([data-theme="dark"]) #observablehq-center {
+    background: linear-gradient(90deg, transparent 0,
+      rgba(234, 239, 245, .96) 40px,
+      rgba(234, 239, 245, .96) calc(100% - 40px), transparent 100%);
+  }
+  :root:not([data-theme="dark"]) #observablehq-main h1,
+  :root:not([data-theme="dark"]) .subtitle,
+  :root:not([data-theme="dark"]) .readout .value { text-shadow: none; }
+  :root:not([data-theme="dark"]) #observablehq-main h1::after,
+  :root:not([data-theme="dark"]) #observablehq-main h2::before { box-shadow: none; filter: none; }
+  :root:not([data-theme="dark"]) .coverage .arc { filter: none; }
+}
+
+:root[data-theme="light"] body {
+  background-image:
+    radial-gradient(ellipse 120% 80% at 50% 0%,
+      rgba(10, 111, 136, .10) 0%, transparent 60%),
+    linear-gradient(rgba(40, 80, 120, .05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(40, 80, 120, .05) 1px, transparent 1px);
+}
+:root[data-theme="light"] #observablehq-center {
+  background: linear-gradient(90deg, transparent 0,
+    rgba(234, 239, 245, .96) 40px,
+    rgba(234, 239, 245, .96) calc(100% - 40px), transparent 100%);
+}
+:root[data-theme="light"] #observablehq-main h1,
+:root[data-theme="light"] .subtitle,
+:root[data-theme="light"] .readout .value { text-shadow: none; }
+:root[data-theme="light"] #observablehq-main h1::after,
+:root[data-theme="light"] #observablehq-main h2::before { box-shadow: none; filter: none; }
+:root[data-theme="light"] .coverage .arc { filter: none; }
+
+/* -------------------------------------------------- 左の一覧の節 */
+/* 右の目次をやめて、開いているページの節をここに一段下げて出す
+ * （chrome.js）。**行き先を一箇所にまとめる。** */
+
+/* **`#observablehq-sidebar` を頭に付けているのは詳細度のため。**
+   Framework 側が `#observablehq-sidebar ol` と `#observablehq-sidebar a`
+   で指定しているので、クラスだけでは負ける。実際、最初は字下げが
+   まったく効かず、節の方が親より左に出ていた（id が 1 つ入るだけで
+   クラス 1 つには勝つ）。 */
+#observablehq-sidebar .section-links {
+  list-style: none;
+  margin: 2px 0 10px;
+  /* Framework の親項目は本文が左から 24px の位置に出る（実測）。
+     節はそれより深くする */
+  padding: 0 0 0 24px;
+}
+
+#observablehq-sidebar .section-links li { margin: 0; }
+
+#observablehq-sidebar .section-links a {
+  /* **地を透かす。** Framework の `#observablehq-sidebar a` が本文の
+     地色を塗るので、そのままだと節の並びだけが不透明な帯になり、
+     選択中のページの範囲が帯の大きさに見えてしまう */
+  background: transparent;
+  display: block;
+  padding: 3px 0 3px 14px;
+  /* 縦の筋は各項目の左に置く。**いま読んでいる節だけ色が乗る** */
+  border-left: 2px solid var(--rule);
+  font-family: var(--body);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--dim);
+  text-decoration: none;
+}
+
+#observablehq-sidebar .section-links a:hover {
+  color: var(--ink-strong);
+  background: var(--accent-bg);
+}
+
+/* いま読んでいる節。**印は左の棒だけ。** 地を塗ると、上の
+   ページ見出しと同じ強さになって、どちらが選択中か分からなくなる */
+#observablehq-sidebar .section-links a[aria-current="true"] {
+  color: var(--accent);
+  border-left-color: var(--accent);
+}
+
+/* -------------------------------------------------- 左下の切り替え */
+
+.chrome-controls {
+  margin-top: auto;
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chrome-switch {
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.chrome-switch > * {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .08em;
+  line-height: 1;
+  padding: 6px 10px;
+  color: var(--dim);
+  text-decoration: none;
+}
+
+.chrome-switch > * + * { border-left: 1px solid var(--rule); }
+.chrome-switch > *:hover { color: var(--ink-strong); }
+
+.chrome-switch > *[aria-current="true"] {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+/* 一覧を縦に伸ばして、切り替えを下端に落とす */
+#observablehq-sidebar {
+  display: flex;
+  flex-direction: column;
+}
+#observablehq-sidebar > ol:last-of-type { margin-bottom: 0; }
