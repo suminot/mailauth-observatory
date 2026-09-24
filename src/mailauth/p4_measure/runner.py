@@ -321,6 +321,13 @@ def run(
         dkim_detected_domains = 0
         tcp_fallback = 0
         queries_written = 0
+        # **件数はドメインで数える。** クエリ数と混ぜると、工程レポートの
+        # 「工程間の件数」表が p4→p5 で 2,773（クエリ）と 2,790（レコード）を
+        # 並べることになり、**どこで何件落ちたかという表の意図が読めなくなる。**
+        # クエリ数は breakdown.queries_total にある
+        fully_observed = 0
+        partially_observed = 0
+        none_observed = 0
 
         # **30,000ドメインで3時間を見込む工程である。** 進捗を出さないと、
         # 実行中は何割まで進んだかも残り時間も分からない
@@ -417,8 +424,21 @@ def run(
                     by_purpose[query.purpose] = by_purpose.get(query.purpose, 0) + 1
                     if answer.used_tcp:
                         tcp_fallback += 1
-                    if not answer.observed:
-                        manifest.add_failure(answer.rcode)
+
+                # **観測できた本数ではなく、ドメインの状態で分ける。**
+                # 一部だけ引けたドメインを「成功」とだけ数えると、半分しか
+                # 見ていないことが数字から消える（原則5）
+                seen = [a.observed for _, a in result.answers]
+                if seen and all(seen):
+                    fully_observed += 1
+                elif any(seen):
+                    partially_observed += 1
+                else:
+                    none_observed += 1
+                    # 1本も引けなかった理由を代表の rcode で残す。
+                    # **クエリ単位で数えない** ── 1ドメインの失敗が
+                    # セレクタの本数だけ膨らんで見える
+                    manifest.add_failure(result.answers[0][1].rcode if seen else "no_queries")
 
                 if result.control_responded:
                     # 実在しないセレクタに応答した。何にでも答えるDNSなので
@@ -463,8 +483,20 @@ def run(
                 bytes_=int(part["bytes"]),
             )
 
-        manifest.counts.success = queries_written - manifest.counts.failed
+        # **ドメイン単位に揃える。** input も success も failed も同じ単位で、
+        # 足し合わせると input に戻る（原則4）
+        manifest.counts.success = fully_observed + partially_observed
+        manifest.counts.skipped = len(already)
         manifest.set_breakdown(
+            domains={
+                "planned": planned,
+                "measured_this_run": len(targets),
+                "fully_observed": fully_observed,
+                # **一部だけ引けた**。成功に含めるが、半分しか見ていないことは残す
+                "partially_observed": partially_observed,
+                "none_observed": none_observed,
+                "carried_over": len(already),
+            },
             by_rcode=dict(sorted(by_rcode.items())),
             by_purpose=dict(sorted(by_purpose.items())),
             queries_total=queries_written,
