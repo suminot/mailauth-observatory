@@ -887,3 +887,53 @@ def test_塊を跨いで同じ起点ドメインを二度取りにいかない(s
     assert ct.calls == ["sample-info.co.jp"], f"同じ起点を{len(ct.calls)}回取りにいった"
     # 3社とも候補は付く（取得結果を塊を跨いで持ち越している）
     assert result["breakdown"]["ct"]["searched"] == len(df)
+
+
+def test_中央値の警告が原因を指す():
+    """**原因が分かっている警告は、原因の方を指す。**
+
+    起点となる公式サイトが取れなかった企業は候補ゼロになり、中央値を
+    押し下げる。症状（中央値が低い）だけを毎月出しても、読み手は次に
+    何をすればよいか分からない。
+    """
+    from mailauth.manifest import RunManifest
+    from mailauth.p2_candidates.runner import _check_acceptance
+
+    cfg = {"acceptance": {"p2": {"median_per_entity_min": 1, "median_per_entity_max": 5}}}
+    pct = {"p50": 0, "p90": 2, "max": 9, "mean": 0.5}
+
+    import tempfile
+    from pathlib import Path as _P
+
+    with tempfile.TemporaryDirectory() as tmp:
+        with RunManifest(run_id="2026-08", phase="p2_candidates", out_dir=_P(tmp)) as m:
+            _check_acceptance(cfg, pct, zero=1826, entities=3818, manifest=m)
+        msg = next(
+            w["message"]
+            for w in m.to_dict()["warnings"]
+            if w["code"] == "ACCEPTANCE_MEDIAN_OUT_OF_RANGE"
+        )
+    assert "候補ゼロ" in msg, "症状だけを言って原因を指していない"
+    assert "1826" in msg
+
+
+def test_原因でないときは原因を言わない():
+    """**候補ゼロが少ないのに「それが原因」と言わない。**"""
+    from mailauth.manifest import RunManifest
+    from mailauth.p2_candidates.runner import _check_acceptance
+
+    cfg = {"acceptance": {"p2": {"median_per_entity_min": 1, "median_per_entity_max": 5}}}
+    pct = {"p50": 9, "p90": 40, "max": 99, "mean": 12.0}  # 上振れ
+
+    import tempfile
+    from pathlib import Path as _P
+
+    with tempfile.TemporaryDirectory() as tmp:
+        with RunManifest(run_id="2026-08", phase="p2_candidates", out_dir=_P(tmp)) as m:
+            _check_acceptance(cfg, pct, zero=10, entities=3818, manifest=m)
+        msg = next(
+            w["message"]
+            for w in m.to_dict()["warnings"]
+            if w["code"] == "ACCEPTANCE_MEDIAN_OUT_OF_RANGE"
+        )
+    assert "候補ゼロ" not in msg, "関係のない原因を挙げている"
