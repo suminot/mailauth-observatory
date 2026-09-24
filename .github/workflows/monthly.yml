@@ -104,6 +104,7 @@ jobs:
       # CT ログは追記されるので、月をまたいで使い回すと時系列が凍る。
       # 同じ月に複数回流せば、2回目以降は取得済みのぶんを飛ばせる。
       - name: CT ログのキャッシュを復元
+        id: ct_cache
         uses: actions/cache/restore@v4
         with:
           path: data/cache/crtsh
@@ -126,6 +127,7 @@ jobs:
       #
       # 効くのは同じ月の流し直しで、まさに今それを繰り返している。
       - name: 補完のキャッシュを復元
+        id: enrich_cache
         uses: actions/cache/restore@v4
         with:
           # **crtsh は入れない。** 別の鍵で別に持ち越しており、ここに
@@ -148,12 +150,52 @@ jobs:
       # 復元できれば P4 は `--resume` で続きから測れる。**キャッシュは
       # 月で区切る**（run_id が YYYY-MM なので、別の月は別の鍵になる）。
       - name: 工程の出力を復元
+        id: runs_cache
         uses: actions/cache/restore@v4
         with:
           path: data/runs/${{ steps.run.outputs.id }}
           key: runs-${{ steps.run.outputs.id }}-${{ github.run_id }}
           restore-keys: |
             runs-${{ steps.run.outputs.id }}-
+
+      # **何を持って始めたのかが、終わるまで分からない。**
+      #
+      # P2 の所要時間はほぼ「CT を何件取りにいくか」で決まり、それは
+      # 復元できたキャッシュの件数で決まる。ところが復元の成否はログに
+      # しか出ず、**実行中のログは読めない**（上と同じ 404）。run 10 の
+      # 見守りで実際に詰まった ── 復元ステップが0秒で終わっており、
+      # **当たったのか外れたのかが判断できなかった。**
+      #
+      # 件数を数えて成果物に上げる。開始1分以内に出るので、
+      # **5時間待たずに「今回どこから始まったか」が分かる。**
+      - name: 復元できたものを先に出す
+        if: always()
+        continue-on-error: true
+        run: |
+          mkdir -p /tmp/restored
+          {
+            echo "run_id=${{ steps.run.outputs.id }}"
+            echo "ct_matched_key=${{ steps.ct_cache.outputs.cache-matched-key }}"
+            echo "ct_entries=$(find data/cache/crtsh -type f 2>/dev/null | wc -l)"
+            echo "enrich_matched_key=${{ steps.enrich_cache.outputs.cache-matched-key }}"
+            echo "gbizinfo_entries=$(find data/cache/gbizinfo -type f 2>/dev/null | wc -l)"
+            echo "runs_matched_key=${{ steps.runs_cache.outputs.cache-matched-key }}"
+            # **どの工程の出力が戻ったか。** manifest があれば、その工程は
+            # 前回この run で最後まで走っている
+            for p in data/runs/${{ steps.run.outputs.id }}/*/_manifest.json; do
+              [ -f "$p" ] && echo "restored_phase=$(basename "$(dirname "$p")")"
+            done
+          } | tee /tmp/restored/restored.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 復元の状況を成果物にする
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: restored-${{ steps.run.outputs.id }}
+          path: /tmp/restored/restored.txt
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: P1 母集団確定
         continue-on-error: true
