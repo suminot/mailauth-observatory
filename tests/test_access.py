@@ -191,6 +191,55 @@ def test_実際の設定ファイルを読める():
 
 
 # --------------------------------------------------------------------------
+# 公開サイトの住所を設定ファイルに書き残さない
+# --------------------------------------------------------------------------
+
+
+def test_環境変数が設定ファイルより優先される():
+    """リポジトリに住所を書かずに検査できるようにするための経路。"""
+    import os
+
+    raw = {"access": {"verify_base_url": "https://written-in-yaml.example"}}
+    os.environ[access.AccessConfig.BASE_URL_ENV] = "https://from-env.example"
+    try:
+        cfg = access.AccessConfig.from_publish_config(raw)
+    finally:
+        del os.environ[access.AccessConfig.BASE_URL_ENV]
+    assert cfg.verify_base_url == "https://from-env.example"
+
+
+def test_環境変数が空なら設定ファイルに戻る():
+    """空文字を「設定した」と読むと、住所の無い URL を叩きにいく。"""
+    import os
+
+    raw = {"access": {"verify_base_url": "https://written-in-yaml.example"}}
+    os.environ[access.AccessConfig.BASE_URL_ENV] = "   "
+    try:
+        cfg = access.AccessConfig.from_publish_config(raw)
+    finally:
+        del os.environ[access.AccessConfig.BASE_URL_ENV]
+    assert cfg.verify_base_url == "https://written-in-yaml.example"
+
+
+def test_設定ファイルに実在するサイトの住所を書き残さない():
+    """**リポジトリを public にすると、この1行がサイトへの道案内になる。**
+
+    第1層は無条件公開なので実害は小さいが、`_headers` の `noindex` で
+    検索から外してある意図と噛み合わない。住所は環境変数で渡す。
+    """
+    from pathlib import Path
+
+    import yaml
+
+    raw = yaml.safe_load(Path("configs/publish.yaml").read_text(encoding="utf-8"))
+    written = ((raw.get("access") or {}).get("verify_base_url")) or ""
+    assert "<" in written or not written, (
+        f"configs/publish.yaml に公開サイトの URL が書かれている: {written!r}。"
+        f"{access.AccessConfig.BASE_URL_ENV} で渡すこと"
+    )
+
+
+# --------------------------------------------------------------------------
 # 第1層が閉じたままになるのを見つける
 # --------------------------------------------------------------------------
 

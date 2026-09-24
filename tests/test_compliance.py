@@ -689,14 +689,22 @@ def test_the_owner_runbook_references_things_that_exist():
     ]
     assert not missing, f"実在しないパスを指している: {missing}"
 
-    # 挙げている secret 名がワークフローで実際に読まれていること
+    # 挙げている secret / 環境変数の名前が、実際にどこかで読まれていること。
+    # **誰も読まない名前を登録させると、運営者の作業がまるごと無駄になる。**
+    # ワークフローが `secrets.X` として読むか、コードが環境変数として読むか、
+    # どちらかであればよい（前者はワークフロー用、後者は手元で流す用）
     workflows = "".join(
         p.read_text(encoding="utf-8")
         for p in sorted((repo_root() / ".github" / "workflows").glob("*.yml"))
     )
+    sources = "".join(
+        p.read_text(encoding="utf-8") for p in sorted((repo_root() / "src").rglob("*.py"))
+    )
     declared = set(_re.findall(r"`((?:CLOUDFLARE|R2|BACKUP|MAILAUTH)_[A-Z0-9_]+)`", text))
-    unused = sorted(s for s in declared if f"secrets.{s}" not in workflows)
-    assert not unused, f"ワークフローが読んでいない secret を挙げている: {unused}"
+    unused = sorted(
+        s for s in declared if f"secrets.{s}" not in workflows and f'"{s}"' not in sources
+    )
+    assert not unused, f"どこからも読まれていない名前を挙げている: {unused}"
 
     # 挙げている CLI サブコマンドが実在すること
     from mailauth.cli import app

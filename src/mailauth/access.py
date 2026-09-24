@@ -32,10 +32,22 @@ Cloudflare Access のポリシーを「ログイン方法 = Entra」だけで組
 `allowed_email_domains` はその意図を設定として残すためにある
 （値そのものを検査に使うことはできない ── 弾かれた側からは
 誰が通れるのか分からないため）。
+
+## 公開サイトの URL は設定ファイルに書かなくてよい
+
+`verify_base_url` は**実在するサイトの住所**であって、設定の意図ではない。
+リポジトリを public にすると、この1行がそのままサイトへの道案内になる。
+第1層だけを出している間はサイト自体が公開なので実害は小さいが、
+`noindex` で検索から外してある意図とは噛み合わない。
+
+そこで環境変数 `MAILAUTH_SITE_BASE_URL` を**設定ファイルより優先**する。
+設定ファイル側を null にしておけば、住所はリポジトリに残らない。
+書いてあればそのまま使うので、今まで通りの置き方も壊れない。
 """
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -113,6 +125,10 @@ class AccessConfig:
     #: 公開サイトの基点 URL。**未設定なら検査できない**
     verify_base_url: str | None = None
 
+    #: `verify_base_url` を設定ファイルに書かずに渡すための環境変数。
+    #: **設定ファイルより優先する。** リポジトリに住所を残さずに済む
+    BASE_URL_ENV = "MAILAUTH_SITE_BASE_URL"
+
     @classmethod
     def from_publish_config(cls, cfg: dict[str, Any]) -> AccessConfig:
         raw = cfg.get("access") or {}
@@ -127,7 +143,10 @@ class AccessConfig:
             idp=raw.get("idp"),
             allowed_email_domains=list(raw.get("allowed_email_domains") or []),
             protected_paths=paths,
-            verify_base_url=raw.get("verify_base_url"),
+            # **環境変数が設定ファイルに勝つ。** 空文字は「未設定」として扱う
+            # ── 空のまま渡ってくると、住所の無い URL を叩きにいくことになる
+            verify_base_url=(os.environ.get(cls.BASE_URL_ENV) or "").strip()
+            or raw.get("verify_base_url"),
         )
 
 
@@ -262,8 +281,9 @@ def verify(
 
     if not config.verify_base_url:
         report.unavailable_reason = (
-            "access.verify_base_url が未設定のため、認証が実際に掛かっているかを"
-            "確かめられない。**設定ファイルの申告だけで第2層を公開しない**"
+            "公開サイトの URL が未設定のため、認証が実際に掛かっているかを"
+            "確かめられない（環境変数 MAILAUTH_SITE_BASE_URL、または "
+            "access.verify_base_url）。**設定ファイルの申告だけで第2層を公開しない**"
         )
         return report
 
