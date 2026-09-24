@@ -743,3 +743,108 @@ def test_the_public_site_does_not_expose_the_repository_url():
             if "github.com" in line.lower():
                 problems.append(f"{path.name}:{i}: {line.strip()[:80]}")
     assert not problems, "公開サイトにリポジトリの URL がある:\n  " + "\n  ".join(problems)
+
+
+#: 公開リポジトリに出してはいけない、運営者を特定する文字列（base64）。
+#:
+#: **ここに平文で書くと、この検査ファイル自体が公開の置き場所になる。**
+#: 消そうとしている文字列を、消すための検査に書き込んでしまっては意味が
+#: 無い。GitHub の検索にも引っかかる。隠しているのではなく、**この1ファイル
+#: だけ例外にしないため**に符号化している（例外にすると、検査が自分自身を
+#: 見逃す構造になる）。
+#:
+#: 2026-09-24 に public にした際、`DESIGN.md` の本文に漢字の実名が、
+#: `research-dossier.html.html` に「〜さん」呼びが入っていた。どちらも
+#: 削除した。
+#:
+#: **運営者が出すと決めたものは、この一覧に入れない。** 現時点では
+#: `pyproject.toml` の `authors`（ローマ字表記）と、
+#: `configs/publish.yaml` の Cloudflare Access 用メールドメインの2つ。
+#: ここで止めるのは、**文書の地の文に紛れ込んだもの**である。
+#:
+#: GitHub のアカウント名は**意図的に入れていない。** public にした時点で
+#: URL そのものが公開されるので、User-Agent から消しても意味が無く、消すと
+#: 問い合わせ先が無くなる（crt.sh への礼儀として残している）。
+_OWNER_IDENTIFYING_B64 = (
+    "6ZqF6YeO",
+    "bWtpLmNvLmpw",
+    "5LiJ5LqV",
+    "TWl0c3Vp",
+)
+
+
+def owner_identifying_strings() -> list[str]:
+    import base64 as _b64
+
+    return [_b64.b64decode(s).decode() for s in _OWNER_IDENTIFYING_B64]
+
+
+#: 運営者の名前の検査から外すもの。
+#:
+#: **このシステムは国内上場企業を計測する。** 一覧に挙げた社名は、
+#: そのまま計測対象でもある。計測データや手動辞書に社名が出るのは
+#: 当たり前であって、運営者の所属とは何の関係も無い。そこで落とすと、
+#: 検査が「正しい仕事をした結果」に対して毎回鳴ることになり、やがて
+#: 誰も見なくなる。
+#:
+#: （この説明文に社名を例として書いたら、この検査自身に捕まった。
+#: 効いていることの確認にはなった）
+#:
+#: 止めたいのは**文書の地の文に紛れ込んだもの**なので、データは見ない。
+_DATA_OR_NOISE = (
+    "configs/domains/",  # 手動のドメイン辞書。社名が入る
+    "configs/worklist/",  # 同定の作業リスト
+    "configs/industry/",  # 業種分類の対応表
+    "gold/",  # 集計結果
+    "tests/fixtures/",  # 実データを模したもの
+)
+
+
+def _is_data_or_noise(rel: str) -> bool:
+    # package-lock.json の integrity は base64 なので偶然一致する
+    if rel.endswith(".lock") or rel.endswith("package-lock.json"):
+        return True
+    # CSV / Parquet は計測の中身。社名が入って当然
+    if rel.endswith((".csv", ".parquet", ".tsv")):
+        return True
+    return rel.startswith(_DATA_OR_NOISE)
+
+
+def test_the_repository_does_not_name_its_operator():
+    """**公開リポジトリに運営者の実名と所属を残さない。**
+
+    一度 public にすると取り返しがつかない（誰かの手元に clone が残る）。
+    書き戻しはレビューで見落とされやすいので、検査で止める。
+
+    所属を示すものを特に警戒する。実名は本人の判断で出せるが、
+    **勤務先が結びつくと本人の判断の範囲を超える。**
+    """
+    import subprocess
+
+    tracked = subprocess.run(
+        ["git", "ls-files"], cwd=repo_root(), capture_output=True, text=True, check=True
+    ).stdout.split()
+    needles = owner_identifying_strings()
+
+    hits: list[str] = []
+    for rel in tracked:
+        if _is_data_or_noise(rel):
+            continue
+        path = repo_root() / rel
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        hits += [f"{rel}: {n}" for n in needles if n in text]
+
+    assert not hits, "運営者を特定する文字列が入っている:\n  " + "\n  ".join(hits)
+
+
+def test_the_operator_check_actually_matches_something():
+    """符号化を間違えると、**何も探さない検査**が静かに通り続ける。"""
+    needles = owner_identifying_strings()
+    assert len(needles) == len(_OWNER_IDENTIFYING_B64)
+    assert all(n and n.strip() == n for n in needles)
+    # 実在の文字列であることを、復号した値だけで確かめる
+    assert any(len(n) == 2 for n in needles), "日本語の姓が入っていない"
+    assert any("@" not in n and "." in n for n in needles), "ドメインが入っていない"
