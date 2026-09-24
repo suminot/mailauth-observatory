@@ -2,6 +2,18 @@
 
 テストは一切ネットワークに出ない。EDINET / gBizINFO / 国税庁のいずれも、
 ローカルのフィクスチャか未設定スキップで賄えるようにしてある。
+
+**それを書いておくだけでは守られなかった。**
+
+外部 API を叩く補完は、これまで偶然守られていただけだった ── gBizINFO も
+国税庁も認証情報が無ければ勝手に止まるので、鍵を置かない CI では
+ネットワークに出なかった。そこに**鍵の要らない Wikidata** を足した途端、
+P1 を回すすべての検査が本当に WDQS を叩き始め、**CI が19分止まった。**
+手元では出口 IP が弾かれて即座に 403 になるため、気付けなかった。
+
+規約は言葉ではなく仕組みで守る。下の `no_real_network` が実際の送信層を
+塞いでいる。`httpx.MockTransport` を使う検査は通る ── 塞ぐのは
+「本当に外へ出る経路」だけである。
 """
 
 from __future__ import annotations
@@ -9,10 +21,33 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import httpx
 import pytest
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EDINET_SAMPLE = FIXTURES / "EdinetcodeDlInfo_sample.csv"
+
+
+@pytest.fixture(autouse=True)
+def no_real_network(monkeypatch):
+    """**本当に外へ出ようとしたら、待たずに落とす。**
+
+    塞ぐのは実際の送信層（`httpx.HTTPTransport`）だけ。`MockTransport` を
+    差し込んで応答を模している検査はそのまま通る。
+
+    落とすのは「遅いから」ではない。**外の状態でテストの結果が変わる**のが
+    問題で、しかも手元と CI で違う壊れ方をする（手元は即 403、CI は無言で
+    数十分待つ）。
+    """
+
+    def refuse(self, request, *args, **kwargs):
+        raise AssertionError(
+            f"テストがネットワークに出ようとした: {request.method} {request.url}\n"
+            "応答を模すか、offline で回すこと（tests/conftest.py 参照）"
+        )
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", refuse)
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", refuse)
 
 
 @pytest.fixture(autouse=True)

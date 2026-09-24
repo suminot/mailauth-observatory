@@ -201,8 +201,14 @@ def _apply_enrichment(
     manifest: RunManifest,
     *,
     limit: int | None = None,
+    offline: bool = False,
 ) -> None:
-    """enrich を順に適用する。認証情報が無いものはスキップして記録する。"""
+    """enrich を順に適用する。認証情報が無いものはスキップして記録する。
+
+    **`offline` を無視してはいけない。** gBizINFO と法人番号は認証情報が
+    無ければ勝手に止まるが、**Wikidata は鍵が要らないので必ず外に出る。**
+    偶然守られていた経路と、明示的に守る経路を混ぜない。
+    """
     bangou_list = [e.houjin_bangou for e in entities if e.houjin_bangou]
     by_bangou = {e.houjin_bangou: e for e in entities if e.houjin_bangou}
 
@@ -260,6 +266,15 @@ def _apply_enrichment(
             )
 
         elif name == "wikidata_identity":
+            if offline:
+                manifest.add_warning(
+                    "ENRICH_SKIPPED_WIKIDATA",
+                    message=(
+                        "offline のため公式サイトを補っていない。"
+                        "**「無い」のではなく「引いていない」**"
+                    ),
+                )
+                continue
             _fill_missing_urls_from_wikidata(entities, cfg, manifest)
 
         else:
@@ -641,7 +656,7 @@ def run(
 
         # 5. enrich
         if not dry_run:
-            _apply_enrichment(entities, cfg, manifest, limit=limit)
+            _apply_enrichment(entities, cfg, manifest, limit=limit, offline=offline)
 
         # 6. 前月との差分
         if limit:

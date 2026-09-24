@@ -12,6 +12,10 @@ from mailauth.paths import phase_dir, phase_output
 
 
 def run_p1(run_id: str, source, config="configs/populations/jp-all-listed.yaml", **kw):
+    # **offline で回す。テストは一切ネットワークに出ない。**
+    # gBizINFO と法人番号は認証情報が無ければ勝手に止まるが、
+    # Wikidata は鍵が要らないので、指定しないと本当に WDQS を叩く
+    kw.setdefault("offline", True)
     return run(config=config, run_id=run_id, source_file=source, **kw)
 
 
@@ -444,3 +448,39 @@ def test_国内母集団が_wikidata_を使うことと出典():
 
     lines = attribution_for({"jp-all-listed"}, {"attribution": []})
     assert any("Wikidata" in line for line in lines), "出典に Wikidata が出ていない"
+
+
+def test_offline_ならネットワークに出ない(edinet_sample, monkeypatch):
+    """**鍵の要らない補完は、黙って外に出る。**
+
+    gBizINFO と法人番号は認証情報が無ければ勝手に止まるので、テストは
+    偶然ネットワークに出ずに済んでいた。Wikidata は鍵が要らないため、
+    足した瞬間に**すべての P1 の検査が本当に WDQS を叩き始めた**
+    （CI が19分止まって気付いた）。
+
+    偶然守られていた経路と、明示的に守る経路を混ぜない。
+    """
+
+    def boom(*a, **k):
+        raise AssertionError("offline なのにネットワークに出た")
+
+    monkeypatch.setattr("mailauth.p1_population.wikidata.run_query", boom)
+    result = run_p1("2026-08", edinet_sample, offline=True)
+
+    codes = [w["code"] for w in result["warnings"]]
+    assert "ENRICH_SKIPPED_WIKIDATA" in codes, (
+        "引いていないことを記録していない。**「無い」と「引いていない」は別**"
+    )
+
+
+def test_offline_でなければ補完を試みる(edinet_sample, monkeypatch):
+    """**offline を外したら実際に引くこと。** 黙って何もしないのが一番悪い。"""
+    called: list[str] = []
+
+    def spy(*a, **k):
+        called.append("引いた")
+        return []
+
+    monkeypatch.setattr("mailauth.p1_population.wikidata.run_query", spy)
+    run_p1("2026-08", edinet_sample, offline=False)
+    assert called, "offline を外しても Wikidata を引いていない"
