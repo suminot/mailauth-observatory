@@ -16,7 +16,7 @@ security assessment.**
 
 | Phase | What it does |
 |---|---|
-| P1 Population | Fixes the set of listed companies from the FSA's EDINET code list |
+| P1 Population | Fixes the set of listed companies from a primary register (**which register depends on the population** — see below) |
 | P2 Domain candidates | Widens the candidate set from official sites, CT logs, SPF `redirect=` and DMARC `rua` |
 | P3 Mail domains | Narrows the candidates and assigns a confidence (confirmed / likely / unknown / parked) |
 | P4 DNS measurement | Fetches the records and stores the responses verbatim |
@@ -27,6 +27,21 @@ security assessment.**
 
 Each phase runs independently, and always records how many items it processed
 and how many failed.
+
+### The primary register differs by population
+
+| Population | Primary register | Filled in from |
+|---|---|---|
+| Listed companies in Japan | FSA EDINET code list | NTA corporate number (name, address), gBizINFO (official site) |
+| Listed companies in the US | SEC EDGAR (public domain) | Wikidata (official site; SEC's website field is almost always empty) |
+
+**EDINET is a Japanese register, so it is not used for the US population.**
+The same applies to sectors: Japan's come from EDINET's 33 sectors and the
+US's from SEC SIC codes, each mapped through ISIC Rev.4 into the twelve
+common classes.
+
+Attribution appears at the foot of the page, and **changes with the
+populations being published.**
 
 ## "Could not be observed" is kept apart from "was not there"
 

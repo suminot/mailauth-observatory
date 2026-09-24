@@ -79,6 +79,36 @@ def frame_to_records(frame) -> list[dict]:
     ]
 
 
+def attribution_for(populations: set[str], cfg: dict) -> list[str]:
+    """公開する母集団に応じた出典表記を組む。
+
+    **固定の一覧だけ出していると、母集団が増えたときに出典が落ちる。**
+    `configs/publish.yaml` の一覧は国内の一次名簿を前提に書かれており、
+    米国の母集団を公開すると SEC EDGAR と Wikidata が credit されない。
+    出典表記は各提供元の規約に従う義務があり（利用規約のページに明記
+    している）、**落ちても画面上は何も起きないので気付けない。**
+
+    共通の出典（Public Suffix List など、母集団によらないもの）は
+    publish.yaml に残し、一次名簿ごとの出典は母集団の設定から拾う。
+    順序は安定させる ── 同じ入力から同じ出力にする（原則6）。
+    """
+    from ..config import load_yaml
+
+    out: list[str] = list(cfg.get("attribution") or [])
+    for population_id in sorted(populations):
+        path = f"configs/populations/{population_id}.yaml"
+        try:
+            pop = load_yaml(path)
+        except FileNotFoundError:
+            # **黙って飛ばさない。** 出典が落ちたことが分かるようにする
+            out.append(f"（{population_id} の設定が見つからず、出典を確認できていない）")
+            continue
+        for line in pop.get("attribution") or []:
+            if line not in out:
+                out.append(line)
+    return out
+
+
 def collect_months(months: list[str]) -> tuple[list[dict], list[dict]]:
     """全月分の gold を縦に積む。時系列グラフの元になる。"""
     overall: list[dict] = []
@@ -305,7 +335,8 @@ def run(
             tier2_days_elapsed=decision.days_elapsed,
             formats=list((cfg.get("tier1") or {}).get("formats") or []),
         )
-        manifest.attribution = list(cfg.get("attribution") or [])
+        populations = {str(r.get("population_id")) for r in overall if r.get("population_id")}
+        manifest.attribution = attribution_for(populations, cfg)
 
         if dry_run:
             manifest.add_warning("DRY_RUN", message="dry_run のため出力を書いていない")
@@ -316,6 +347,7 @@ def run(
                 sectors=sectors,
                 months=months,
                 cfg=cfg,
+                attribution=manifest.attribution,
                 excluded={
                     "count": len(exclusion_registry.entries),
                     "available": exclusion_registry.available,
@@ -370,6 +402,7 @@ def _write_site_data(
     sectors: list[dict],
     months: list[str],
     cfg: dict,
+    attribution: list[str],
     excluded: dict | None = None,
 ) -> list[tuple[Path, int]]:
     """サイトのデータディレクトリに書き出す。
@@ -399,7 +432,7 @@ def _write_site_data(
             "months": months,
             "latest_month": months[-1] if months else None,
             "license": (cfg.get("tier1") or {}).get("license"),
-            "attribution": list(cfg.get("attribution") or []),
+            "attribution": list(attribution),
             "disclaimer": (cfg.get("site") or {}).get("disclaimer"),
             # ダウンロードは gold を直接指す。データを二重に持たない
             "parquet_path": "gold/month=<YYYY-MM>/",

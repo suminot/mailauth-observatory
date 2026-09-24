@@ -60,9 +60,13 @@ folded with it.
 
 ## Reading the sector axis
 
-The sector classification maps EDINET's 33 sectors through ISIC Rev.4 into
-twelve. The mapping table is kept as configuration, so it stays possible to
-trace which primary sector went where.
+The sector classification maps into twelve classes through ISIC Rev.4.
+**What it maps from depends on the population**: EDINET's 33 sectors for
+Japan, SEC SIC codes for the US. Both are pulled to the same intermediate
+classification so the two countries can sit on one axis.
+
+The mapping table is kept as configuration, so it stays possible to trace
+which primary sector went where.
 
 Companies with no sector assigned are left out of the sector aggregation.
 Treating "sector unknown" as a sector of its own would distort the
