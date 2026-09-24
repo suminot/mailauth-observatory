@@ -85,8 +85,7 @@ function buildControls() {
   const box = document.createElement("div");
   box.className = "chrome-controls";
   box.appendChild(themeToggle());
-  const lang = langToggle();
-  if (lang) box.appendChild(lang);
+  box.appendChild(langToggle());
   sidebar.appendChild(box);
 }
 
@@ -122,24 +121,74 @@ function themeToggle() {
   return wrap;
 }
 
-/** 言語の切り替え。**対応するページが実在するときだけ出す。** */
-function langToggle() {
-  const alt = document.querySelector('link[rel="alternate"][hreflang]');
-  if (!alt) return null;
+/** いまの言語。theme-boot.js が描画前に決めている。 */
+function currentLang() {
+  return document.documentElement.getAttribute("data-lang") === "en" ? "en" : "ja";
+}
 
+/** 同じページの、もう片方の言語の住所。
+ *
+ * **対応表は持たず、道の形で決める**（`/x` ↔ `/en/x`）。表を持つと、
+ * ページを足したときに片方だけ増えて、切り替えが 404 に飛ぶ。
+ * 両言語に同じページがあることは検査で縛っている。
+ */
+function counterpartPath() {
+  const p = location.pathname;
+  if (currentLang() === "en") {
+    const rest = p.replace(/^\/en(\/|$)/, "/");
+    return rest === "" ? "/" : rest;
+  }
+  return p === "/" ? "/en/" : "/en" + p;
+}
+
+/** 一覧を、いま開いている言語のものだけにする。
+ *
+ * Framework の一覧は1つしか持てないので、設定には日英の両方を並べ、
+ * ここで片方を外す。**href は相対で出てくる**（`./en/data` や `../data`）
+ * ので、属性の文字列ではなく**解決したあとの道で判定する。**
+ */
+function filterSidebarByLang() {
+  const lang = currentLang();
+  for (const a of document.querySelectorAll("#observablehq-sidebar li.observablehq-link > a")) {
+    let path;
+    try {
+      path = new URL(a.href, location.href).pathname;
+    } catch (e) {
+      continue;
+    }
+    // 題字（一覧の先頭に出るサイト名）は消さずに行き先を差し替える。
+    // **消すと英語版だけ題字が無くなる。** 設定に /en/ を別項目として
+    // 足すと、今度は英語版だけ題字が本文の一覧に並んで体裁が変わる
+    if (path === "/" || path === "/index.html") {
+      if (lang === "en") a.href = a.href.replace(/\/(index\.html)?$/, "/en/$1");
+      continue;
+    }
+    const isEn = path === "/en" || path === "/en/" || path.startsWith("/en/");
+    if (isEn !== (lang === "en")) a.closest("li").remove();
+  }
+  // 絞り終わったことを CSS に伝える。ここで初めて一覧が見えるようになる
+  document.documentElement.setAttribute("data-nav-ready", "");
+}
+
+/** 言語の切り替え。 */
+function langToggle() {
   const wrap = document.createElement("div");
   wrap.className = "chrome-switch";
   wrap.setAttribute("role", "group");
   wrap.setAttribute("aria-label", "言語 / Language");
 
-  const here = document.documentElement.lang || "ja";
+  const here = currentLang();
+  const there = counterpartPath();
   for (const [value, label] of [["ja", "日本語"], ["en", "EN"]]) {
     const a = document.createElement("a");
     a.textContent = label;
     a.dataset.value = value;
-    a.href = value === here ? "#" : alt.getAttribute("href");
-    if (value === here) a.setAttribute("aria-current", "true");
-    else
+    a.setAttribute("lang", value);
+    if (value === here) {
+      a.href = location.pathname;
+      a.setAttribute("aria-current", "true");
+    } else {
+      a.href = there;
       a.addEventListener("click", () => {
         try {
           localStorage.setItem(LANG_KEY, value);
@@ -147,6 +196,7 @@ function langToggle() {
           /* 覚えられなくても遷移はする */
         }
       });
+    }
     wrap.appendChild(a);
   }
   return wrap;
@@ -193,6 +243,7 @@ function fixSearchShortcut() {
 }
 
 function start() {
+  filterSidebarByLang();
   trackCurrentSection(buildSectionLinks());
   buildControls();
   fixSearchShortcut();

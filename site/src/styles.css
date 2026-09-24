@@ -899,3 +899,14 @@ form.observablehq-input > label {
   flex-direction: column;
 }
 #observablehq-sidebar > ol:last-of-type { margin-bottom: 0; }
+
+/* ------------------------------------------------- 言語による絞り込み */
+/* 設定には日英の両方のページを並べてあり、chrome.js がいま開いている
+ * 言語のものだけ残す。**絞り終わるまで一覧を出さない** ── 出しておくと、
+ * 開いた瞬間だけ12項目が並んで、直後に半分消える。
+ *
+ * `data-js` が付くのは theme-boot.js が動いたときだけ。
+ * **JS が動かない環境では隠さない**（隠したままになると、行き先が
+ * 1つも見えなくなる。両言語が並ぶ方がまだ使える） */
+:root[data-js] #observablehq-sidebar > ol { visibility: hidden; }
+:root[data-nav-ready] #observablehq-sidebar > ol { visibility: visible; }
