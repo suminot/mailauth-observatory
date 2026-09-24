@@ -51,8 +51,14 @@ P1 は 3,818 社を確定したが、**official_url が取れたのは約 52%**�
   - **鍵が要らない。** doctor の `OFFICIAL_URL_SOURCES` では既に
     `wikidata_identity: None`（認証不要）として扱われている
 
-被覆率がどこまで上がるかは実測してから書く。Wikidata の国内上場企業の
+被覆率がどこまで上がるかは**まだ測れていない。** Wikidata の国内上場企業の
 網羅は米国の小型株より良いはずだが、推定である。
+
+**この開発環境からは測れない。** WDQS も wikidata.org 本体も 403 を返す
+（`Please respect our robot policy`）。User-Agent の問題ではなく
+**出口 IP が弾かれている** ── 素の項目取得でも同じく 403 になる。
+Actions からは別の IP なので通る（米国側の実測 4,199行 / website 3,975件は
+そこで取ったもの）。**測るなら Actions で回すこと。**
 
 **b. 起点の無い企業の数を gold と公開サイトに出す。** `StatsOverall` には
 `total_entities` / `total_domains` / `observed_domains` があるが、
@@ -72,7 +78,13 @@ SEC の `company_tickers.json` は CIK ↔ ティッカーを持ち、Wikidata �
 
 ---
 
-## 2. 時間切れで残るのは CT のキャッシュだけ
+## 2. 時間切れで残るのは CT のキャッシュだけ ── **一部対応済み**
+
+> P1 の補完（gBizINFO / 法人番号 / SEC / EDINET）も持ち越すようにした。
+> 月で区切り、CT とは別の鍵・別の場所にしてある（`data/cache` をまとめて
+> 指すと、復元の順番で新しい CT に古いものを被せる）。**P4 の途中から
+> 再開する話は未着手。** 以下は直す前の記録。
+
 
 `monthly.yml` で `if: always()` が付いているのは「CT ログのキャッシュを保存」
 （step 10）だけである。P1 の出力、P3 の出力、P4 の bronze はジョブが
@@ -318,7 +330,7 @@ Alt-K で検索欄に合う、横はみ出し 0、コンソールエラー 0。�
 | 順 | 項目 | 変わること | 大きさ |
 |---|---|---|---|
 | ~~1~~ | ~~3 P4（と P3）の並行化~~ **済** | P4 4 時間 36 分 → 約 35 分の見込み（qps 80 が上限として効きはじめる手前） | resolver + P4 + P3 + 検査 |
-| 2 | 2a gBizINFO のキャッシュを Actions に乗せる | P1 13 分 → 1 分 | workflow 数行 |
+| ~~2~~ | ~~2a gBizINFO のキャッシュを Actions に乗せる~~ **済** | 同じ月の流し直しで P1 13 分 → 1 分 | workflow |
 | 3 | 1a Wikidata 法人番号 → 公式サイト | 分母が半分から全体に近づく | P1 + SPARQL 1 本 + 検査 |
 | 4 | 1b/1c 起点の無い企業数を gold・サイト・doctor に出す | 読み手が分母を知る | P7 / P8 / site |
 | 5 | 2b/2c 工程の保存と P4 の再開 | 時間切れで成果が消えない | workflow + P4 |

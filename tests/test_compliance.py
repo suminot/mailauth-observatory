@@ -1614,3 +1614,66 @@ def test_the_sample_numbers_match_the_published_contract():
 
 
 _DATE_RE = __import__("re").compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _monthly_steps() -> list[dict]:
+    import yaml
+
+    text = (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(encoding="utf-8")
+    return yaml.safe_load(text)["jobs"]["measure"]["steps"]
+
+
+def test_the_expensive_lookups_survive_between_runs():
+    """**高くついた結果を、時間切れで捨てない。**
+
+    2026-09 の国内計測で、P1 は12分47秒かかった。その大半は gBizINFO を
+    5 qps で 3,818社ぶん引く時間で、母集団そのものの取得は一瞬で終わっている。
+    同じ月を流し直すたびに払い直すのは、相手の API にも失礼である。
+
+    **月で区切る。** 企業の公式サイトは変わりうるので、月をまたいで使い回すと
+    古い URL で固定され、**しかも数字は動かないので気付けない**（CT ログと
+    同じ理屈）。月を跨ぐ復元はしない。
+
+    **CT ログとは別の鍵で、別の場所を持ち越す。** `data/cache` をまとめて
+    指すと、復元の順番によっては新しい CT のキャッシュに古いものを被せる。
+    """
+    steps = _monthly_steps()
+    by_name = {s.get("name", ""): s for s in steps}
+
+    restore = by_name.get("補完のキャッシュを復元")
+    save = by_name.get("補完のキャッシュを保存")
+    assert restore and save, "補完のキャッシュを持ち越していない（P1 が毎回12分かかる）"
+
+    run_id = "${{ steps.run.outputs.id }}"
+    for step in (restore, save):
+        key = step["with"]["key"]
+        assert run_id in key, f"鍵 {key!r} が月で区切られていない。古い URL で固定される"
+    prefix = restore["with"]["restore-keys"].strip()
+    assert run_id in prefix, (
+        f"restore-keys {prefix!r} が月を跨いで当たる。先月の公式サイトを今月として使う"
+    )
+
+    # **時間切れでも残す。** 後続の工程で落ちても P1 の結果は失わない
+    assert save.get("if") == "always()", "保存が成功時だけになっている"
+
+    # 保存は P1 の直後（P2 より前）
+    order = [s.get("name", "") for s in steps]
+    assert order.index("補完のキャッシュを復元") < order.index("P1 母集団確定")
+    assert order.index("P1 母集団確定") < order.index("補完のキャッシュを保存")
+    assert order.index("補完のキャッシュを保存") < order.index("P2 ドメイン候補生成")
+
+    # **CT ログの置き場と重ならないこと。** 重なると復元の順で上書きが起きる
+    ct = {
+        p.strip()
+        for name in ("CT ログのキャッシュを復元", "CT ログのキャッシュを保存")
+        for p in by_name[name]["with"]["path"].splitlines()
+        if p.strip()
+    }
+    for step in (restore, save):
+        paths = {p.strip() for p in step["with"]["path"].splitlines() if p.strip()}
+        for a in paths:
+            for b in ct:
+                assert not (a == b or a.startswith(b + "/") or b.startswith(a + "/")), (
+                    f"補完のキャッシュ {a!r} が CT ログの {b!r} と重なっている。"
+                    "復元の順番によっては新しい方に古いものを被せる"
+                )

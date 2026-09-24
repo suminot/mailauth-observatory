@@ -114,6 +114,32 @@ jobs:
       # 各工程は失敗しても続ける。**途中で止めると manifest が揃わず、
       # どこで何件落ちたかが分からなくなる**（原則4）。
       # 最終的な成否は manifest を集めて判断する。
+      # 補完（enrich）のキャッシュを実行間で持ち越す。**P1 の所要時間を
+      # 決めているのはここである。** 2026-09 の国内計測で P1 は12分47秒
+      # かかったが、その大半は gBizINFO を 5 qps で 3,818社ぶん引く時間で、
+      # 母集団そのものの取得（EDINET の zip）は一瞬で終わっている。
+      #
+      # **キャッシュは月で区切る。** 企業の公式サイトは変わりうるので、
+      # 月をまたいで使い回すと古い URL で固定され、しかも数字は動かないので
+      # 気付けない（CT ログと同じ理屈）。**月を跨ぐ復元はしない** ──
+      # restore-keys を当月の前方一致だけにしてある。
+      #
+      # 効くのは同じ月の流し直しで、まさに今それを繰り返している。
+      - name: 補完のキャッシュを復元
+        uses: actions/cache/restore@v4
+        with:
+          # **crtsh は入れない。** 別の鍵で別に持ち越しており、ここに
+          # `data/cache` をまとめて書くと、復元の順番によっては
+          # 新しい CT のキャッシュに古いものを被せてしまう
+          path: |
+            data/cache/gbizinfo
+            data/cache/houjin_bangou
+            data/cache/sec_edgar
+            data/cache/edinet
+          key: enrich-${{ steps.run.outputs.id }}-${{ github.run_id }}
+          restore-keys: |
+            enrich-${{ steps.run.outputs.id }}-
+
       - name: P1 母集団確定
         continue-on-error: true
         run: |
@@ -121,6 +147,19 @@ jobs:
             --config "${{ github.event.inputs.population || 'configs/populations/jp-all-listed.yaml' }}" \
             --run "${{ steps.run.outputs.id }}" \
             ${{ github.event.inputs.limit && format('--limit {0}', github.event.inputs.limit) || '' }}
+
+      # **P1 の直後に保存する。** 後続の工程で時間切れになっても、
+      # 12分かけて集めた補完結果は残る（CT ログと同じ考え方）
+      - name: 補完のキャッシュを保存
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/cache/gbizinfo
+            data/cache/houjin_bangou
+            data/cache/sec_edgar
+            data/cache/edinet
+          key: enrich-${{ steps.run.outputs.id }}-${{ github.run_id }}
 
       - name: P2 ドメイン候補生成
         continue-on-error: true
