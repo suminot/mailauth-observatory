@@ -32,11 +32,40 @@ FORBIDDEN_TERMS: dict[str, str] = {
     "放置企業": "ドメインの分類語（neglected）を企業の評価に転用しない",
 }
 
+#: 英語ページ用。**日本語だけ検査していると、英語版が無法地帯になる。**
+#: 規約は法務要件なので、出す言語が増えたら検査も増やす。
+#: 語境界で照合する（`insecure` が他の語の一部に埋まる誤検出を避ける）。
+FORBIDDEN_TERMS_EN: dict[str, str] = {
+    "dangerous": "state the observed fact and what the standard says about it",
+    "insecure": "describe the record, not the company",
+    "vulnerable": "write what was observed (p=none, for example) and its meaning",
+    "unprotected": "avoid assertions; say what could and could not be observed",
+    "defenseless": "avoid assertions",
+    "negligent": "do not write subjective judgements about an organisation",
+    "careless": "do not write subjective judgements about an organisation",
+    "worst": "do not rank",
+    "ranking": "do not rank; publish a checklist of standards met",
+    "leaderboard": "do not rank",
+    "unsafe": "describe the record, not the company",
+    "security score": "do not produce an overall score",
+    "overall score": "do not produce an overall score",
+    "grade": "do not assign grades; publish a checklist of standards met",
+}
+
 #: A〜F のグレード表記。総合評価に見えるので使わない
 GRADE_PATTERN = re.compile(r"(?<![A-Za-z0-9])[A-F][+\-]?\s*(?:評価|ランク|グレード|判定)")
 
-#: 常時表示しなければならない限界の明示
-DISCLAIMER = "本サイトは標準準拠の計測であり、総合的セキュリティ評価ではない"
+#: 常時表示しなければならない限界の明示。**言語ごとに持つ。**
+DISCLAIMERS: dict[str, str] = {
+    "ja": "本サイトは標準準拠の計測であり、総合的セキュリティ評価ではない",
+    "en": (
+        "This site measures conformance to published standards "
+        "and is not an overall security assessment"
+    ),
+}
+
+#: 既定（日本語）。既存の呼び出しがそのまま動くように残す
+DISCLAIMER = DISCLAIMERS["ja"]
 
 #: 3段階の配色。赤の面積を最小化するため「未対応」はグレー寄りの赤にする
 COLOR_ROLES = {
@@ -54,11 +83,22 @@ class Violation:
 
 
 def check(text: str) -> list[Violation]:
-    """禁止語彙とグレード表記を探す。
+    """禁止語彙とグレード表記を探す。日本語と英語の両方を見る。
 
     見つかった語の周辺も返す。どこを直せばよいか分からない指摘は直されない。
     """
     out: list[Violation] = []
+    for term, advice in FORBIDDEN_TERMS_EN.items():
+        # 英語は語境界で照合し、大文字小文字を区別しない
+        for match in re.finditer(rf"\b{re.escape(term)}\b", text, re.IGNORECASE):
+            start = max(match.start() - 30, 0)
+            out.append(
+                Violation(
+                    term=match.group(0),
+                    advice=advice,
+                    excerpt=text[start : match.end() + 30].replace("\n", " "),
+                )
+            )
     for term, advice in FORBIDDEN_TERMS.items():
         for match in re.finditer(re.escape(term), text):
             start = max(match.start() - 30, 0)
@@ -81,13 +121,17 @@ def check(text: str) -> list[Violation]:
     return out
 
 
-def has_disclaimer(text: str) -> bool:
+def has_disclaimer(text: str, lang: str = "ja") -> bool:
     """限界の明示が含まれているか。
 
     表記ゆれを許すため、句読点と空白を落として比較する。
+    英語は大文字小文字も揃える。
     """
-    normalized = re.sub(r"[\s、。,.]", "", text)
-    return re.sub(r"[\s、。,.]", "", DISCLAIMER) in normalized
+
+    def norm(s: str) -> str:
+        return re.sub(r"[\s、。,.]", "", s).lower()
+
+    return norm(DISCLAIMERS[lang]) in norm(text)
 
 
 def describe_policy(policy: str | None, *, has_rua: bool = True) -> str:

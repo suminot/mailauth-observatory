@@ -425,6 +425,17 @@ def run_report(
         raise typer.Exit(code=1)
 
 
+#: 英語ページの前書き。**フッタの限界の明示は言語ごとに要る**
+#: （設定ファイルのフッタは日本語なので、英語ページは自分で持つ）。
+_EN_FRONT_MATTER = (
+    "---\n"
+    "title: Change log\n"
+    "footer: This site measures conformance to published standards and is not "
+    'an overall security assessment. Data is <a href="/en/terms">CC0</a>.\n'
+    "---\n\n"
+)
+
+
 @app.command("changelog")
 def changelog_cmd(
     out: Annotated[
@@ -455,15 +466,25 @@ def changelog_cmd(
         typer.echo(to_json(entries))
         return
 
-    text = to_markdown(entries)
     if stdout:
-        typer.echo(text)
+        typer.echo(to_markdown(entries))
         return
 
     target = out or config_path("site/src/changelog.md")
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(text, encoding="utf-8")
+    target.write_text(to_markdown(entries), encoding="utf-8")
     typer.echo(f"→ {target}（{len(entries)} か月分）")
+
+    # **英語版も同時に出す。** 変更履歴が片方の言語にしか無いと、
+    # もう片方で読んだ人は「数字が動いた理由」を確かめる場所を持たない。
+    # `--out` を指定した場合は書かない（出力先が1つ指定されているため）
+    if out is None:
+        en_target = config_path("site/src/en/changelog.md")
+        en_target.parent.mkdir(parents=True, exist_ok=True)
+        en_target.write_text(
+            _EN_FRONT_MATTER + to_markdown(entries, lang="en"), encoding="utf-8"
+        )
+        typer.echo(f"→ {en_target}")
 
     pending = [e.month for e in entries if e.has_measurement_change]
     if pending:

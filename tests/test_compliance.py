@@ -981,3 +981,74 @@ def test_both_color_schemes_define_the_whole_palette():
         "端末の設定が明るいときの指定が無い。"
         "属性で選んだ場合しか効かないと、何も選んでいない人に届かない"
     )
+
+
+def _jp_pages() -> set[str]:
+    root = repo_root() / "site" / "src"
+    return {p.stem for p in root.glob("*.md")}
+
+
+def _en_pages() -> set[str]:
+    root = repo_root() / "site" / "src" / "en"
+    return {p.stem for p in root.glob("*.md")}
+
+
+def test_every_page_exists_in_both_languages():
+    """**言語の切り替えは道の形で決めている**（`/x` ↔ `/en/x`）。
+
+    対応表を持たないので、片方にしか無いページがあると切り替えが
+    404 に飛ぶ。ページを足すときは両方に足す。
+    """
+    only_ja = sorted(_jp_pages() - _en_pages())
+    only_en = sorted(_en_pages() - _jp_pages())
+    assert not only_ja, f"日本語にしか無いページ: {only_ja}"
+    assert not only_en, f"英語にしか無いページ: {only_en}"
+
+
+def test_english_pages_carry_the_english_disclaimer():
+    """**限界の明示は言語ごとに要る。**
+
+    設定ファイルのフッタは日本語なので、英語ページは front matter で
+    自分のフッタを持つ。片方だけ限界の明示が無いと、その言語で読んだ人は
+    制約を知らないまま数字を受け取ることになる。
+    """
+    from mailauth.p8_publish import vocabulary
+
+    missing = []
+    for path in sorted((repo_root() / "site" / "src" / "en").glob("*.md")):
+        text = path.read_text(encoding="utf-8")
+        head = text.split("---", 2)[1] if text.startswith("---") else ""
+        if not vocabulary.has_disclaimer(head, "en"):
+            missing.append(path.name)
+    assert not missing, (
+        f"英語ページのフッタに限界の明示が無い: {missing}。"
+        f"front matter に footer を書くこと（{vocabulary.DISCLAIMERS['en']}）"
+    )
+
+
+def test_the_language_switch_does_not_keep_a_lookup_table():
+    """対応表を持つと、ページを足したときに片方だけ増えて切り替えが壊れる。
+
+    道の形（`/en/` を足すか外すか）で決めていること。
+    """
+    chrome = (repo_root() / "site" / "src" / "chrome.js").read_text(encoding="utf-8")
+    assert "counterpartPath" in chrome, "もう片方の言語の住所を求める処理が無い"
+    assert "/en" in chrome, "道の形で判定していない"
+
+
+def test_the_sidebar_is_not_hidden_when_scripts_do_not_run():
+    """**JS が動かない環境で行き先が1つも見えなくなるのを防ぐ。**
+
+    一覧は日英の両方を出力しており、絞り込みを待つあいだ隠している。
+    その指定が `data-js`（theme-boot.js が付ける）に掛かっていないと、
+    スクリプトが動かない環境では隠れたままになる。
+    """
+    css = (repo_root() / "site" / "src" / "styles.css").read_text(encoding="utf-8")
+    assert ":root[data-js] #observablehq-sidebar > ol" in css, (
+        "一覧を隠す指定が data-js に掛かっていない"
+    )
+    assert ":root[data-nav-ready] #observablehq-sidebar > ol" in css, (
+        "絞り込み後に見せる指定が無い"
+    )
+    boot = (repo_root() / "site" / "src" / "theme-boot.js").read_text(encoding="utf-8")
+    assert "data-js" in boot, "theme-boot.js が data-js を付けていない"

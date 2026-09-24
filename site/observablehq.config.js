@@ -7,12 +7,20 @@
 
 export default {
   title: "Email DNS Monitor",
+  // 日英の両方を並べる。**表示の絞り込みは chrome.js が行う**
+  // （いま開いている言語のものだけ残す）。Framework の一覧は1つしか
+  // 持てないので、両方載せたうえで隠す
   pages: [
     { name: "業種別", path: "/sectors" },
     { name: "方法論", path: "/methodology" },
     { name: "データ", path: "/data" },
     { name: "免責事項・利用規約", path: "/terms" },
     { name: "変更履歴", path: "/changelog" },
+    { name: "By sector", path: "/en/sectors" },
+    { name: "Methodology", path: "/en/methodology" },
+    { name: "Data", path: "/en/data" },
+    { name: "Terms and disclaimer", path: "/en/terms" },
+    { name: "Change log", path: "/en/changelog" },
   ],
   root: "src",
   theme: "dark",
@@ -30,11 +38,13 @@ export default {
     '?family=Chakra+Petch:wght@500;600;700' +
     '&family=Noto+Sans+JP:wght@400;500;700' +
     '&family=JetBrains+Mono:wght@400;700&display=swap">\n' +
-    '<link rel="stylesheet" href="./styles.css">\n' +
+    // **絶対パスにする。** 相対にすると /en/ のページでは
+    // `/en/styles.css` を探しに行き、ビルドが「import not found」で落ちる
+    '<link rel="stylesheet" href="/styles.css">\n' +
     // **表示前に配色を決める。** 後から当てると、暗い設定の人に一瞬白い
     // 画面が出る（いわゆる flash）。ここだけは同期で読み込む
-    '<script src="./theme-boot.js"></script>\n' +
-    '<script type="module" src="./chrome.js"></script>',
+    '<script src="/theme-boot.js"></script>\n' +
+    '<script type="module" src="/chrome.js"></script>',
   // 限界の明示。全ページの下端に出る
   footer:
     "本サイトは標準準拠の計測であり、総合的セキュリティ評価ではない。" +

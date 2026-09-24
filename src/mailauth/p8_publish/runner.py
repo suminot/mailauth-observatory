@@ -403,7 +403,9 @@ def _write_site_data(
             "disclaimer": (cfg.get("site") or {}).get("disclaimer"),
             # ダウンロードは gold を直接指す。データを二重に持たない
             "parquet_path": "gold/month=<YYYY-MM>/",
-            # 検出できない製品があることをサイト側にも渡す
+            # 検出できない製品があることをサイト側にも渡す。
+            # **英語版にも同じ限界を出す。** 片方だけ限界の明示が無いと、
+            # その言語で読んだ人は制約を知らないまま数字を受け取ることになる
             "detection_limits": [
                 "MX を変更せず API / OAuth で連携する製品は DNS に痕跡を残さないため、"
                 "検出されなかったことは使っていないことを意味しない",
@@ -411,6 +413,16 @@ def _write_site_data(
                 "検出できなかったことは未設定の証明にならない",
                 "観測できなかったドメインは率の分母から外している。"
                 "「取れなかった」と「無かった」は別の事実として扱う",
+            ],
+            "detection_limits_en": [
+                "Products that integrate over an API or OAuth without changing the MX "
+                "record leave no trace in DNS, so not detecting one does not mean it "
+                "is not in use",
+                "DKIM selectors cannot be enumerated from DNS, so not finding one "
+                "among the known selectors is not proof that DKIM is unset",
+                "Domains that could not be observed are left out of the denominator. "
+                "\u201ccould not be observed\u201d and \u201cwas not there\u201d are "
+                "treated as different facts",
             ],
             # **除外した件数を公開する。** 黙って分母から抜くと、率が理由の
             # 説明できない形で動き、読み手には計測失敗と区別が付かない

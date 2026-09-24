@@ -25,13 +25,15 @@ const C = 2 * Math.PI * R;
  * @param observed 観測できたドメイン数
  * @param total    計測対象にしたドメイン数
  */
-export function coverageRing(observed, total) {
+export function coverageRing(observed, total, lang = "ja") {
   const wrap = document.createElement("div");
+
+  const t = lang === "en" ? EN : JA;
 
   // **取れていないことを「0%」と描かない。** 未計測と 0 は別（原則5）
   if (!total) {
     wrap.className = "coverage-empty";
-    wrap.textContent = "この母集団と月の観測はまだありません。";
+    wrap.textContent = t.empty;
     return wrap;
   }
 
@@ -51,14 +53,28 @@ export function coverageRing(observed, total) {
       <text class="big" x="${c}" y="${c - 1}" text-anchor="middle">${(ratio * 100).toFixed(1)}%</text>
       <text class="cap" x="${c}" y="${c + 17}" text-anchor="middle">OBSERVED</text>
     </svg>
-    <div class="coverage-note">
-      <p><strong>${fmt(got)}</strong> / ${fmt(total)} ドメインから応答を得ました。</p>
-      <p>残り <strong>${fmt(missing)}</strong> は SERVFAIL・タイムアウト等で
-         <strong>何も取れなかったドメイン</strong>です。未対応という意味ではありません。</p>
-      <p>このページの率は、すべて ${fmt(got)} を分母にしています。</p>
-    </div>`;
+    <div class="coverage-note">${t.note(fmt(got), fmt(total), fmt(missing))}</div>`;
   return wrap;
 }
+
+const JA = {
+  empty: "この母集団と月の観測はまだありません。",
+  note: (got, total, missing) =>
+    `<p><strong>${got}</strong> / ${total} ドメインから応答を得ました。</p>
+     <p>残り <strong>${missing}</strong> は SERVFAIL・タイムアウト等で
+        <strong>何も取れなかったドメイン</strong>です。未対応という意味ではありません。</p>
+     <p>このページの率は、すべて ${got} を分母にしています。</p>`,
+};
+
+const EN = {
+  empty: "There is no observation for this population and month yet.",
+  note: (got, total, missing) =>
+    `<p>A response was obtained from <strong>${got}</strong> of ${total} domains.</p>
+     <p>The remaining <strong>${missing}</strong> returned SERVFAIL, timed out or
+        otherwise <strong>gave nothing back</strong>. That does not mean they are
+        unconfigured.</p>
+     <p>Every share on this page uses ${got} as its denominator.</p>`,
+};
 
 function fmt(n) {
   return n === null || n === undefined ? "—" : n.toLocaleString("ja-JP");
