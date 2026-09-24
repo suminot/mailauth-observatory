@@ -713,3 +713,95 @@ def test_ドメインごとに書き出しを確定させている():
     assert "writer.checkpoint()" in source, (
         "1ドメインごとにフレームを閉じていない。**再開の根拠が無くなる**"
     )
+
+
+# ===========================================================================
+# 件数の単位を揃える
+#
+# **input はドメイン数、success はクエリ数だった。** 工程レポートの
+# 「工程間の件数」表は p4→p5 で 2,773（クエリ）と 2,790（レコード）を
+# 並べることになり、どこで何件落ちたかという表の意図が読めなかった。
+
+
+class _PartialBackend(FakeBackend):
+    """ドメインごとに引ける・引けないを変えるバックエンド。"""
+
+    def __init__(self, dead: set[str], partial: set[str]) -> None:
+        super().__init__()
+        self.dead = dead
+        self.partial = partial
+
+    def query(self, query):
+        self.stats["queries"] += 1
+        self.seen.append((query.name, query.purpose))
+        name = query.name
+        if any(d in name for d in self.dead):
+            return make_answer(name, query.rtype, [], rcode="SERVFAIL", observed=False)
+        if any(d in name for d in self.partial) and query.rtype == "TXT":
+            return make_answer(name, query.rtype, [], rcode="SERVFAIL", observed=False)
+        return make_answer(name, query.rtype, ["v=spf1 -all"])
+
+
+def _five_domains() -> None:
+    write_domains(
+        [
+            {"domain_id": f"d:{i}", "entity_id": f"jp:{i}", "domain": f"d{i}.example.jp"}
+            for i in range(5)
+        ]
+    )
+
+
+def test_件数はドメインで数える():
+    """**クエリ数と混ぜない。** 1ドメイン約58本なので、混ぜると桁が変わる。"""
+    _five_domains()
+    result = run_p4(run_id=RUN, backend=_PartialBackend(dead={"d0."}, partial={"d1."}))
+
+    counts = result["counts"]
+    assert counts["input"] == 5
+    # 成功がクエリ数なら数百になる
+    assert counts["success"] <= 5, f"クエリ数で数えている: {counts}"
+    assert counts["success"] == 4  # d0 以外
+    assert counts["failed"] == 1  # d0 は1本も引けなかった
+
+
+def test_足すと入力に戻る():
+    """**分母が閉じていること**（原則4）。どこかに消えた件数が無い。"""
+    _five_domains()
+    counts = run_p4(
+        run_id=RUN, backend=_PartialBackend(dead={"d0."}, partial={"d1."})
+    )["counts"]
+    assert counts["success"] + counts["failed"] + counts["skipped"] == counts["input"]
+
+
+def test_一部だけ引けたドメインが数字から消えない():
+    """**半分しか見ていないことが「成功」に埋もれない**（原則5）。"""
+    _five_domains()
+    d = run_p4(run_id=RUN, backend=_PartialBackend(dead={"d0."}, partial={"d1."}))[
+        "breakdown"
+    ]["domains"]
+
+    assert d["fully_observed"] == 3
+    assert d["partially_observed"] == 1, "一部だけ引けたドメインを分けていない"
+    assert d["none_observed"] == 1
+    assert d["fully_observed"] + d["partially_observed"] + d["none_observed"] == 5
+
+
+def test_1ドメインの失敗がクエリの本数だけ膨らまない():
+    """**1ドメインが全滅したとき、失敗は1件である。**
+
+    以前はクエリごとに数えていたので、セレクタが50本あれば失敗も50件に
+    見えた。「何件のドメインが測れなかったか」が読めない。
+    """
+    _five_domains()
+    result = run_p4(run_id=RUN, backend=_PartialBackend(dead={"d0."}, partial=set()))
+    assert result["counts"]["failed"] == 1
+    # クエリ数は別に残っている
+    assert result["breakdown"]["queries_total"] > 5
+
+
+def test_クエリ数は別に残っている():
+    """ドメインで数えることと、クエリ数を捨てることは別である。"""
+    _five_domains()
+    b = run_p4(run_id=RUN, backend=FakeBackend())["breakdown"]
+    assert b["queries_total"] > 0
+    assert sum(b["by_rcode"].values()) == b["queries_total"]

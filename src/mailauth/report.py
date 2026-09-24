@@ -149,8 +149,11 @@ def collect(run_id: str) -> RunReport:
                 "to": after.phase,
                 "out": before.success,
                 "in": after.input,
-                # 出力と入力がずれるのは正常（P3 の絞り込み、P4 の1ドメイン
-                # 複数クエリなど）。ずれ自体ではなく、その大きさを見る
+                # 出力と入力がずれるのは正常（P3 の絞り込みなど）。
+                # ずれ自体ではなく、その大きさを見る。
+                # **どの工程も件数の単位は揃えてある** ── P4 が成功を
+                # クエリ数で数えていた頃は、この表が 2,773（クエリ）と
+                # 2,790（レコード）を並べていて意味を成さなかった
                 "delta": (
                     (after.input - before.success)
                     if after.input is not None and before.success is not None
@@ -189,7 +192,8 @@ def to_markdown(report: RunReport, *, now: dt.datetime | None = None) -> str:
             "## 工程間の件数",
             "",
             "どこで何件落ちたかを見るための表である。出力と入力がずれること自体は",
-            "正常で（P3 の絞り込み、P4 の1ドメイン複数クエリなど）、見るのはその大きさ。",
+            "正常で（P3 の絞り込みなど）、見るのはその大きさ。",
+            "件数の単位はどの工程もドメインで揃えてある。",
             "",
             "| 前 | 後 | 前の成功 | 後の入力 | 差 |",
             "|---|---|---|---|---|",

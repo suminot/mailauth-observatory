@@ -1869,3 +1869,123 @@ def test_p1_の結果を実行の途中で読める():
     assert "wikidata_identity" in body, (
         "**この実行で一番知りたい数字**（起点がどれだけ埋まったか）が出ていない"
     )
+
+
+# ===========================================================================
+# 文書とコードのずれを、文字列ではなく突き合わせで捕まえる
+#
+# 「zdns が主力」と DESIGN.md が書いている間、既定は dnspython だった。
+# **文書は誰も落とさないので、ずれたまま何か月も残る。**
+
+
+def test_既定のバックエンドが文書と一致する():
+    """DESIGN.md のバックエンド表が、実際の `--method` の既定と合うこと。"""
+    import inspect
+    import re
+
+    from mailauth import cli
+
+    src = inspect.getsource(cli.p4_measure)
+    m = re.search(r'typer\.Option\("--method".*?\)\s*,?\s*\]\s*=\s*"(\w+)"', src, re.S)
+    assert m, "--method の既定が読み取れない"
+    default = m.group(1)
+
+    design = (repo_root() / "DESIGN.md").read_text(encoding="utf-8")
+    row = next(
+        (ln for ln in design.splitlines() if ln.startswith(f"| `{default}` |")), None
+    )
+    assert row, f"DESIGN.md のバックエンド表に {default} の行が無い"
+    assert "既定" in row, (
+        f"**既定は {default} なのに、DESIGN.md がそう書いていない**: {row}"
+    )
+    # 既定でないものを「主力」と呼ばない
+    for line in design.splitlines():
+        if line.startswith("| `") and "**主力**" in line:
+            assert f"| `{default}` |" in line, (
+                f"既定でないバックエンドを主力と書いている: {line}"
+            )
+
+
+def test_ジョブの上限が文書と一致する():
+    """運営者向けの文書が実際の打ち切り時間と合うこと。
+
+    **5時間30分で切っているのに6時間と読ませると、見積りが30分ずれる。**
+    """
+    import yaml
+
+    wf = yaml.safe_load(
+        (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(encoding="utf-8")
+    )
+    minutes = wf["jobs"]["measure"]["timeout-minutes"]
+    hours = minutes / 60
+    text = (repo_root() / "OWNER-TASKS.md").read_text(encoding="utf-8")
+    assert f"{int(hours)}時間{int(minutes % 60)}分" in text, (
+        f"OWNER-TASKS.md が実際の打ち切り（{minutes}分）に触れていない"
+    )
+
+
+def test_csp_が実際の読み先を覆っている():
+    """**CSP は、いま読んでいる先をそのまま書いたものである。**
+
+    絞るためではなく、知らないうちに増えたら止まるようにするために置く。
+    設定に外部の読み先を足して CSP を直し忘れると、公開してから画面が
+    壊れる（配色も字も当たらない）。
+    """
+    import re
+
+    headers = (repo_root() / "site" / "static" / "_headers").read_text(encoding="utf-8")
+    csp = next(
+        (
+            ln.split(":", 1)[1].strip()
+            for ln in headers.splitlines()
+            if ln.startswith(" ") and ln.strip().startswith("Content-Security-Policy:")
+        ),
+        None,
+    )
+    assert csp, "CSP が無い"
+    for directive in ("default-src", "style-src", "font-src", "script-src"):
+        assert directive in csp, f"{directive} が無い"
+    # 埋め込みを禁じる。公開サイトを別のページの枠に入れさせない
+    assert "frame-ancestors 'none'" in csp
+
+    config = (repo_root() / "site" / "observablehq.config.js").read_text(encoding="utf-8")
+    origins = {
+        f"https://{m}" for m in re.findall(r"https://([a-z0-9.-]+)", config)
+    }
+    for origin in origins:
+        assert origin in csp, (
+            f"**{origin} を読んでいるのに CSP が許していない。** "
+            "公開すると画面が壊れる"
+        )
+
+
+def test_hsts_を出している():
+    """**平文へ落とされる余地を残さない。**
+
+    preload は付けない ── 一度載せると外すのに時間がかかるので、
+    載せる判断は運営者がする。
+    """
+    headers = (repo_root() / "site" / "static" / "_headers").read_text(encoding="utf-8")
+    # **注記の行を拾わない。** ヘッダは字下げされた行にだけ書いてある
+    line = next(
+        (
+            ln
+            for ln in headers.splitlines()
+            if ln.startswith(" ") and "Strict-Transport-Security" in ln
+        ),
+        None,
+    )
+    assert line, "HSTS が無い"
+    assert "max-age=" in line and "includeSubDomains" in line
+    assert "preload" not in line, "preload は運営者が判断する"
+
+
+def test_ブラウザ検査が本番のヘッダを付けている():
+    """**CSP を文字列で書いただけでは、効くかどうか分からない。**"""
+    script = (repo_root() / "site" / "scripts" / "check-browser.mjs").read_text(
+        encoding="utf-8"
+    )
+    assert "_headers" in script, "本番のヘッダを読んでいない"
+    assert "Content Security Policy" in script or "Refused to" in script, (
+        "CSP 違反を拾っていない（違反はコンソールにしか出ない）"
+    )

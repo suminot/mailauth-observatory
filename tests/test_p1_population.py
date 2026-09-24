@@ -410,7 +410,11 @@ def test_引けなかったことを空と区別する(monkeypatch, tmp_path):
         _fill_missing_urls_from_wikidata([_jp_entity("3" * 13)], cfg, manifest)
 
     codes = [w["code"] for w in manifest.to_dict()["warnings"]]
-    assert "ENRICH_SKIPPED_WIKIDATA" in codes, "引けなかったことが記録されていない"
+    # **引いて失敗したのであって、引いていないのではない**（原則5）
+    assert "ENRICH_FAILED_WIKIDATA" in codes, "引けなかったことが記録されていない"
+    assert "ENRICH_SKIPPED_WIKIDATA" not in codes, (
+        "引いて失敗したのを「引いていない」と同じ符号にしている"
+    )
 
 
 def test_1件も埋まらなければ知らせる(monkeypatch, tmp_path):
@@ -573,3 +577,69 @@ def test_遮断が子プロセスにも届くことを宣言だけで済ませ�
     assert os.environ.get("MAILAUTH_OFFLINE") == "1"
     for var in PROXY_VARS:
         assert os.environ.get(var) == DEAD_PROXY, f"{var} が行き止まりを向いていない"
+
+
+# ===========================================================================
+# 「引いていない」と「引いて失敗した」を符号で分ける
+#
+# 同じ `ENRICH_SKIPPED_*` が両方に付いていた。**符号だけでは区別できず、
+# 文面を読まないと分からない** ── 被覆率が落ちた月に「鍵が無かったのか」
+# 「相手が落ちていたのか」が一目で分からない（原則5 が警告の側で破れていた）。
+
+
+def test_引いて失敗したことを黙らせない(edinet_sample, monkeypatch):
+    """**breakdown に件数が入るだけでは気付けない。**
+
+    gBizINFO が500社ぶん失敗しても `status=success` で通り、
+    被覆率だけが静かに落ちる。「サイトが無い」のではなく「引けなかった」。
+    """
+    from mailauth.p1_population import enrich
+
+    def failing(self, bangou_list, *, limit=None):
+        result = enrich.EnrichResult()
+        result.attempted = 10
+        result.error = 10
+        return result
+
+    monkeypatch.setattr(enrich.GbizInfoClient, "fetch", failing)
+    monkeypatch.setattr(enrich.GbizInfoClient, "token", "dummy", raising=False)
+    # offline を外すと Wikidata まで引きに行く。**そこは模す**
+    # （遮断が効いているので、模さないと検査が落ちる）
+    monkeypatch.setattr("mailauth.p1_population.wikidata.run_query", lambda *a, **k: [])
+    result = run_p1("2026-08", edinet_sample, offline=False)
+
+    codes = [w["code"] for w in result["warnings"]]
+    assert "ENRICH_FAILED_GBIZINFO" in codes, (
+        "引けなかった件数が警告に出ていない。**静かに被覆率が落ちる**"
+    )
+    assert result["breakdown"]["gbizinfo"]["error"] == 10
+
+
+def test_引いていない場合は失敗と言わない(edinet_sample):
+    """鍵が無くて引いていないのを「失敗」と言わない。手当てが違う。"""
+    result = run_p1("2026-08", edinet_sample)  # offline、鍵も無い
+    codes = [w["code"] for w in result["warnings"]]
+    assert "ENRICH_SKIPPED_GBIZINFO" in codes
+    assert "ENRICH_FAILED_GBIZINFO" not in codes
+
+
+def test_符号だけで区別が付く():
+    """**文面を読まないと分からない状態にしない。**
+
+    引いて失敗した経路が `SKIPPED` を出していないことを、実装側で縛る。
+    """
+    import re
+    from pathlib import Path
+
+    from mailauth.paths import repo_root
+
+    src = (repo_root() / "src" / "mailauth" / "p1_population" / "runner.py").read_text(
+        encoding="utf-8"
+    )
+    # except 節の中で SKIPPED を出していないこと
+    for block in re.findall(r"except \w*Error as exc:(.*?)(?=\n        [a-z}]|\Z)", src, re.S):
+        assert "ENRICH_SKIPPED" not in block, (
+            f"引いて失敗した経路が SKIPPED を出している:\n{block[:200]}"
+        )
+    assert "ENRICH_FAILED_WIKIDATA" in src
+    assert Path(repo_root() / "src" / "mailauth" / "p1_population" / "runner.py").is_file()

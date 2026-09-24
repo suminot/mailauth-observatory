@@ -223,6 +223,18 @@ def _apply_enrichment(
                 if entity and values.get("official_url"):
                     entity.official_url = values["official_url"]
                     entity.official_domain = domain_from_url(values["official_url"])
+            if result.error:
+                # **breakdown に入れるだけでは気付けない。**
+                # 500社ぶん失敗しても status=success で通り、被覆率だけが
+                # 静かに落ちる。「サイトが無い」のではなく「引けなかった」
+                manifest.add_warning(
+                    "ENRICH_FAILED_GBIZINFO",
+                    count=result.error,
+                    message=(
+                        f"{result.error} 社で gBizINFO を引けなかった。"
+                        "その分 official_url が空になっている"
+                    ),
+                )
             manifest.set_breakdown(
                 gbizinfo={
                     "attempted": result.attempted,
@@ -254,6 +266,15 @@ def _apply_enrichment(
                     count=len(mismatched),
                     sample=mismatched[:5],
                     message="EDINET と国税庁で商号の表記が一致しない（EDINET 側を採用）",
+                )
+            if result.error:
+                manifest.add_warning(
+                    "ENRICH_FAILED_HOUJIN_BANGOU",
+                    count=result.error,
+                    message=(
+                        f"{result.error} 社で国税庁を引けなかった。"
+                        "その分だけ商号の裏取りができていない"
+                    ),
                 )
             manifest.set_breakdown(
                 houjin_bangou={
@@ -315,8 +336,10 @@ def _fill_missing_urls_from_wikidata(
     try:
         identity, stats = fetch_identity(query_path, key="houjin_bangou")
     except WikidataError as exc:
-        # **取れなかったことを残す。** 空を返して「0件だった」と誤解させない
-        manifest.add_warning("ENRICH_SKIPPED_WIKIDATA", message=str(exc))
+        # **引いて失敗したのであって、引いていないのではない。**
+        # 同じ符号にすると、被覆率が落ちた月に「鍵が無かったのか」
+        # 「相手が落ちていたのか」が文面を読まないと分からない（原則5）
+        manifest.add_warning("ENRICH_FAILED_WIKIDATA", message=str(exc))
         return
 
     filled = 0
@@ -911,7 +934,8 @@ def _run_sec(
             identity, identity_stats = fetch_cik_identity(identity_query)
             manifest.set_breakdown(wikidata_identity=identity_stats)
         except WikidataError as exc:
-            manifest.add_warning("ENRICH_SKIPPED_WIKIDATA", message=str(exc))
+            # 引いて失敗した。引いていないのとは別（上と同じ理由）
+            manifest.add_warning("ENRICH_FAILED_WIKIDATA", message=str(exc))
     elif wants_wikidata:
         manifest.add_warning(
             "ENRICH_SKIPPED_WIKIDATA",

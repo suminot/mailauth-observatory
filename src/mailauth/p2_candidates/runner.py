@@ -676,9 +676,24 @@ def _check_acceptance(
         ok = lo <= percentiles["p50"] <= hi
         checks["median_in_range"] = ok
         if not ok:
+            # **原因が分かっている警告は、原因の方を指す。**
+            # 起点となる公式サイトが取れなかった企業は候補ゼロになり、
+            # 中央値を押し下げる。症状（中央値が低い）だけを毎月出しても、
+            # 読み手は次に何をすればよいか分からない
+            share = zero / entities if entities else 0.0
+            cause = ""
+            if percentiles["p50"] < lo and share >= 0.25:
+                cause = (
+                    f"。ただし {entities} 社のうち {zero} 社（{share:.1%}）が候補ゼロで、"
+                    "その分が中央値を押し下げている。**中央値そのものではなく、"
+                    "起点ドメインが取れていないことが原因**"
+                )
             manifest.add_warning(
                 "ACCEPTANCE_MEDIAN_OUT_OF_RANGE",
-                message=f"1社あたり候補数の中央値 {percentiles['p50']} が想定 {lo}〜{hi} の外",
+                message=(
+                    f"1社あたり候補数の中央値 {percentiles['p50']} が想定 {lo}〜{hi} の外"
+                    + cause
+                ),
             )
 
     p90_max = acc.get("p90_per_entity_max")

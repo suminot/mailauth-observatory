@@ -42,7 +42,36 @@ const TYPES = {
 };
 
 /** dist をそのまま配る。**拡張子なしの道も .html に回す**（本番と同じ形）。 */
-function serve(root) {
+/** `site/static/_headers` の `/*` ブロックをそのまま読む。
+ *
+ * **CSP は文字列で書いただけでは確かめたことにならない。** 本番と同じ
+ * ヘッダを付けて配り、実際のページが違反しないことを見る。
+ */
+async function siteHeaders() {
+  const path = new URL("../static/_headers", import.meta.url).pathname;
+  let text;
+  try {
+    text = await readFile(path, "utf8");
+  } catch {
+    return {};
+  }
+  const out = {};
+  let inGlobal = false;
+  for (const raw of text.split("\n")) {
+    const line = raw.trimEnd();
+    if (!line || line.trimStart().startsWith("#")) continue;
+    if (!line.startsWith(" ")) {
+      inGlobal = line.trim() === "/*";
+      continue;
+    }
+    if (!inGlobal) continue;
+    const at = line.indexOf(":");
+    if (at > 0) out[line.slice(0, at).trim()] = line.slice(at + 1).trim();
+  }
+  return out;
+}
+
+function serve(root, headers = {}) {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
     let path = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, "");
@@ -52,7 +81,10 @@ function serve(root) {
       const file = join(root, candidate);
       try {
         if (!(await stat(file)).isFile()) continue;
-        res.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" });
+        res.writeHead(200, {
+          ...headers,
+          "content-type": TYPES[extname(file)] ?? "application/octet-stream",
+        });
         res.end(await readFile(file));
         return;
       } catch {
@@ -108,6 +140,14 @@ async function tap(page, sel, name) {
  */
 function watch(page, sink) {
   page.on("pageerror", (e) => sink.push(`JS 例外: ${e}`));
+  // **CSP 違反はコンソールにしか出ない。** 環境によらずこちらの落ち度なので
+  // 拾う（外部への取得の失敗一般は拾わない ── 開発環境の proxy で変わる）
+  page.on("console", (m) => {
+    const t = m.text();
+    if (m.type() === "error" && /Content Security Policy|Refused to/i.test(t)) {
+      sink.push(`CSP 違反: ${t.slice(0, 160)}`);
+    }
+  });
   page.on("response", (r) => {
     const url = new URL(r.url());
     if (url.hostname !== "127.0.0.1") return;
@@ -160,7 +200,13 @@ async function main() {
   }
   const { chromium, devices } = pw.default ?? pw;
 
-  const { server, port } = await serve(root);
+  const headers = await siteHeaders();
+  const { server, port } = await serve(root, headers);
+  check(
+    "本番のヘッダを付けて確かめている",
+    Boolean(headers["Content-Security-Policy"]),
+    "_headers から CSP を読めていない"
+  );
   const base = `http://127.0.0.1:${port}`;
   const browser = await chromium.launch({
     executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH || undefined,
