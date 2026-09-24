@@ -16,6 +16,9 @@ export default {
   ],
   root: "src",
   theme: "dark",
+  // 右の目次は出さない。**左の一覧に、開いているページの節を畳んで見せる。**
+  // 同じものが画面の両端にあると、どちらを見ればよいか毎回考えることになる
+  toc: false,
   // meta robots は HTML にしか効かない。**実体は src/_headers の
   // X-Robots-Tag** で、そちらは JSON / CSV / Parquet にも届く。
   // ここに置いてあるのは二重化で、片方の設定漏れに備えている。
@@ -27,7 +30,11 @@ export default {
     '?family=Chakra+Petch:wght@500;600;700' +
     '&family=Noto+Sans+JP:wght@400;500;700' +
     '&family=JetBrains+Mono:wght@400;700&display=swap">\n' +
-    '<link rel="stylesheet" href="./styles.css">',
+    '<link rel="stylesheet" href="./styles.css">\n' +
+    // **表示前に配色を決める。** 後から当てると、暗い設定の人に一瞬白い
+    // 画面が出る（いわゆる flash）。ここだけは同期で読み込む
+    '<script src="./theme-boot.js"></script>\n' +
+    '<script type="module" src="./chrome.js"></script>',
   // 限界の明示。全ページの下端に出る
   footer:
     "本サイトは標準準拠の計測であり、総合的セキュリティ評価ではない。" +
