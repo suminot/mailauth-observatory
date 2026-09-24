@@ -105,6 +105,17 @@ class CtResult:
 #: 増やしても qps より速くはならない
 DEFAULT_CONCURRENCY = 4
 
+#: 相手が落ちていると判断するまでに見る本数。
+#:
+#: 2026-09-24、crt.sh は**トップページごと 502 Bad Gateway** を返していた
+#: （nginx は生きていて、後ろが落ちている）。この状態で3,191ドメインを
+#: 順に投げても1件も取れない。**失敗の投げ直しに枠を使い切るだけ**で、
+#: しかも落ちている相手を叩き続けることになる。
+#:
+#: これだけ連続して1本も成功しないなら、こちらの頼み方の問題ではない。
+#: **止めて、後で出直す。**
+DEFAULT_DOWN_AFTER = 20
+
 
 class CtSource(Protocol):
     def search(self, domain: str) -> CtResult: ...
@@ -135,6 +146,7 @@ class CrtShClient:
         timeout: float = 60.0,
         retries: int = 2,
         concurrency: int = DEFAULT_CONCURRENCY,
+        down_after: int = DEFAULT_DOWN_AFTER,
         client: httpx.Client | None = None,
     ) -> None:
         self.cache_dir = cache_dir
@@ -158,6 +170,15 @@ class CrtShClient:
         self._timings: list[float] = []
         self._error_kinds: dict[str, int] = {}
         self._retried = 0
+        #: 実際に取りにいって成功した本数。キャッシュ命中は数えない
+        self._succeeded = 0
+        #: 相手が落ちていると判断するまでに見る本数。**少なすぎると、
+        #: たまたま重い数件で止まる。** 20本すべてが失敗する確率は、
+        #: 通常の失敗率が5割でも 1/100万 に満たない
+        #: **0 以下なら止めない**（設定で無効にできる）
+        self.down_after = int(down_after) if int(down_after) > 0 else 0
+        #: 落ちていると判断したあと、ここに理由を入れる
+        self._down_reason: str | None = None
 
     def _throttle(self) -> None:
         """次の1本を投げてよい時刻まで待つ。**全スレッドで1つの間隔。**
@@ -180,8 +201,34 @@ class CrtShClient:
             self._timings.append(elapsed)
             if kind:
                 self._error_kinds[kind] = self._error_kinds.get(kind, 0) + 1
+            else:
+                self._succeeded += 1
             if attempts > 1:
                 self._retried += 1
+            # **1本も成功しないまま既定の本数に達したら、相手が落ちている。**
+            # 一度立てたら降ろさない（降ろすと、たまたま1件通るたびに
+            # 叩き直しが始まる）
+            if (
+                self.down_after > 0
+                and self._down_reason is None
+                and self._succeeded == 0
+                and len(self._timings) >= self.down_after
+            ):
+                kinds = ", ".join(f"{k}={v}" for k, v in sorted(self._error_kinds.items()))
+                self._down_reason = (
+                    f"crt.sh に {len(self._timings)} 本投げて1本も成功していない（{kinds}）"
+                )
+
+    @property
+    def upstream_down(self) -> str | None:
+        """相手が落ちていると判断した理由。判断していなければ None。
+
+        **「取れなかった」と「相手が落ちていた」は別である**（原則5）。
+        前者は候補が少ない月として扱えるが、後者は計測そのものが成立して
+        いない。呼び出し側がこれを読んで、そう記録する。
+        """
+        with self._stats_lock:
+            return self._down_reason
 
     def response_stats(self) -> dict[str, object]:
         """応答時間の分布と失敗の内訳。**manifest に載せて次の判断に使う。**
@@ -198,6 +245,7 @@ class CrtShClient:
             timings = sorted(self._timings)
             kinds = dict(sorted(self._error_kinds.items()))
             retried = self._retried
+            down_reason = self._down_reason
         if not timings:
             return {"requests": 0, "note": "crt.sh に1本も投げていない"}
 
@@ -217,6 +265,8 @@ class CrtShClient:
             "errors_by_kind": kinds,
             "retried": retried,
             "timeout_sec": self.timeout,
+            # **「取れなかった」のか「相手が落ちていた」のかを残す**（原則5）
+            "upstream_down": down_reason,
         }
 
     def _cache_path(self, domain: str) -> Path | None:
@@ -250,6 +300,17 @@ class CrtShClient:
                 )
             except (json.JSONDecodeError, OSError):
                 pass
+
+        # **落ちている相手を叩き続けない。** キャッシュは上で先に見るので、
+        # 持っているものは引き続き返る。ここから先は取りにいかない
+        down = self.upstream_down
+        if down is not None:
+            return CtResult(
+                domain=domain,
+                error=f"crt.sh が応答していないため取りにいっていない（{down}）",
+                error_kind="upstream_down",
+                attempts=0,
+            )
 
         given = client or self._client
         client = given or httpx.Client(timeout=self.timeout, follow_redirects=True)

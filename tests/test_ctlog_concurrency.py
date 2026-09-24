@@ -412,3 +412,128 @@ def test_p2_の実行記録に応答時間が入っている():
 
     source = inspect.getsource(mod.run)
     assert "ct_response" in source, "P2 の manifest に応答時間を載せていない"
+
+
+# --------------------------------------------------------------------------
+# 相手が落ちているときは止める
+#
+# 2026-09-24、crt.sh は**トップページごと 502 Bad Gateway** を返していた。
+# 3,191ドメインを順に投げても1本も取れず、投げ直しに枠を使い切るだけで、
+# しかも落ちている相手を叩き続けることになる。
+# --------------------------------------------------------------------------
+
+
+class _DeadCrtSh:
+    """全部 502 を返す crt.sh。実際に叩かれた本数を数える。"""
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.requests = 0
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        with self.lock:
+            self.requests += 1
+        return httpx.Response(502, text="502 Bad Gateway")
+
+
+def _dead_client(tmp_path, server, *, down_after: int) -> CrtShClient:
+    return CrtShClient(
+        cache_dir=tmp_path / "crtsh",
+        month="2026-09",
+        qps=0.0,  # 試験を待たせない
+        retries=0,  # 投げ直しの回数は別の話なので混ぜない
+        concurrency=1,
+        down_after=down_after,
+        client=httpx.Client(transport=httpx.MockTransport(server.handle)),
+    )
+
+
+def test_全部失敗し続けたら取りにいくのをやめる(tmp_path):
+    """**落ちている相手を3,191回叩かない。**"""
+    server = _DeadCrtSh()
+    ct = _dead_client(tmp_path, server, down_after=5)
+    results = ct.prefetch([f"e{i}.example.jp" for i in range(40)])
+
+    assert len(results) == 40, "件数は落とさない（原則4：分母が閉じている）"
+    assert server.requests <= 6, (
+        f"止まっていない。502 を返す相手に {server.requests} 本投げている"
+    )
+    assert all(r.error for r in results.values())
+
+
+def test_やめた理由を残す(tmp_path):
+    """**「取れなかった」と「相手が落ちていた」は別である**（原則5）。
+
+    前者は候補が少ない月として読めるが、後者は計測が成立していない。
+    """
+    server = _DeadCrtSh()
+    ct = _dead_client(tmp_path, server, down_after=5)
+    ct.prefetch([f"e{i}.example.jp" for i in range(20)])
+
+    assert ct.upstream_down, "落ちていたことが残っていない"
+    assert "502" in ct.upstream_down or "http" in ct.upstream_down
+    stats = ct.response_stats()
+    assert stats["upstream_down"], "manifest に載る形で残っていない"
+
+    # **叩かずに返したものは「観測しなかった」と分かること**
+    later = ct.search("zz.example.jp")
+    assert later.error_kind == "upstream_down", later.error_kind
+    assert later.attempts == 0, "投げていないのに投げた回数が立っている"
+
+
+def test_1本でも成功していれば止めない(tmp_path):
+    """**たまたま重い数件で止めない。** 相手は生きている。"""
+    calls = {"n": 0}
+    lock = threading.Lock()
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        with lock:
+            calls["n"] += 1
+            n = calls["n"]
+        # 1本目だけ成功、あとは全部 502
+        if n == 1:
+            return httpx.Response(200, json=[{"name_value": "mail.example.jp"}])
+        return httpx.Response(502, text="502 Bad Gateway")
+
+    ct = CrtShClient(
+        cache_dir=tmp_path / "crtsh",
+        month="2026-09",
+        qps=0.0,
+        retries=0,
+        concurrency=1,
+        down_after=5,
+        client=httpx.Client(transport=httpx.MockTransport(handle)),
+    )
+    ct.prefetch([f"e{i}.example.jp" for i in range(20)])
+    assert ct.upstream_down is None, "1本成功しているのに落ちていると判断した"
+    assert calls["n"] == 20, "全部投げていない"
+
+
+def test_キャッシュは止めたあとも返る(tmp_path):
+    """**持っているものまで捨てない。**"""
+    ok = _SlowCrtSh(delay=0.0, names=["mail.example.jp"])
+    warm = CrtShClient(
+        cache_dir=tmp_path / "crtsh",
+        month="2026-09",
+        qps=0.0,
+        concurrency=1,
+        client=httpx.Client(transport=httpx.MockTransport(ok.handle)),
+    )
+    warm.search("cached.example.jp")
+
+    server = _DeadCrtSh()
+    ct = _dead_client(tmp_path, server, down_after=2)
+    ct.prefetch([f"e{i}.example.jp" for i in range(10)])
+    assert ct.upstream_down
+
+    got = ct.search("cached.example.jp")
+    assert got.from_cache and not got.error, "キャッシュにあるのに返っていない"
+
+
+def test_設定で止めないようにもできる(tmp_path):
+    """0 で無効。**判断は運営者に残す。**"""
+    server = _DeadCrtSh()
+    ct = _dead_client(tmp_path, server, down_after=0)
+    ct.prefetch([f"e{i}.example.jp" for i in range(10)])
+    assert ct.upstream_down is None
+    assert server.requests == 10, "止めない設定なのに止まっている"
