@@ -30,7 +30,7 @@ from ..records import mx_hosts as extract_mx_hosts
 from ..resolver import DnsResolver, shuffled
 from .backends.base import to_raw_response
 from .backends.dnspython_backend import DnspythonBackend
-from .bronze import BronzeWriter
+from .bronze import BronzeWriter, measured_domains
 from .plan import build_dane_queries, build_plan, estimate_queries
 from .selectors import SelectorDictionary
 
@@ -154,11 +154,17 @@ def run(
     backend=None,
     tier: str | None = None,
     concurrency: int | None = None,
+    resume: bool = False,
 ) -> dict[str, Any]:
     """P4 を実行し manifest の内容を返す。
 
     `backend` を注入できるのはテストのため。
     `tier` を指定するとその階層だけ計測する（開発中の部分実行用）。
+
+    `resume` は**同じ run の続きから測る**。時間切れで殺された実行が残した
+    bronze を読み、最後まで書けたドメインを飛ばす。既定で有効にしないのは、
+    bronze が不変・追記のみである以上、**「続き」と「測り直し」は別の意図**
+    だからである（黙って続きにすると、測り直したいときに測り直せない）。
     """
     measure_cfg = load_measure_config()
     rate = measure_cfg.get("rate", {})
@@ -179,7 +185,13 @@ def run(
         phase=PHASE,
         out_dir=out_dir,
         config_hash=config_hash(config_path("configs/measure.yaml")),
-        params={"method": method, "limit": limit, "dry_run": dry_run, "tier": tier},
+        params={
+            "method": method,
+            "limit": limit,
+            "dry_run": dry_run,
+            "tier": tier,
+            "resume": resume,
+        },
     ) as manifest:
         frame = read_parquet(domains_path)
         if frame is None:
@@ -218,7 +230,18 @@ def run(
         if limit:
             targets = targets[:limit]
 
-        manifest.counts.input = len(targets)
+        # **時間切れで殺された実行の続きから測る。**
+        # 対象を決め終えてから引くので、飛ばした分も含めて「この run で
+        # 測るべき件数」が input に残る（原則4：分母を縮めない）
+        planned = len(targets)
+        already: set[str] = set()
+        resumed_rows = 0
+        if resume:
+            already, resumed_rows = measured_domains(bronze_dir(run_id), method)
+            if already:
+                targets = [t for t in targets if t["domain"] not in already]
+
+        manifest.counts.input = planned
 
         selectors = SelectorDictionary.load(measure_config=measure_cfg)
         tier_counts: dict[str, int] = {}
@@ -232,6 +255,37 @@ def run(
             # **除外は黙って行わない。** 分母から抜いた分を記録する（原則4）
             excluded=excluded.to_dict(),
         )
+        # **「今回測った」と「前回分を合わせた」を分けて残す**（原則4）。
+        # 一つの数字にすると、再開した月だけ件数の意味が変わる
+        manifest.set_breakdown(
+            resume={
+                "enabled": resume,
+                "planned": planned,
+                "already_measured": len(already),
+                "to_measure": len(targets),
+                "rows_carried_over": resumed_rows,
+            }
+        )
+        if resume and already:
+            manifest.add_warning(
+                "RESUMED_FROM_EXISTING_BRONZE",
+                count=len(already),
+                sample=sorted(already)[:5],
+                message=(
+                    f"同じ run の bronze に {len(already)} ドメインぶんが既にあったため"
+                    "測り直していない。**「観測していない」のではなく"
+                    "「前回の実行で観測済み」である**"
+                ),
+            )
+        if resume and not already:
+            manifest.add_warning(
+                "RESUME_FOUND_NOTHING",
+                message=(
+                    "--resume を指定したが、続きから測れる bronze が無かった。"
+                    "最初から測っている（bronze が消えている可能性がある）"
+                ),
+            )
+
         if dropped_by_request:
             manifest.add_warning(
                 "EXCLUDED_BY_REQUEST",
@@ -360,6 +414,10 @@ def run(
                 if result.dkim_hit:
                     dkim_detected_domains += 1
 
+                # **1ドメインぶん書き終えた。ここまでは読み出せる。**
+                # 途中で殺されても、閉じたフレームの分は再開の根拠になる
+                writer.checkpoint()
+
                 tracker.tick(クエリ=queries_written - queries_before)
 
         tracker.finish()
@@ -375,8 +433,13 @@ def run(
                 sample=writer.preexisting_parts[:5],
                 message=(
                     "同じ run に既存の bronze があったため、上書きせず新しいパートに追記した"
-                    "（bronze は不変・追記のみ）。同一ドメインの観測が重複している可能性がある。"
-                    "やり直しなら別の run_id を使うこと"
+                    "（bronze は不変・追記のみ）。"
+                    + (
+                        "--resume なので、既に測り終えたドメインは測り直していない"
+                        if resume
+                        else "同一ドメインの観測が重複している可能性がある。"
+                        "続きから測るなら --resume、やり直すなら別の run_id を使うこと"
+                    )
                 ),
             )
 

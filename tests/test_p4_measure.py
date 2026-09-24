@@ -575,3 +575,141 @@ def test_bronze_roundtrip_preserves_whitespace(tmp_path):
     chunks = rows[0]["answers"][0]["data"]
     assert chunks == ["v=spf1 ip4:198.51.100.1 ", "-all"]
     assert join_txt_strings(chunks) == "v=spf1 ip4:198.51.100.1 -all"
+
+
+# ===========================================================================
+# 時間切れから続きを測る
+#
+# **2026-09 の実行は P4 を31分で殺され、245/2,153 ドメインで消えた。**
+# bronze は不変・追記のみなので、同じ run をもう一度回すと同じドメインを
+# 二重に測る。相手の DNS に無駄な負荷をかけ、件数の意味も壊れる。
+
+
+def _two_domains() -> None:
+    write_domains(
+        [
+            {"domain_id": "d:1", "entity_id": "jp:1", "domain": "send.example.jp"},
+            {"domain_id": "d:2", "entity_id": "jp:2", "domain": "other.example.jp"},
+        ]
+    )
+
+
+def test_resume_は測り終えたドメインを飛ばす():
+    _two_domains()
+    first = run_p4(run_id=RUN, backend=FakeBackend(), limit=1)
+    done = {r["domain"] for r in read_bronze(iter_bronze_files(bronze_dir(RUN))[0])}
+    assert len(done) == 1
+
+    backend = FakeBackend()
+    second = run_p4(run_id=RUN, backend=backend, resume=True)
+
+    asked = {name for name, _ in backend.seen}
+    assert not any(n.endswith(next(iter(done))) for n in asked), (
+        "測り終えたドメインをもう一度引いている"
+    )
+    resume = second["breakdown"]["resume"]
+    assert resume["already_measured"] == 1
+    assert resume["to_measure"] == 1
+    # **分母は縮めない。** この run で測るべき件数は2件のまま（原則4）
+    assert second["counts"]["input"] == 2
+    assert first["counts"]["input"] == 1  # limit で絞った回は1件
+
+
+def test_resume_を指定しなければ測り直す():
+    """**「続き」と「測り直し」は別の意図である。** 黙って続きにしない。"""
+    _two_domains()
+    run_p4(run_id=RUN, backend=FakeBackend(), limit=1)
+
+    backend = FakeBackend()
+    run_p4(run_id=RUN, backend=backend)
+    counts: dict[str, int] = {}
+    for name, purpose in backend.seen:
+        if purpose == QueryPurpose.MX:
+            counts[name] = counts.get(name, 0) + 1
+    assert counts, "MX を1本も引いていない"
+    assert max(counts.values()) == 1
+    # 2件とも引き直している（1回目の1件ぶんを含めて重複が起きる）
+    assert len(counts) == 2
+
+
+def test_途中で殺されたドメインは測り直す(tmp_path):
+    """**フレームを閉じる前に殺されたドメインを「測り終えた」と数えない。**
+
+    数えてしまうと、そのドメインは半分だけ観測された状態で永久に残り、
+    しかも件数の上では揃って見える（原則5 が静かに破れる）。
+
+    閉じていないフレームでも、**圧縮器の内部バッファが溢れた分はディスクに
+    届いている。** zstd は途中まで解けるので、素直に読むと「半分測った
+    ドメイン」の行が読めてしまう ── そこが罠である。
+    """
+    import zstandard
+
+    from mailauth.p4_measure.bronze import measured_domains
+
+    d = tmp_path / "method=dnspython"
+    d.mkdir(parents=True)
+    path = d / "part-0000.jsonl.zst"
+
+    with path.open("wb") as fh:
+        w = zstandard.ZstdCompressor(level=3).stream_writer(fh)
+        w.write(b'{"domain": "done.example.jp", "purpose": "mx"}\n')
+        w.flush(zstandard.FLUSH_FRAME)  # ← ここまでは確定した
+        # 殺された。**閉じていないフレームだが、溢れた分は書けている**
+        for i in range(20000):
+            pad = "x" * 50
+            row = f'{{"domain": "half.example.jp", "i": {i}, "pad": "{pad}"}}\n'
+            w.write(row.encode())
+        fh.flush()
+
+    # 前提の確認。半分のドメインの行が「読めてしまう」こと
+    from mailauth.p4_measure.bronze import _read_tolerant
+
+    rows, truncated = _read_tolerant(path)
+    assert truncated, "この検査の前提（末尾が切れている）が成り立っていない"
+    assert any(r.get("domain") == "half.example.jp" for r in rows), (
+        "この検査の前提（切れたフレームの行が読めてしまう）が成り立っていない"
+    )
+
+    domains, _ = measured_domains(tmp_path, "dnspython")
+    assert domains == {"done.example.jp"}, (
+        "閉じていないフレームのドメインを測り終えたと数えている"
+    )
+
+
+def test_壊れた末尾のために読めた分まで捨てない(tmp_path):
+    """**数千行書けているパートを、末尾が切れているだけで丸ごと失わない。**"""
+    import zstandard
+
+    from mailauth.p4_measure.bronze import read_bronze as _read
+
+    path = tmp_path / "part-0000.jsonl.zst"
+    with path.open("wb") as fh:
+        w = zstandard.ZstdCompressor(level=3).stream_writer(fh)
+        for i in range(100):
+            w.write(f'{{"domain": "d{i}.example.jp"}}\n'.encode())
+        w.flush(zstandard.FLUSH_FRAME)
+        w.write(b'{"domain": "tail')  # 行の途中で切れた
+        fh.flush()
+
+    rows = _read(path)
+    assert len(rows) == 100
+
+
+def test_続きが無ければ知らせる():
+    """**bronze が消えていることに気付けないまま最初から測るのが一番まずい。**"""
+    write_domains([{"domain_id": "d:1", "entity_id": "jp:1", "domain": "send.example.jp"}])
+    result = run_p4(run_id=RUN, backend=FakeBackend(), resume=True)
+    codes = [w["code"] for w in result["warnings"]]
+    assert "RESUME_FOUND_NOTHING" in codes
+
+
+def test_ドメインごとに書き出しを確定させている():
+    """`checkpoint` を呼んでいないと、殺されたときに末尾が丸ごと読めない。"""
+    import inspect
+
+    from mailauth.p4_measure import runner as mod
+
+    source = inspect.getsource(mod.run)
+    assert "writer.checkpoint()" in source, (
+        "1ドメインごとにフレームを閉じていない。**再開の根拠が無くなる**"
+    )
