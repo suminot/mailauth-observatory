@@ -124,6 +124,43 @@ def test_打ち切られても最後に1行出す():
     assert "5/100" in out.getvalue()
 
 
+def test_終わっていれば最後の行を二度出さない():
+    """**完了した工程が毎回二重に出ていた。**
+
+    最後の1件は `tick()` が必ず出す。そのあと `finish()` が同じ件数を
+    もう一度出すと、経過時間だけが違う行が並ぶ ── `finish()` を呼ぶのは
+    後続の処理が終わったあとなので、実際に「経過22秒」の直後に
+    「経過33秒」が出ていた。**どちらが取得にかかった時間なのか読めない。**
+    """
+    p, out, clock = _p(total=3)
+    for _ in range(3):
+        clock.advance(1)
+        p.tick()
+    assert out.getvalue().count("\n") == 1, "最後の1件が出ていない"
+
+    clock.advance(60)  # 後続の処理で時間が経ってから finish が呼ばれる
+    p.finish()
+    assert out.getvalue().count("\n") == 1, "同じ件数の行を二度出している"
+
+
+def test_一度も出していなければ最後に出す():
+    """0件で終わった工程も「0件だった」と分かる必要がある。"""
+    p, out, _ = _p(total=0)
+    p.finish()
+    assert "0 件" in out.getvalue()
+
+
+def test_打ち切りのあと更に進めばまた出す():
+    p, out, clock = _p(total=100)
+    p.tick()
+    p.finish()
+    lines = out.getvalue().count("\n")
+    clock.advance(1)
+    p.tick()
+    p.finish()
+    assert out.getvalue().count("\n") == lines + 1
+
+
 def test_標準出力を汚さない():
     """標準出力は manifest の要約が使う。**機械が読む側に混ぜない。**"""
     import inspect

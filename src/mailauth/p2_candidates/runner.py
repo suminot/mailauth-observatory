@@ -381,6 +381,10 @@ def run(
 
         ct_ready: dict[str, CtResult] = {}
         ct_tracker: Progress | None = None
+        # 既に取りにいった起点ドメイン。**持株会社などで同じ起点が別の塊に
+        # 現れる。** 塊ごとの重複排除では取りこぼすので、全体でも覚えておく。
+        # 覚えないと進捗が 100% を超えて表示される
+        ct_asked: set[str] = set()
         if ct_enabled:
             n_seeds = len({d for d in (_seed(i) for i in order) if d})
             ct_tracker = Progress(n_seeds, "P2 CT取得")
@@ -455,9 +459,12 @@ def run(
         for start in range(0, len(order), PREFETCH_CHUNK):
             chunk = order[start : start + PREFETCH_CHUNK]
             if ct_enabled:
-                ct_ready = ct_source.prefetch(
-                    [d for d in (_seed(i) for i in chunk) if d], on_result=_note_ct
-                )
+                wanted = [d for d in (_seed(i) for i in chunk) if d and d not in ct_asked]
+                ct_asked.update(wanted)
+                # **前の塊で取ったものは持ち越す。** 捨てると、同じ起点を持つ
+                # 企業が別の塊に現れたときに取り直しになる（キャッシュには
+                # 当たるが、進捗の件数が合わなくなる）
+                ct_ready.update(ct_source.prefetch(wanted, on_result=_note_ct))
             for idx in chunk:
                 _process(idx)
                 if total >= total_limit:

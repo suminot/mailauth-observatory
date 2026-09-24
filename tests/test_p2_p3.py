@@ -853,3 +853,31 @@ def test_the_docstring_rule_matches_the_implementation():
     assert "rua 宛先が自社ドメインなら候補に" in (p2.__doc__ or "")
     source = inspect.getsource(p2._discover_from_dns)
     assert "etld_plus_one(domain) != etld_plus_one(apex)" in source
+
+
+def test_塊を跨いで同じ起点ドメインを二度取りにいかない(seeded_run, monkeypatch):
+    """持株会社などで**別の企業が同じ起点ドメインを持つ**ことがある。
+
+    先回り取得は塊ごとに重複を落とすので、同じ起点が別の塊に分かれると
+    2度取りにいってしまう。キャッシュには当たるが、**進捗の分母が
+    全体の重複排除後の件数なので、表示が 100% を超える。**
+    「あと何割か」を見るために出しているものが、まず信用できなくなる。
+    """
+    from mailauth.p2_candidates import runner as p2
+
+    # 3社とも同じ起点にして、塊を1社ずつに割る
+    df = pd.read_parquet(seeded_run)
+    df["official_domain"] = "sample-info.co.jp"
+    pq.write_table(
+        pa.Table.from_pandas(df, schema=ENTITY_ARROW_SCHEMA, preserve_index=False),
+        seeded_run,
+        compression="zstd",
+    )
+    monkeypatch.setattr(p2, "PREFETCH_CHUNK", 1)
+
+    ct = StaticCtSource({"sample-info.co.jp": ["sample-info.co.jp"]})
+    result = run_p2(run_id=RUN, resolver=StaticResolver(ANSWERS), ct_source=ct)
+
+    assert ct.calls == ["sample-info.co.jp"], f"同じ起点を{len(ct.calls)}回取りにいった"
+    # 3社とも候補は付く（取得結果を塊を跨いで持ち越している）
+    assert result["breakdown"]["ct"]["searched"] == len(df)

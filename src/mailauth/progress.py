@@ -72,6 +72,9 @@ class Progress:
         self._start = clock()
         self._last = self._start
         self.done = 0
+        #: 最後に出力したときの件数。`finish()` が同じ行を二度出さないため。
+        #: **-1 は「まだ一度も出していない」**（0 件で終わった場合と区別する）
+        self._emitted = -1
         #: 付随して数えたいもの（キャッシュ命中など）
         self.counters: dict[str, int] = {}
 
@@ -91,6 +94,7 @@ class Progress:
         return True
 
     def _emit(self, now: float) -> None:
+        self._emitted = self.done
         elapsed = now - self._start
         parts = [f"[{self.label}]"]
 
@@ -117,5 +121,15 @@ class Progress:
         print("  " + " ".join(parts), file=self.stream, flush=True)
 
     def finish(self) -> None:
-        """打ち切られた場合も含めて、最後に1行出す。"""
+        """打ち切られた場合に、どこまで進んだかを1行残す。
+
+        **進んでいなければ出さない。** 最後の1件は `tick()` が必ず出すので、
+        そのあと `finish()` が同じ件数をもう一度出すと、完了した工程が
+        すべて二重に出ることになる。しかも `finish()` を呼ぶのは後続の
+        処理が終わったあとなので、**経過時間だけが違う行**が並ぶ
+        （実際に「CT取得 経過22秒」の直後に「CT取得 経過33秒」が出ていた）。
+        取得に22秒かかったのか33秒かかったのか、読んでも分からない。
+        """
+        if self.done == self._emitted:
+            return
         self._emit(self._clock())
