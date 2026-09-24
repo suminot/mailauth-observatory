@@ -1869,3 +1869,56 @@ def test_p1_の結果を実行の途中で読める():
     assert "wikidata_identity" in body, (
         "**この実行で一番知りたい数字**（起点がどれだけ埋まったか）が出ていない"
     )
+
+
+# ===========================================================================
+# 文書とコードのずれを、文字列ではなく突き合わせで捕まえる
+#
+# 「zdns が主力」と DESIGN.md が書いている間、既定は dnspython だった。
+# **文書は誰も落とさないので、ずれたまま何か月も残る。**
+
+
+def test_既定のバックエンドが文書と一致する():
+    """DESIGN.md のバックエンド表が、実際の `--method` の既定と合うこと。"""
+    import inspect
+    import re
+
+    from mailauth import cli
+
+    src = inspect.getsource(cli.p4_measure)
+    m = re.search(r'typer\.Option\("--method".*?\)\s*,?\s*\]\s*=\s*"(\w+)"', src, re.S)
+    assert m, "--method の既定が読み取れない"
+    default = m.group(1)
+
+    design = (repo_root() / "DESIGN.md").read_text(encoding="utf-8")
+    row = next(
+        (ln for ln in design.splitlines() if ln.startswith(f"| `{default}` |")), None
+    )
+    assert row, f"DESIGN.md のバックエンド表に {default} の行が無い"
+    assert "既定" in row, (
+        f"**既定は {default} なのに、DESIGN.md がそう書いていない**: {row}"
+    )
+    # 既定でないものを「主力」と呼ばない
+    for line in design.splitlines():
+        if line.startswith("| `") and "**主力**" in line:
+            assert f"| `{default}` |" in line, (
+                f"既定でないバックエンドを主力と書いている: {line}"
+            )
+
+
+def test_ジョブの上限が文書と一致する():
+    """運営者向けの文書が実際の打ち切り時間と合うこと。
+
+    **5時間30分で切っているのに6時間と読ませると、見積りが30分ずれる。**
+    """
+    import yaml
+
+    wf = yaml.safe_load(
+        (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(encoding="utf-8")
+    )
+    minutes = wf["jobs"]["measure"]["timeout-minutes"]
+    hours = minutes / 60
+    text = (repo_root() / "OWNER-TASKS.md").read_text(encoding="utf-8")
+    assert f"{int(hours)}時間{int(minutes % 60)}分" in text, (
+        f"OWNER-TASKS.md が実際の打ち切り（{minutes}分）に触れていない"
+    )
