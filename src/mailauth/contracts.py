@@ -682,6 +682,12 @@ class StatsOverall(_Model):
     #: 何も取れなかったドメインが含まれる。それを分母に入れると
     #: 「取れなかった」が「未対応」として集計され、原則5 が公開物で破れる
     observed_domains: int = 0
+    #: **起点ドメインが取れず、一度も計測に現れなかった企業がいる。**
+    #: `total_entities` との差がその数で、採用率の分母には入っていない。
+    #: これを出さないと、読み手は `total_entities` 社を測ったと読む
+    #: （2026-09 の国内では 3,818 社のうち約半分に起点が無かった）。
+    #: 原則5 ──「取れなかった」と「無かった」は別である
+    entities_with_domains: int = 0
 
     # 企業数ベースとドメインベースの両方を必ず出す（DESIGN.md P7 受け入れ基準）
     spf_adopted_entities: int = 0
@@ -748,6 +754,7 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("total_entities", pa.int32()),
     ("total_domains", pa.int32()),
     ("observed_domains", pa.int32()),
+    ("entities_with_domains", pa.int32()),
     ("spf_adopted_entities", pa.int32()),
     ("spf_adopted_domains", pa.int32()),
     ("dmarc_adopted_entities", pa.int32()),

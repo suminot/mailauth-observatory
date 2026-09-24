@@ -6,7 +6,8 @@
   "Public Suffix List (Mozilla, MPL-2.0)",
   "出典：EDINET（金融庁）",
   "出典：国税庁法人番号公表サイト（国税庁）",
-  "出典：経済産業省gBizINFO"
+  "出典：経済産業省gBizINFO",
+  "Source: Wikidata (CC0)"
  ],
  "detection_limits": [
   "MX を変更せず API / OAuth で連携する製品は DNS に痕跡を残さないため、検出されなかったことは使っていないことを意味しない",

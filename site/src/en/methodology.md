@@ -53,6 +53,21 @@ treated as different facts.
   having disappeared. Disappearance is recorded only when the domain was
   observed twice in a row and found absent
 
+## Companies with no starting domain
+
+Measurement starts from each company's official website domain and expands
+outwards to candidate domains. **A company whose official website is unknown
+produces no candidate domains at all.**
+
+Such companies are not in the denominator of any rate. The "Companies" figure
+in the summary is the size of the population, **not a claim that all of them
+were measured.** Where the two differ, the count is shown next to the figure.
+
+Official websites are looked up by corporate number against the Japanese
+government company registry (gBizINFO) and Wikidata. Some companies appear in
+neither. **No guesses are made** — measuring another company's domain by
+mistake is a worse error than not measuring at all.
+
 ## Some domains are excluded from measurement
 
 Once a domain is excluded, no further DNS queries are sent to it. **"Excluded"

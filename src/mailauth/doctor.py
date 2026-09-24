@@ -272,6 +272,62 @@ def _observed_domains(month_dir: Path) -> int | None:
     return int(df["observed_domains"].fillna(0).sum())
 
 
+#: これ以上欠けたら、公開している数字は母集団の一部の話になる。
+#: 国内の受け入れ基準（official_url の欠損 10%）より緩くしてあるのは、
+#: **doctor は基準違反ではなく「次に効く一手」を出す道具**だからである
+ENTITY_GAP_THRESHOLD = 0.25
+
+
+def _entity_coverage(month_dir: Path) -> tuple[int, int] | None:
+    """(母集団の企業数, 実際に計測に現れた企業数)。読めなければ None。
+
+    **起点ドメインが取れなかった企業は、採用率の分母に入っていない。**
+    gold は `total_entities` 社と書くが、そのうち何社が計測に現れたかは
+    `entities_with_domains` を見ないと分からない。
+    """
+    f = month_dir / "stats_overall.parquet"
+    if not f.is_file():
+        return None
+    try:
+        import pandas as pd
+
+        df = pd.read_parquet(f, columns=["total_entities", "entities_with_domains"])
+    except Exception:
+        # 列が無い月（この指標より前に回した gold）は「分からない」。
+        # **0 と読んで「全社欠けている」と言わない**
+        return None
+    if df.empty:
+        return None
+    total = int(df["total_entities"].fillna(0).sum())
+    with_domains = int(df["entities_with_domains"].fillna(0).sum())
+    return (total, with_domains) if total else None
+
+
+def _worst_entity_gap() -> tuple[str, int, int] | None:
+    """起点が取れていない企業の割合が一番大きい月。無ければ None。
+
+    直近の月だけを見ない。**一度公開した月は残り続ける**ので、欠けの
+    大きい月があるなら、それが読み手の目に入る数字である。
+    """
+    root = gold_root()
+    if not root.is_dir():
+        return None
+    worst: tuple[str, int, int] | None = None
+    for p in sorted(root.glob("month=*")):
+        if not p.is_dir():
+            continue
+        coverage = _entity_coverage(p)
+        if coverage is None:
+            continue
+        total, with_domains = coverage
+        if (total - with_domains) / total < ENTITY_GAP_THRESHOLD:
+            continue
+        month = p.name.split("=", 1)[1]
+        if worst is None or (total - with_domains) / total > (worst[1] - worst[2]) / worst[1]:
+            worst = (month, total, with_domains)
+    return worst
+
+
 def _gold_population(month_dir: Path) -> str | None:
     """その月がどの母集団で回ったか。**空振りの原因は母集団ごとに違う。**"""
     f = month_dir / "stats_overall.parquet"
@@ -518,6 +574,28 @@ def _next_action(
             steps=[
                 "Cloudflare → R2 → Manage R2 API Tokens",
                 "副は別事業者（Backblaze B2 / Wasabi / AWS S3）",
+            ],
+        )
+
+    # 設定は済んでいる。**次に効くのは分母である。**
+    gap = _worst_entity_gap()
+    if gap is not None:
+        month, total, with_domains = gap
+        missing = total - with_domains
+        return NextAction(
+            headline=f"{month} は {total} 社のうち {missing} 社が計測に現れていない",
+            why=(
+                f"起点になる公式サイトが取れず、{missing} 社は候補ドメインが"
+                f"1件も無い。公開している採用率は残りの {with_domains} 社の話で、"
+                "**「取れなかった」が数字から消えている**（原則5）"
+            ),
+            steps=[
+                f"runs/{month}.md の ACCEPTANCE_MISSING_RATE と "
+                "breakdown.wikidata_identity を見る",
+                "filled が 0 なら法人番号の突合が効いていない",
+                "still_missing が大きいなら Wikidata 側に公式サイトが無い。"
+                "EDINET コード（P5090）での突合を足す余地がある",
+                "BACKLOG.md の 1d（米国はティッカーで突合）も同じ形の話",
             ],
         )
 

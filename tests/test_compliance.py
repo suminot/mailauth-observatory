@@ -1677,3 +1677,59 @@ def test_the_expensive_lookups_survive_between_runs():
                     f"補完のキャッシュ {a!r} が CT ログの {b!r} と重なっている。"
                     "復元の順番によっては新しい方に古いものを被せる"
                 )
+
+
+def test_起点が取れなかった企業数を画面に出している():
+    """**「企業 3,818 社」と大きく出して、測れたのが半分では誤読させる。**
+
+    起点ドメインが取れなかった企業は候補が1件も無く、率の分母に入らない。
+    数字の横に差を出さないと、読み手は total_entities 社を測ったと読む
+    （原則5 が公開物で破れる）。日英の両方に要る。
+    """
+    for name in ("index.md", "en/index.md"):
+        text = (repo_root() / "site" / "src" / name).read_text(encoding="utf-8")
+        assert "entities_with_domains" in text, (
+            f"{name}: 計測に現れた企業数を読んでいない"
+        )
+        assert "entityGap" in text, f"{name}: 差を出していない"
+        # **差が無い月に「0社」と出さない。**注記が毎月出ると背景になる
+        assert "entityGap > 0" in text, (
+            f"{name}: 欠けが無い月にも注記を出している"
+        )
+
+
+def test_起点が取れなかった企業のことが方法論に書いてある():
+    """画面の注記だけでは足りない。**限界は常時表示が要件**（法務）。"""
+    ja = (repo_root() / "site" / "src" / "methodology.md").read_text(encoding="utf-8")
+    en = (repo_root() / "site" / "src" / "en" / "methodology.md").read_text(encoding="utf-8")
+    assert "## 起点ドメインが取れなかった企業" in ja
+    assert "## Companies with no starting domain" in en
+    for text, name in ((ja, "methodology.md"), (en, "en/methodology.md")):
+        assert "分母" in text or "denominator" in text, f"{name}: 分母の話が無い"
+
+
+def test_総括から方法論への案内が実在する見出しを指している():
+    """**アンカーがずれても画面は壊れない。** 押しても何も起きないだけで、
+    限界の説明に辿り着けなくなる。見出しを書き換えたときに気付けるようにする。
+    """
+    import re as _re
+
+    pairs = (
+        ("index.md", "methodology.md"),
+        ("en/index.md", "en/methodology.md"),
+    )
+    for page, target in pairs:
+        text = (repo_root() / "site" / "src" / page).read_text(encoding="utf-8")
+        doc = (repo_root() / "site" / "src" / target).read_text(encoding="utf-8")
+        anchors = _re.findall(r'href="\./methodology#([^"]+)"', text)
+        assert anchors, f"{page}: 方法論への案内が無い"
+        # Observable Framework の見出しアンカーは、記号を落として
+        # 空白をハイフンにした小文字
+        slugs = {
+            _re.sub(r"[^\w\s-]", "", h).strip().lower().replace(" ", "-")
+            for h in _re.findall(r"^##+\s+(.+)$", doc, _re.M)
+        }
+        for anchor in anchors:
+            assert anchor.lower() in slugs, (
+                f"{page}: #{anchor} に当たる見出しが {target} に無い（{sorted(slugs)}）"
+            )

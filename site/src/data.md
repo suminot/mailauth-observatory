@@ -173,6 +173,7 @@ Parquet は月ごとに保管しています。同じ数字を二重に持つと
 |---|---|
 | `total_domains` | 計測対象にしたドメイン数 |
 | `observed_domains` | **うち観測できた数。率の分母はこれを使う** |
+| `entities_with_domains` | 候補ドメインが1件以上あった企業数。**`total_entities` との差が、起点が取れず計測に現れなかった企業** |
 | `spf_adopted_domains` | SPF を公開しているドメイン数 |
 | `spf_adopted_entities` | SPF を公開している企業数 |
 | `dmarc_enforced_domains` | `quarantine` または `reject` |

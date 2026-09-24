@@ -180,6 +180,7 @@ The main columns used in the tables above.
 |---|---|
 | `total_domains` | domains taken into measurement |
 | `observed_domains` | **of those, how many could be observed. This is the denominator for every share** |
+| `entities_with_domains` | companies with at least one candidate domain. **The difference from `total_entities` is the companies that never entered the measurement** |
 | `spf_adopted_domains` | domains publishing SPF |
 | `spf_adopted_entities` | companies publishing SPF |
 | `dmarc_enforced_domains` | `quarantine` or `reject` |

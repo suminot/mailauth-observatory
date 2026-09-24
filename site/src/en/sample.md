@@ -45,6 +45,13 @@ const series = overall
   .filter((d) => d.population_id === population)
   .sort((a, b) => a.measured_month.localeCompare(b.measured_month));
 const current = series.at(-1);
+// Companies that produced no candidate domain at all, because no official
+// website could be found. **They are not in the denominator of any rate.**
+// Hiding this makes the reader take total_entities as the number measured.
+const entityGap = Math.max(
+  0,
+  (current?.total_entities ?? 0) - (current?.entities_with_domains ?? 0)
+);
 ```
 
 <div class="legend">
@@ -64,7 +71,9 @@ display(
     <div class="readout">
       <span class="label">Companies</span>
       <span class="value">${num(current?.total_entities)}</span>
-      <span class="readout-cap">${population}</span>
+      <span class="readout-cap">${entityGap > 0
+        ? html`${population}<br><strong>${num(entityGap)} with no starting domain, not in any rate</strong>`
+        : population}</span>
     </div>
     <div class="readout">
       <span class="label">Domains measured</span>
@@ -92,6 +101,20 @@ display(coverageRing(current?.observed_domains, current?.total_domains, "en"));
 Rates are calculated **only over domains that could be observed**. Putting
 domains that returned SERVFAIL, or nothing at all, into the denominator would
 count "could not be observed" as "not configured".
+
+```js
+// Nothing is shown when there is no gap. **A note that says "0 companies
+// missing" every month turns into background and stops being read.**
+display(
+  entityGap > 0
+    ? html`<p class="gap-note">No official website could be found for
+        <strong>${num(entityGap)}</strong> companies, so they have no candidate
+        domains and are not included in the rates above. The rates describe
+        ${num(current?.entities_with_domains)} companies.
+        <a href="./methodology#companies-with-no-starting-domain">How this is measured</a></p>`
+    : html``
+);
+```
 
 <div class="observed">
 

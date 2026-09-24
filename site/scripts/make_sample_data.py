@@ -65,6 +65,9 @@ def _overall(month: str, i: int) -> StatsOverall:
     entities = 3818 + i * 4
     domains = 2158 + i * 11
     observed = int(domains * 0.973)
+    # 起点が取れた企業は全体の一部。**ここに差があるのが普通の状態**なので、
+    # サンプルでも差を作る（差ゼロのサンプルだと、注記の見え方を確かめられない）
+    with_domains = int(entities * _rate(0.72, i, 0.011))
 
     spf = int(observed * _rate(0.889, i, 0.0032))
     dmarc = int(observed * _rate(0.571, i, 0.0081))
@@ -85,6 +88,7 @@ def _overall(month: str, i: int) -> StatsOverall:
         total_entities=entities,
         total_domains=domains,
         observed_domains=observed,
+        entities_with_domains=with_domains,
         spf_adopted_entities=int(entities * _rate(0.906, i, 0.0026)),
         spf_adopted_domains=spf,
         dmarc_adopted_entities=int(entities * _rate(0.604, i, 0.0074)),
@@ -160,6 +164,7 @@ def _sectors(month: str, i: int) -> list[StatsBySector]:
                 total_entities=n,
                 total_domains=domains,
                 observed_domains=observed,
+                entities_with_domains=int(n * 0.72),
                 spf_adopted_domains=int(
                     observed * min(_rate(0.889, i, 0.0032) + tilt * 0.4, 0.99)
                 ),
@@ -186,6 +191,7 @@ def _sectors(month: str, i: int) -> list[StatsBySector]:
             total_entities=7,
             total_domains=6,
             observed_domains=6,
+            entities_with_domains=5,
             suppressed=True,
             spec_version="rfc7489+rfc9989",
         )

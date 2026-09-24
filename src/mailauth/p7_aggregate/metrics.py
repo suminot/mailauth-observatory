@@ -135,8 +135,15 @@ def aggregate(
 
     `total_entities` は母集団側の企業数を渡す。**ドメインを持つ企業だけを
     数えてはいけない。** 分母が縮むと採用率が実態より高く出る。
+
+    その代わり `entities_with_domains` で「実際に計測に現れた企業数」を別に
+    出す。**分母を正しく保つことと、読み手にその中身を見せることは別の
+    仕事である** ── 差を出さないと、読み手は total_entities 社を測ったと読む。
     """
     observed = [r for r in rows if r.observed]
+    # 観測できたかは問わない。**候補が1件でもあれば「計測に現れた」**
+    # （SERVFAIL は「取れなかった」であって、起点が無いのとは別の欠け方）
+    with_domains = len({r.entity_id for r in rows if r.entity_id})
 
     def entities_where(predicate) -> int:
         return len({r.entity_id for r in observed if predicate(r)})
@@ -153,6 +160,7 @@ def aggregate(
         total_entities=total_entities,
         total_domains=len(rows),
         observed_domains=len(observed),
+        entities_with_domains=with_domains,
         spf_adopted_entities=entities_where(lambda r: r.spf_present),
         spf_adopted_domains=sum(1 for r in observed if r.spf_present),
         dmarc_adopted_entities=entities_where(lambda r: r.dmarc_present),
