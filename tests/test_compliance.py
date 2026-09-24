@@ -924,17 +924,88 @@ def test_the_search_shortcut_label_matches_a_real_handler():
 
 
 def test_the_site_shows_one_navigation_not_two():
-    """右の目次は出さない。**左の一覧に節を畳んで出している。**
+    """行き先は左の一覧ひとつだけにする。
 
     同じ行き先が画面の両端にあると、どちらを見ればよいかを読むたびに
-    考えることになる。`chrome.js` が左に節を足しているので、
-    Framework の目次を戻すと二重になる。
+    考えることになるので、Framework の右の目次は出さない。
+
+    左の一覧に節を一段下げて出す作り（ドリルダウン）も一度入れたが、
+    **運営者の判断でやめた** ── 行き先が増えるほど一覧が縦に伸び、
+    左側が重くなる。節は本文の見出しを見れば分かる。戻すと目次が
+    二重になるので、消えたままであることを縛る。
     """
     config = (repo_root() / "site" / "observablehq.config.js").read_text(encoding="utf-8")
     assert "toc: false" in config, "右の目次が有効になっている"
 
     chrome = (repo_root() / "site" / "src" / "chrome.js").read_text(encoding="utf-8")
-    assert "section-links" in chrome, "左の一覧に節を出す処理が無い"
+    css = (repo_root() / "site" / "src" / "styles.css").read_text(encoding="utf-8")
+    for name, text in (("chrome.js", chrome), ("styles.css", css)):
+        # **コメントは対象外。** やめた経緯の説明まで弾かない
+        code = _re_strip_comments(text)
+        assert "section-links" not in code, (
+            f"{name} にドリルダウンの指定が残っている。一覧を縦に伸ばさない方針"
+        )
+
+
+def _re_strip_comments(text: str) -> str:
+    """`//` と `/* */` を落とす。JS と CSS の両方で使う。"""
+    import re as _re
+
+    return _re.sub(r"//[^\n]*|/\*.*?\*/", "", text, flags=_re.S)
+
+
+def test_the_bottom_controls_are_stacked_not_side_by_side():
+    """切り替えを横に並べると、2つで一覧の幅をほぼ使い切る。
+
+    **左側が重くなる**ので縦に積む（運営者の指摘）。各行は中身のぶんで
+    済み、一覧の幅を決めるのが切り替えではなくページ名になる。
+    """
+    import re as _re
+
+    css = (repo_root() / "site" / "src" / "styles.css").read_text(encoding="utf-8")
+    blocks = _re.findall(r"\.chrome-controls\s*\{(.*?)\}", css, _re.S)
+    assert blocks, ".chrome-controls の定義が見つからない"
+    body = "\n".join(blocks)
+    assert _re.search(r"flex-direction:\s*column", body), (
+        "切り替えを縦に積んでいない。横に並ぶと一覧の幅を使い切る"
+    )
+    assert not _re.search(r"flex-wrap:\s*wrap", body), (
+        "flex-wrap が残っている。縦積みと噛み合わず、幅次第で横に戻る"
+    )
+
+
+def test_the_build_reference_is_shown_but_never_guessed():
+    """何から組んだかを下端に出す（`Build #49`）。
+
+    **分からないときは出さない。** 空の meta を置くと「Build 」だけが並ぶし、
+    適当な値を埋めると、どの版を見ているのか分からなくなる方が悪い。
+
+    **リンクにはしない。** 公開サイトにリポジトリの URL は出さない方針で、
+    番号だけなら住所にはならない。
+    """
+    import re as _re
+
+    config = (repo_root() / "site" / "observablehq.config.js").read_text(encoding="utf-8")
+    assert "mailauth-build" in config, "ビルドの表示を埋める処理が無い"
+    assert _re.search(r"BUILD_REF\s*\?", config), (
+        "取れなかった場合に meta を出さない分岐が無い。"
+        "空の meta を置くと「Build 」だけが出る"
+    )
+    # 受け取った値をそのまま属性に入れない
+    assert _re.search(r"replace\(/\[\^#A-Za-z0-9._/-\]/g", config), (
+        "MAILAUTH_BUILD_REF を絞り込んでいない。HTML の属性に入る値である"
+    )
+
+    chrome = (repo_root() / "site" / "src" / "chrome.js").read_text(encoding="utf-8")
+    assert 'meta[name="mailauth-build"]' in chrome, "chrome.js が表示を読んでいない"
+    assert _re.search(r"if\s*\(!ref\)\s*return null", chrome), (
+        "取れなかったときに行ごと出さない分岐が無い"
+    )
+    block = _re.search(r"function buildRefLine\(\)\s*\{(.*?)\n\}", chrome, _re.S)
+    assert block, "buildRefLine が見つからない"
+    assert "createElement(\"a\"" not in block.group(1) and "href" not in block.group(1), (
+        "ビルドの表示をリンクにしている。公開サイトにリポジトリの URL は出さない"
+    )
 
 
 #: 配色ごとに定義しなければならない色。**片方に無いと、その配色で
@@ -1432,3 +1503,114 @@ def test_the_time_series_does_not_colour_by_outcome():
             f"{name}: 凡例 {names} と実際の系列 {plotted} が食い違う。"
             "**ずれた系列には色が付かない**"
         )
+
+
+def _sample_page_module():
+    """サンプルページの生成器を読み込む（`site/scripts/` はパッケージではない）。"""
+    import importlib.util
+
+    path = repo_root() / "site" / "scripts" / "make_sample_page.py"
+    spec = importlib.util.spec_from_file_location("make_sample_page", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_sample_pages_are_generated_from_the_front_page():
+    """**サンプルは表紙から機械的に作る。**
+
+    「データが入るとこう見える」を見せるページなので、表紙と中身が
+    違っていたら嘘になる。手で複製すると、表紙を直したときにサンプルだけ
+    古くなり、**画面を開くまで気付けない。**
+
+    生成器（`site/scripts/make_sample_page.py`）の出力と一致することを
+    ここで縛る。表紙を直したら流し直すこと。
+    """
+    module = _sample_page_module()
+    for lang, (src, out, _) in module.PAGES.items():
+        expected = module.render(src.read_text(encoding="utf-8"), lang)
+        assert out.is_file(), f"{out.name} が無い。生成器を流すこと"
+        assert out.read_text(encoding="utf-8") == expected, (
+            f"{out.name} が表紙と食い違っている。"
+            "`python site/scripts/make_sample_page.py` を流し直すこと"
+        )
+
+
+def test_the_sample_page_never_reads_the_real_numbers():
+    """サンプルは作り物の数字だけを読む。**取り違えると観測値として出る。**
+
+    逆も縛る ── 表紙がサンプルを読んでいたら、実際の計測結果の代わりに
+    作り物が公開されることになる。
+    """
+    import re as _re
+
+    module = _sample_page_module()
+    for _lang, (src, out, _) in module.PAGES.items():
+        sample = out.read_text(encoding="utf-8")
+        reads = _re.findall(r'FileAttachment\("([^"]+)"', sample)
+        assert reads, f"{out.name} が何も読んでいない"
+        assert all("sample/" in r for r in reads), (
+            f"{out.name} が本物の数字を読んでいる: {reads}"
+        )
+
+        front = src.read_text(encoding="utf-8")
+        assert "sample/" not in front, (
+            f"{src.name}（表紙）がサンプルを読んでいる。作り物が観測値として出る"
+        )
+
+
+def test_the_sample_page_says_so_before_any_number():
+    """ことわりは**題字より上**に置く。数字を見る前に目に入らないと意味が無い。"""
+    module = _sample_page_module()
+    for _lang, (_, out, _) in module.PAGES.items():
+        text = out.read_text(encoding="utf-8")
+        assert "sample-banner" in text, f"{out.name} にことわりが無い"
+        assert text.index("sample-banner") < text.index("\n# "), (
+            f"{out.name} のことわりが題字より下にある"
+        )
+
+    css = (repo_root() / "site" / "src" / "styles.css").read_text(encoding="utf-8")
+    assert ".sample-banner" in css, "ことわりの見た目の指定が無い"
+
+    config = (repo_root() / "site" / "observablehq.config.js").read_text(encoding="utf-8")
+    for path in ("/sample", "/en/sample"):
+        assert f'path: "{path}"' in config, f"一覧に {path} が無い"
+
+
+def test_the_sample_numbers_match_the_published_contract():
+    """作り物でも**形は本物と同じ**にする。
+
+    数字は見た目の確認用でよいが、列の名前や日付の形が本番と違うと、
+    サンプルで動いたものが本番で動かない（逆も起きる）。生成器は契約の型と
+    P8 の書き出しを通しているので、ここではその結果を確かめる。
+    """
+    import json
+
+    from mailauth.contracts import StatsBySector, StatsOverall
+
+    root = repo_root() / "site" / "src" / "sample"
+    for name, model in (
+        ("stats_overall.json", StatsOverall),
+        ("stats_by_sector.json", StatsBySector),
+    ):
+        rows = json.loads((root / name).read_text(encoding="utf-8"))
+        assert rows, f"{name} が空"
+        allowed = set(model.model_fields)
+        extra = set(rows[0]) - allowed
+        assert not extra, f"{name} に契約に無い列がある: {sorted(extra)}"
+        missing = {
+            f for f, v in model.model_fields.items() if v.is_required()
+        } - set(rows[0])
+        assert not missing, f"{name} に必須の列が無い: {sorted(missing)}"
+        # 日付は ISO の文字列で入る（P8 の `_jsonable` がそうしている）
+        assert _DATE_RE.match(str(rows[0]["measured_month"])), (
+            f"{name} の measured_month が {rows[0]['measured_month']!r}。"
+            "本番は ISO の文字列で出る"
+        )
+
+    meta = json.loads((root / "meta.json").read_text(encoding="utf-8"))
+    for key in ("months", "latest_month", "attribution", "disclaimer", "detection_limits"):
+        assert key in meta, f"meta.json に {key} が無い。本番の meta と形が違う"
+
+
+_DATE_RE = __import__("re").compile(r"^\d{4}-\d{2}-\d{2}$")

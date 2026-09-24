@@ -5,6 +5,38 @@
 //   - 総合順位や A〜F グレードのページを作らない
 //   - 配色は3段階。赤の面積を最小化する（styles.css の --absent を参照）
 
+import { execSync } from "node:child_process";
+
+/** 何から組んだか。画面の下端に `Build #49` のように出す。
+ *
+ * squash マージの件名は `… (#49)` で終わるので、そこから拾う。月次計測の
+ * ように PR を経ないコミットもあるので、**取れなければ短い commit を出す。**
+ * どちらも取れなければ null ── 分からないなら出さない。
+ *
+ * `MAILAUTH_BUILD_REF` を渡せばそれを優先する（CI から明示できるように）。
+ * **受け取った値はそのまま埋めない。** HTML の属性に入るので、番号と
+ * commit に出てくる文字だけに絞る。
+ */
+function buildRef() {
+  const clean = (v) => {
+    const s = String(v ?? "").trim().replace(/[^#A-Za-z0-9._/-]/g, "");
+    return s ? s.slice(0, 32) : null;
+  };
+  const given = clean(process.env.MAILAUTH_BUILD_REF);
+  if (given) return given;
+  try {
+    const run = (cmd) => execSync(cmd, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    const pr = run("git log -1 --pretty=%s").trim().match(/\(#(\d+)\)\s*$/);
+    if (pr) return `#${pr[1]}`;
+    return clean(run("git rev-parse --short HEAD"));
+  } catch {
+    // git が無い／リポジトリの外。**推測しない**
+    return null;
+  }
+}
+
+const BUILD_REF = buildRef();
+
 export default {
   title: "Email DNS Monitor",
   // 日英の両方を並べる。**表示の絞り込みは chrome.js が行う**
@@ -16,11 +48,15 @@ export default {
     { name: "データ", path: "/data" },
     { name: "免責事項・利用規約", path: "/terms" },
     { name: "変更履歴", path: "/changelog" },
+    // 計測が一巡したときに表紙がどう見えるか。**数字は作り物**で、
+    // ページ自身が冒頭でそう断っている
+    { name: "サンプル", path: "/sample" },
     { name: "By sector", path: "/en/sectors" },
     { name: "Methodology", path: "/en/methodology" },
     { name: "Data", path: "/en/data" },
     { name: "Terms and disclaimer", path: "/en/terms" },
     { name: "Change log", path: "/en/changelog" },
+    { name: "Sample", path: "/en/sample" },
   ],
   root: "src",
   theme: "dark",
@@ -32,6 +68,9 @@ export default {
   // ここに置いてあるのは二重化で、片方の設定漏れに備えている。
   head:
     '<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">\n' +
+    // 何から組んだか。chrome.js がこれを読んで下端に出す。
+    // **取れなければ埋めない** ── 空の meta を置くと「Build 」だけが出る
+    (BUILD_REF ? `<meta name="mailauth-build" content="${BUILD_REF}">\n` : "") +
     '<link rel="preconnect" href="https://fonts.googleapis.com">\n' +
     '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n' +
     '<link rel="stylesheet" href="https://fonts.googleapis.com/css2' +

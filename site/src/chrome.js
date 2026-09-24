@@ -1,89 +1,51 @@
-// 画面の枠まわり。左の一覧に節を畳んで出し、下端に切り替えを置く。
+// 画面の枠まわり。左に一覧、下端に切り替えを置く。
 //
 // ## 右の目次をやめた理由
 //
 // Observable Framework は右端に目次を出すが、左に一覧、右に目次があると、
 // **どちらを見ればよいかを読むたびに考えることになる。** 行き先は一箇所に
-// まとめる。開いているページの節は、その一覧の中に一段下げて出す。
+// まとめる。
+//
+// 一時期は、開いているページの節を一覧の中に一段下げて出していた
+// （ドリルダウン）。**運営者の判断でやめた** ── 行き先が増えるほど
+// 一覧が縦に伸び、左側が重くなる。節は本文の見出しを見れば分かる。
 //
 // ## 動かさない
 //
-// styles.css の方針どおり、開閉に動きを付けない。**いま開いているページの
-// 節だけを出す**ので、畳んだり伸ばしたりする操作そのものが要らない。
-// 節を読み込むのは静的な HTML の見出しからで、ページ遷移のたびに作り直す。
+// styles.css の方針どおり、開閉に動きを付けない。
 
 const THEME_KEY = "mailauth.theme";
 const LANG_KEY = "mailauth.lang";
 
-/** 節へのリンクを、いま開いているページの下に一段下げて入れる。 */
-function buildSectionLinks() {
-  const sidebar = document.querySelector("#observablehq-sidebar");
-  const main = document.querySelector("#observablehq-main");
-  if (!sidebar || !main) return;
-
-  const active = sidebar.querySelector("li.observablehq-link-active");
-  if (!active) return;
-  active.querySelector(".section-links")?.remove();
-
-  // 節の見出しだけを拾う。h1 は題字なので入れない
-  const heads = [...main.querySelectorAll("h2[id]")];
-  if (!heads.length) return;
-
-  const list = document.createElement("ol");
-  list.className = "section-links";
-  for (const h of heads) {
-    const li = document.createElement("li");
-    const a = document.createElement("a");
-    a.href = `#${h.id}`;
-    a.textContent = h.textContent.trim();
-    li.appendChild(a);
-    list.appendChild(li);
-  }
-  active.appendChild(list);
-  return { list, heads };
+/** 何から組んだかを下端に出す。
+ *
+ * `observablehq.config.js` がビルド時に `<meta name="mailauth-build">` を
+ * 埋めている。**分からなければ何も出さない** ── 「Build 不明」のような
+ * 行を置くより、行そのものが無い方が誤解が少ない。
+ *
+ * **リンクにはしない。** 公開サイトにリポジトリの URL は出さない方針で、
+ * 番号だけなら住所にはならない。
+ */
+function buildRefLine() {
+  const ref = document.querySelector('meta[name="mailauth-build"]')?.content?.trim();
+  if (!ref) return null;
+  const line = document.createElement("div");
+  line.className = "chrome-build";
+  // PR 番号なら `#49`、取れなければ短い commit。**出せるものをそのまま出す**
+  line.textContent = `Build ${ref}`;
+  return line;
 }
 
-/** いま画面に出ている節に印を付ける。読んでいる位置が分かるようにする。 */
-function trackCurrentSection(built) {
-  if (!built || !("IntersectionObserver" in window)) return;
-  const { list, heads } = built;
-  const links = new Map(
-    [...list.querySelectorAll("a")].map((a) => [a.getAttribute("href").slice(1), a])
-  );
-  const seen = new Set();
-
-  const mark = () => {
-    // **一番上に出ているものを選ぶ。** 複数が同時に見えるので、
-    // 「最後に入ったもの」にすると下へ飛ぶ
-    let top = null;
-    for (const h of heads) if (seen.has(h.id)) { top = h.id; break; }
-    for (const [id, a] of links) {
-      if (id === top) a.setAttribute("aria-current", "true");
-      else a.removeAttribute("aria-current");
-    }
-  };
-
-  const io = new IntersectionObserver(
-    (entries) => {
-      for (const e of entries) {
-        if (e.isIntersecting) seen.add(e.target.id);
-        else seen.delete(e.target.id);
-      }
-      mark();
-    },
-    // 上端から少し下げた帯に入ったものを「読んでいる節」とみなす
-    { rootMargin: "-80px 0px -70% 0px" }
-  );
-  for (const h of heads) io.observe(h);
-}
-
-/** 左下の切り替え。配色と言語を並べて置く。 */
+/** 左下の切り替え。配色と言語を縦に積む。 */
 function buildControls() {
   const sidebar = document.querySelector("#observablehq-sidebar");
   if (!sidebar || sidebar.querySelector(".chrome-controls")) return;
 
   const box = document.createElement("div");
   box.className = "chrome-controls";
+  // 何から組んだかを切り替えの上に置く。**無ければ行ごと出さない**
+  const ref = buildRefLine();
+  if (ref) box.appendChild(ref);
   box.appendChild(themeToggle());
   box.appendChild(langToggle());
   sidebar.appendChild(box);
@@ -246,7 +208,6 @@ function fixSearchShortcut() {
 
 function start() {
   filterSidebarByLang();
-  trackCurrentSection(buildSectionLinks());
   buildControls();
   fixSearchShortcut();
 }
