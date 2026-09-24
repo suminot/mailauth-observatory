@@ -51,6 +51,18 @@
   --absent:    #8a626a;
   --neutral:   #5d7386;
 
+  /* 時系列の3本。**合否の配色（--pass / --attention / --absent）は使えない。**
+     3本は入れ子（SPF ⊃ DMARC ⊃ DMARC 強制）であって優劣ではないので、
+     使うと「広い集合ほど合格」に見えてしまう。Plot の既定（赤・青・橙）も
+     使わない ── このサイトは赤を「未対応」の意味で使っているため、
+     一番達成している指標が赤い線になる。
+
+     寒色で振り分ける。**同系統の濃淡にすると一番暗い線が地に沈んだ**ので、
+     色相を変えて見分けを付けた（入れ子は線が交わらないことで読める） */
+  --series-1:  #5de3ff;
+  --series-2:  #6fa8f5;
+  --series-3:  #b18cf0;
+
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --sans: "Chakra Petch", "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic",
           Meiryo, system-ui, sans-serif;
@@ -765,6 +777,11 @@ form.observablehq-input > label {
     --attention: #8a6209;
     --absent:    #8a5560;
     --neutral:   #4d637a;
+
+    /* 時系列の3本。理由は暗い側の同じ指定に書いてある */
+    --series-1:  #0a6f88;
+    --series-2:  #2a5fbf;
+    --series-3:  #6b3fb0;
   }
 }
 
@@ -790,6 +807,15 @@ form.observablehq-input > label {
   --attention: #8a6209;
   --absent:    #8a5560;
   --neutral:   #4d637a;
+
+  /* 時系列の3本。**入れ子の関係**（SPF ⊃ DMARC ⊃ DMARC 強制）を濃淡で示す。
+     合否の配色（--pass / --attention / --absent）は使えない ── 使うと
+     「広い集合ほど合格」に見えてしまう。**順位でも合否でもなく包含である。**
+     Plot の既定（赤・青・橙）も使わない。このサイトは赤を「未対応」の意味で
+     使っているので、一番達成している指標が赤い線になる */
+  --series-1:  #0a6f88;
+  --series-2:  #2a5fbf;
+  --series-3:  #6b3fb0;
 }
 
 /* 発光と地の暈しを明るい側で外す。**白地の光は滲むだけ** */
