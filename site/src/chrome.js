@@ -89,10 +89,11 @@ function buildControls() {
   sidebar.appendChild(box);
 }
 
+/** いまの配色。**既定はダーク**（theme-boot.js が描画前に付けている）。 */
 function currentTheme() {
-  const set = document.documentElement.getAttribute("data-theme");
-  if (set === "light" || set === "dark") return set;
-  return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  return document.documentElement.getAttribute("data-theme") === "light"
+    ? "light"
+    : "dark";
 }
 
 function themeToggle() {
@@ -101,7 +102,7 @@ function themeToggle() {
   wrap.setAttribute("role", "group");
   wrap.setAttribute("aria-label", "配色");
 
-  for (const [value, label] of [["dark", "暗"], ["light", "明"]]) {
+  for (const [value, label] of [["dark", "ダーク"], ["light", "ライト"]]) {
     const b = document.createElement("button");
     b.type = "button";
     b.textContent = label;
@@ -179,7 +180,7 @@ function langToggle() {
 
   const here = currentLang();
   const there = counterpartPath();
-  for (const [value, label] of [["ja", "日本語"], ["en", "EN"]]) {
+  for (const [value, label] of [["ja", "JPN"], ["en", "ENG"]]) {
     const a = document.createElement("a");
     a.textContent = label;
     a.dataset.value = value;
@@ -226,10 +227,11 @@ function fixSearchShortcut() {
   const box = document.querySelector("#observablehq-search");
   const input = box?.querySelector("input");
   if (!input) return;
-  // navigator.platform は非推奨だが、ラベルの出し分けが向こうでこれを
-  // 見ている以上、**同じ判定に揃える**（違う判定にすると、表示は Alt-K
-  // なのにこちらは Mac 扱い、という食い違いが起きる）
-  if (/Mac|iPhone/.test(navigator.platform)) return;
+  // **表示も Alt-K に揃える。** Framework は navigator.platform が
+  // Mac / iPhone なら ⌘K と出すが、iPhone で見ると ⌘K と表示された
+  // うえに何も起きなかった（向こうのハンドラは metaKey しか見ない）。
+  // 押せば動くものだけを表示する。⌘K は Mac で従来どおり効く
+  box.setAttribute("data-shortcut", "Alt-K");
 
   addEventListener("keydown", (e) => {
     if (e.code !== "KeyK" || !e.altKey || e.metaKey || e.ctrlKey) return;

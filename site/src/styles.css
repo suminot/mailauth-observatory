@@ -855,6 +855,11 @@ form.observablehq-input > label {
 /* -------------------------------------------------- 左下の切り替え */
 
 .chrome-controls {
+  /* 検索結果枠（position:absolute）より前に出す。**これが無いと、
+     検索中に下端の切り替えが押せなくなる。** 地を敷いて後ろが透けないようにする */
+  position: relative;
+  z-index: 1;
+  background: var(--bg-deep);
   margin-top: auto;
   padding: 12px 14px 14px;
   border-top: 1px solid var(--rule);
@@ -910,3 +915,33 @@ form.observablehq-input > label {
  * 1つも見えなくなる。両言語が並ぶ方がまだ使える） */
 :root[data-js] #observablehq-sidebar > ol { visibility: hidden; }
 :root[data-nav-ready] #observablehq-sidebar > ol { visibility: visible; }
+
+/* -------------------------------------------- 検索結果枠の当たり判定 */
+/* **左下の切り替えが押せなかった原因。**
+ *
+ * Framework の `#observablehq-search-results` は
+ * `position:absolute; top:6.5rem; bottom:0` で、**中身が空のときも
+ * サイドバーの下端まで伸びている。** 検索していないときは透明な板が
+ * 一覧の上に乗っているだけで、下端に何も置かなければ無害だった。
+ * 切り替えを下端に置いた瞬間、その下敷きになって指が届かなくなる。
+ *
+ * 手当ては2段構え。**片方だけでは足りなかった。**
+ *
+ *   1. 空のときは当たり判定を外す（検索していないとき・ここ）
+ *   2. 切り替え自体を結果枠より前に出す（検索中・.chrome-controls の z-index）
+ *
+ * 1 だけにしていたら、**一度検索を使ったあとにまた押せなくなった。**
+ * 検索モードに入ると結果枠は空でなくなり、`:empty` が外れるためである。 */
+#observablehq-search-results:empty { pointer-events: none; }
+
+/* ------------------------------------------------------- 題字 */
+/* 一覧の先頭に出るサイト名。**下に並ぶページ名より小さいと題字に見えない。**
+   Framework は同じ大きさ（13.5px）で出すので、ここで上げる */
+#observablehq-sidebar > ol:first-of-type > li.observablehq-link > a {
+  font-family: var(--sans);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
