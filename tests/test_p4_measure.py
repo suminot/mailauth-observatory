@@ -461,6 +461,40 @@ def test_zdns_backend_fails_loudly_when_missing(monkeypatch):
         zdns_backend.ZdnsBackend()
 
 
+def test_設定ファイルの速度指定が既定のバックエンドに届いている():
+    """**絞ったつもりで絞れていない**のが一番まずい。
+
+    `rate` のキーはバックエンドごとに効くものが違う。既定の dnspython は
+    `qps` を読み、`threads` は zdns しか読まない。`qps` を書き忘れると
+    コード側の既定値（80）が黙って使われ、設定ファイルをいくら直しても
+    速度は変わらない。**設定ファイルは何も言わないので気付けない。**
+    """
+    from mailauth.config import load_yaml
+
+    rate = load_yaml("configs/measure.yaml").get("rate") or {}
+    assert "qps" in rate, (
+        "configs/measure.yaml の rate に qps が無い。既定の dnspython は "
+        "threads を読まないので、コード側の既定値が黙って使われる"
+    )
+
+    backend = make_backend("dnspython", {"rate": {**rate, "qps": 7}})
+    assert backend.resolver.min_interval == pytest.approx(1 / 7), (
+        "設定した qps がリゾルバに届いていない"
+    )
+
+
+def test_設定ファイルが書いている速度指定を誰かが読んでいる():
+    """誰も読まないキーは、**効くように見えて効かない。**"""
+    import inspect
+
+    from mailauth.config import load_yaml
+    from mailauth.p4_measure import runner as p4
+
+    source = inspect.getsource(p4)
+    unread = [k for k in (load_yaml("configs/measure.yaml").get("rate") or {}) if k not in source]
+    assert not unread, f"configs/measure.yaml の rate に、誰も読んでいないキーがある: {unread}"
+
+
 def test_p4_shuffles_domain_order():
     """同一権威への連続クエリを避ける作法。順序は seed で再現可能。"""
     rows = [
