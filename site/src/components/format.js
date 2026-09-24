@@ -111,3 +111,9 @@ export function entityIndicators(stats) {
     row("DMARC が強制ポリシーの企業", stats.dmarc_enforced_entities),
   ];
 }
+
+/** 件数の表記。**「0」と「まだ無い」を同じ見た目にしない**（原則5）。 */
+export function num(value) {
+  if (value === null || value === undefined) return "—";
+  return value.toLocaleString("ja-JP");
+}

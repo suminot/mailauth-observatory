@@ -12,7 +12,8 @@ const overall = FileAttachment("data/stats_overall.json").json();
 ```
 
 ```js
-import { rate, pct, band, BAND_COLORS, checklist, checklistClass, indicators, entityIndicators } from "./components/format.js";
+import { rate, pct, band, BAND_COLORS, checklist, checklistClass, indicators, entityIndicators, num } from "./components/format.js";
+import { coverageRing } from "./components/gauge.js";
 ```
 
 ```js
@@ -42,16 +43,38 @@ const current = series.at(-1);
 ## 総括
 
 ```js
+// 大きく出すのは**観測した件数だけ**にする。率や達成度を大書きすると
+// 総合スコアのように読まれる（DESIGN.md P8 で禁じている）
 display(
-  Inputs.table(
-    [
-      { 指標: "企業数", 値: current?.total_entities },
-      { 指標: "計測したドメイン", 値: current?.total_domains },
-      { 指標: "うち観測できたドメイン", 値: current?.observed_domains },
-    ],
-    { header: { 指標: "指標", 値: "件数" }, sort: null }
-  )
+  html`<div class="readout-grid">
+    <div class="readout">
+      <span class="label">企業</span>
+      <span class="value">${num(current?.total_entities)}<span class="unit">社</span></span>
+      <span class="readout-cap">${population}</span>
+    </div>
+    <div class="readout">
+      <span class="label">計測対象ドメイン</span>
+      <span class="value">${num(current?.total_domains)}</span>
+      <span class="readout-cap">候補として展開した総数</span>
+    </div>
+    <div class="readout">
+      <span class="label">観測できたドメイン</span>
+      <span class="value">${num(current?.observed_domains)}</span>
+      <span class="readout-cap">率の分母はこれを使う</span>
+    </div>
+    <div class="readout">
+      <span class="label">観測月</span>
+      <span class="value">${(current?.measured_month ?? "—").slice(0, 7)}</span>
+      <span class="readout-cap">${months.length} か月分を保持</span>
+    </div>
+  </div>`
 );
+```
+
+```js
+// 観測できた割合。**達成度ではなく、この計測がどれだけ届いたか。**
+// 届かなかった分を伏せると、率をどれだけ信じてよいかが読み手に伝わらない
+display(coverageRing(current?.observed_domains, current?.total_domains));
 ```
 
 率の分母には**観測できたドメインだけ**を使っています。SERVFAIL などで
