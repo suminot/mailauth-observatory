@@ -102,13 +102,23 @@ def classify_role(domain: str, official_domain: str | None, confidence: str) -> 
     return DomainRole.RELATED
 
 
-def assign_tier(confidence: str) -> str:
+def assign_tier(confidence: str, measure_cfg: dict | None = None) -> str:
     """P4 の計測の深さ。
 
     階層A（フル）に confirmed / likely、階層C（簡易）にそれ以外。
     送信していないドメインに DKIM セレクタを50個投げても検出されないし、
     権威DNSへの負荷という点で作法が悪い（DESIGN.md P2）。
+
+    **どの確度が階層A に入るかは `measure.yaml` が決める。** 以前はここに
+    直書きされていて、設定の `applies_to_confidence` を書き換えても何も
+    変わらなかった（原則7 が破れていた）。設定に無ければ上の既定に戻る。
     """
+    from ..config import load_measure_config
+
+    cfg = measure_cfg if measure_cfg is not None else load_measure_config()
+    spec = ((cfg.get("tiers") or {}).get(MeasureTier.A) or {}).get("applies_to_confidence")
+    if spec:
+        return MeasureTier.A if confidence in set(spec) else MeasureTier.C
     if confidence in (Confidence.CONFIRMED, Confidence.LIKELY):
         return MeasureTier.A
     return MeasureTier.C

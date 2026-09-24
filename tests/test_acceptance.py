@@ -223,12 +223,79 @@ def test_the_published_site_explains_how_it_measures():
 
 
 def test_spf_includes_and_mx_hosts_are_cached():
-    """権威DNSへの負荷回避は倫理的義務（DESIGN.md P4 実装メモ）。"""
-    from mailauth.config import load_measure_config
+    """権威DNSへの負荷回避は倫理的義務（DESIGN.md P4 実装メモ）。
 
-    cache = load_measure_config()["cache"]
-    assert cache["spf_include"] is True
-    assert cache["mx_host_resolution"] is True
+    **以前は `measure.yaml` に true と書いてあることを見ていた。**
+    そのキーを読むコードは存在せず（`grep -r mx_host_resolution src` → 0件）、
+    実装を丸ごと消しても検査は通った。このリポジトリが繰り返し踏んだ形である。
+
+    見るのは**実際の問い合わせの本数**にする。同じ名前を2回引いて2本出たら
+    落ちる ── それが相手にかける負荷そのものだからである。
+    """
+    from mailauth.resolver import DnsResolver, make_answer
+
+    asked: list[tuple[str, str]] = []
+
+    class Counting(DnsResolver):
+        """実際に外へ出る一段だけを差し替える。**キャッシュの経路は本物を通す。**"""
+
+        def _query_uncached(self, name, rtype):
+            asked.append((name, rtype))
+            return make_answer(name, rtype, ["v=spf1 -all"])
+
+    resolver = Counting(nameservers=["127.0.0.1"], qps=0)
+    for _ in range(3):
+        resolver.query("spf.protection.outlook.com", "TXT")
+        resolver.query("aspmx.l.google.com", "A")
+
+    assert len(asked) == 2, f"同じ名前を引き直している: {asked}"
+    assert resolver.stats["cache_hits"] == 4, resolver.stats
+
+
+def test_設定に書いてあるだけの項目を_効いていると読ませない():
+    """**書いてあるキーを読むコードが無い**と、無い機能があると思わせる。
+
+    原則7（設定はコード外に）は「設定がコードを変える」ことが前提である。
+    変わらない設定は、消すか、未実装だと明示するかのどちらかにする。
+
+    この検査は**新しく増えたときに気付くため**にある。
+    """
+    import re
+
+    import yaml
+
+    from mailauth.paths import config_path, repo_root
+
+    cfg = yaml.safe_load(config_path("configs/measure.yaml").read_text(encoding="utf-8"))
+    src = "\n".join(
+        p.read_text(encoding="utf-8")
+        for p in (repo_root() / "src" / "mailauth").rglob("*.py")
+    )
+
+    def leaves(node, prefix=""):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                yield from leaves(v, f"{prefix}{k}.")
+                yield prefix + k
+        # リストの中身はキーではない
+
+    unread = []
+    for key in {k.rstrip(".").split(".")[-1] for k in leaves(cfg)}:
+        if key.endswith("_status"):
+            continue
+        # 未実装と明示してあるものは除く（兄弟に <key>_status: planned）
+        if re.search(rf'^\s*{re.escape(key)}_status:\s*planned', 
+                     config_path("configs/measure.yaml").read_text(encoding="utf-8"),
+                     re.M):
+            continue
+        if re.search(rf'["\']{re.escape(key)}["\']', src):
+            continue
+        unread.append(key)
+
+    assert not unread, (
+        f"measure.yaml のこれらを読むコードが無い: {sorted(unread)}\n"
+        "実装するか、<キー>_status: planned を添えて未実装だと明示するか、消すこと"
+    )
 
 
 def test_tier2_is_tied_to_prior_notification():
@@ -395,3 +462,118 @@ def test_manifest_shape_is_stable():
     )
     for key in ("run_id", "phase", "status", "counts", "warnings", "outputs"):
         assert key in payload, f"manifest に {key} が無い"
+
+
+# ===========================================================================
+# 設定がコードを変えること（原則7）
+#
+# `tiers:` は measure.yaml に書いてあったが**どこからも読まれていなかった。**
+# 書き換えても投げる内容も階層の割り当ても1本も変わらない。
+# 設定がコードを変えないなら、それは設定ではなく感想である。
+
+
+def test_階層の中身を設定が決める():
+    """`tiers.<階層>.queries` を書き換えたら、投げる種類が変わること。"""
+    from mailauth.contracts import MeasureTier, QueryPurpose
+    from mailauth.p4_measure.plan import build_plan, restrict_to_configured
+
+    plan = build_plan("example.jp", MeasureTier.A, selectors=["s1"])
+    purposes = {q.purpose for q in plan}
+    assert QueryPurpose.BIMI in purposes, "この検査の前提が崩れている"
+
+    # BIMI を外した設定を渡す
+    cfg = {"tiers": {"A": {"queries": ["mx", "spf", "dmarc", "dkim"]}}}
+    narrowed = restrict_to_configured(plan, MeasureTier.A, cfg)
+    assert {q.purpose for q in narrowed} == {"mx", "spf", "dmarc", "dkim"}
+    assert len(narrowed) < len(plan), "設定を狭めても本数が減っていない"
+
+
+def test_設定が無ければ絞らない():
+    """**設定を読めなかったときに、全部落として空にしない。**
+
+    「測っていない」が「レコードが無い」として集計されるのが一番まずい。
+    """
+    from mailauth.contracts import MeasureTier
+    from mailauth.p4_measure.plan import build_plan, restrict_to_configured
+
+    plan = build_plan("example.jp", MeasureTier.A, selectors=["s1"])
+    assert restrict_to_configured(plan, MeasureTier.A, {}) == plan
+
+
+def test_綴り違いを黙って通さない():
+    """**未知の種類があったら止める。** 黙って落とすと計測が静かに空になる。"""
+    import pytest as _pytest
+
+    from mailauth.p4_measure.plan import allowed_purposes
+
+    with _pytest.raises(ValueError, match="未知の種類"):
+        allowed_purposes("A", {"tiers": {"A": {"queries": ["mx", "spf_typo"]}}})
+
+
+def test_どの確度が階層aに入るかを設定が決める():
+    """`applies_to_confidence` を書き換えたら、割り当てが変わること。"""
+    from mailauth.contracts import MeasureTier
+    from mailauth.p3_domains.classify import assign_tier
+
+    cfg = {"tiers": {"A": {"applies_to_confidence": ["confirmed"]}}}
+    assert assign_tier("confirmed", cfg) == MeasureTier.A
+    # likely を外したので簡易計測に落ちる
+    assert assign_tier("likely", cfg) == MeasureTier.C
+
+
+def test_p4_が設定の絞り込みを通している(monkeypatch, tmp_path):
+    """**通していなければ、設定は書いてあるだけになる。**
+
+    最初この検査は `inspect.getsource(run)` に関数名が出るかを見ていた。
+    **絞り込みの呼び出しを1つ消しても通った** ── 別の箇所に同じ名前が
+    残っていたためである。名前ではなく**実際に投げた種類**を見る。
+    """
+    from mailauth.contracts import DOMAIN_ARROW_SCHEMA, MeasureTier
+    from mailauth.io import write_parquet
+    from mailauth.p4_measure import run as run_p4
+    from mailauth.p4_measure import runner as mod
+    from mailauth.paths import phase_output
+    from mailauth.resolver import StaticResolver
+
+    base = {
+        "run_id": "2026-08",
+        "domain_role": "primary",
+        "confidence": "confirmed",
+        "is_measured": True,
+        "measure_tier": MeasureTier.A,
+        "evidence_count": 5,
+        "entity_id": "jp:1",
+        "domain_id": "d:1",
+        "domain": "send.example.jp",
+    }
+    write_parquet(
+        [base],
+        phase_output("2026-08", "p3_domains", "domains.parquet"),
+        DOMAIN_ARROW_SCHEMA,
+    )
+
+    class Backend:
+        name = "fake"
+        version = "t"
+        resolver_label = "fake"
+
+        def __init__(self):
+            self._r = StaticResolver({})
+            self.stats = {"queries": 0, "cache_hits": 0, "tcp_failed": 0}
+            self.purposes: set[str] = set()
+
+        def query(self, query):
+            self.purposes.add(query.purpose)
+            return self._r.query(query.name, query.rtype)
+
+    full = mod.load_measure_config()
+    narrow = {**full, "tiers": {"A": {"queries": ["mx", "spf", "dmarc"]}}}
+    monkeypatch.setattr(mod, "load_measure_config", lambda: narrow)
+
+    backend = Backend()
+    run_p4(run_id="2026-08", backend=backend)
+
+    assert backend.purposes <= {"mx", "spf", "dmarc"}, (
+        f"設定に無い種類を投げている: {sorted(backend.purposes - {'mx', 'spf', 'dmarc'})}"
+    )
+    assert "dkim" not in backend.purposes
