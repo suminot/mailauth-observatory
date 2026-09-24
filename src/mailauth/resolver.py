@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import random
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Protocol
@@ -72,7 +73,25 @@ TERMINAL_RCODES = {"NOERROR", "NXDOMAIN", "NODATA"}
 
 
 class DnsResolver:
-    """dnspython による実装。キャッシュとレート制御つき。"""
+    """dnspython による実装。キャッシュとレート制御つき。
+
+    ## 複数スレッドから呼んでよい
+
+    P4 は1ドメインあたり約58本引く。**往復が直列に積み上がる**ので、
+    2026-09 の国内計測では1ドメイン 7.7秒・実効 7.5 qps しか出ず、
+    2,153ドメインで4時間36分かかってジョブの上限に当たった
+    （設定の `qps: 80` は一度も効いていない ── 上流への往復が律速）。
+
+    そこで応答待ちだけを重ねられるようにした。**投げる間隔は全スレッドで
+    共有する**ので、権威DNSから見た単位時間あたりの本数は直列のときと
+    変わらない。ctlog.py と同じ考え方である。
+
+    守るものが3つあり、**どれか1つでも外すと壊れ方が違う。**
+
+      間隔    共有しないと実効 qps が本数倍になる（絞りを外したことになる）
+      キャッシュ  同時に触ると取りこぼす。同じ名前を二度引くのは相手に失礼
+      統計    加算が競合すると、原則4（件数を必ず記録する）の数字が狂う
+    """
 
     def __init__(
         self,
@@ -98,6 +117,12 @@ class DnsResolver:
         self.want_dnssec = want_dnssec
         self._cache: dict[tuple[str, str], DnsAnswer] | None = {} if cache else None
         self._last_call = 0.0
+        # **投げる間隔は全スレッドで1つ。** スレッドごとに持つと、本数ぶんだけ
+        # 実効 qps が上がる ── 速くしたのではなく絞りを外したことになる
+        self._throttle_lock = threading.Lock()
+        # キャッシュと統計を守る。間隔の錠とは**別にする** ── 同じ錠にすると、
+        # 眠っている間キャッシュが読めず、並行にした意味が消える
+        self._state_lock = threading.Lock()
         self.stats: dict[str, int] = {
             "queries": 0,
             "cache_hits": 0,
@@ -109,23 +134,57 @@ class DnsResolver:
         }
 
     def _throttle(self) -> None:
+        """次の1本を投げてよい時刻まで待つ。**全スレッドで1つの間隔。**
+
+        錠を保ったまま眠る。こうすると「投げる瞬間」だけが直列になり、
+        応答を待つ時間は重なる。錠の外で眠ると全スレッドが同じ時刻に
+        目を覚まして一斉に投げるので、絞っている意味が無くなる。
+        """
         if self.min_interval <= 0:
             return
-        elapsed = time.monotonic() - self._last_call
-        if elapsed < self.min_interval:
-            time.sleep(self.min_interval - elapsed)
-        self._last_call = time.monotonic()
+        with self._throttle_lock:
+            wait = self.min_interval - (time.monotonic() - self._last_call)
+            if wait > 0:
+                time.sleep(wait)
+            self._last_call = time.monotonic()
+
+    # -- 共有状態に触ってよいのは、この3つだけ ----------------------------
+    #
+    # **錠を1か所忘れても、少ない件数では落ちない。** 触る場所を散らすと
+    # 「どこかに錠の無い経路がある」状態に気付けないので、出入口を絞る。
+    # 検査（tests/test_dns_concurrency.py）が、ここ以外で `_cache` と
+    # `stats` に触っていないことを確かめている。
+
+    def _cache_get(self, key: tuple[str, str]) -> DnsAnswer | None:
+        if self._cache is None:
+            return None
+        with self._state_lock:
+            hit = self._cache.get(key)
+            if hit is not None:
+                self.stats["cache_hits"] = self.stats.get("cache_hits", 0) + 1
+            return hit
+
+    def _cache_put(self, key: tuple[str, str], answer: DnsAnswer) -> DnsAnswer:
+        """入れた結果を返す。**先に入った方を勝たせる** ── 同じ名前を同時に
+        引いた場合に、呼び出し側ごとに違う答えを返さないため。"""
+        if self._cache is None:
+            return answer
+        with self._state_lock:
+            return self._cache.setdefault(key, answer)
+
+    def _bump(self, key: str, n: int = 1) -> None:
+        """統計を数える。**加算が競合すると原則4の数字が狂う。**"""
+        with self._state_lock:
+            self.stats[key] = self.stats.get(key, 0) + n
 
     def query(self, name: str, rtype: str) -> DnsAnswer:
         key = (name.rstrip(".").lower(), rtype.upper())
-        if self._cache is not None and key in self._cache:
-            self.stats["cache_hits"] += 1
-            return self._cache[key]
+        hit = self._cache_get(key)
+        if hit is not None:
+            return hit
 
-        answer = self._query_uncached(key[0], key[1])
-        if self._cache is not None:
-            self._cache[key] = answer
-        return answer
+        # **問い合わせは錠の外で行う。** 中でやると1本ずつしか飛ばない
+        return self._cache_put(key, self._query_uncached(key[0], key[1]))
 
     def _query_uncached(self, name: str, rtype: str) -> DnsAnswer:
         """UDP で引き、truncated なら TCP に切り替える。
@@ -147,7 +206,7 @@ class DnsResolver:
             attempt = 0
             while True:
                 self._throttle()
-                self.stats["queries"] += 1
+                self._bump("queries")
                 query = dns.message.make_query(name, rdtype, want_dnssec=self.want_dnssec)
                 try:
                     resp = dns.query.udp(query, nameserver, timeout=self.timeout)
@@ -161,13 +220,13 @@ class DnsResolver:
                     used_tcp = False
                     if resp.flags & dns.flags.TC:
                         # 512バイトを超える応答。TXT が多いドメインで普通に起きる
-                        self.stats["tcp_fallback"] += 1
+                        self._bump("tcp_fallback")
                         try:
                             resp = dns.query.tcp(query, nameserver, timeout=self.tcp_timeout)
                             used_tcp = True
                         except (dns.exception.DNSException, OSError) as exc:
-                            self.stats["tcp_failed"] += 1
-                            self.stats["failures"] += 1
+                            self._bump("tcp_failed")
+                            self._bump("failures")
                             return DnsAnswer(
                                 name=name,
                                 rtype=rtype,
@@ -189,12 +248,12 @@ class DnsResolver:
                 if attempt < self.retries:
                     delay = self.backoff[min(attempt, len(self.backoff) - 1)]
                     attempt += 1
-                    self.stats["retries"] += 1
+                    self._bump("retries")
                     time.sleep(delay)
                     continue
                 break
 
-        self.stats["failures"] += 1
+        self._bump("failures")
         return DnsAnswer(
             name=name,
             rtype=rtype,
