@@ -387,6 +387,11 @@ class CrtShClient:
                     time.sleep(2 ** attempt)
                     continue
                 if resp.status_code != 200:
+                    # **404 を「証明書が無い」と読まない。** 2026-09-25 に
+                    # 実地で確かめた ── 0件のとき crt.sh は 200 と空配列
+                    # `[]` を返す。停止中に出る 404 は HTML のエラーページで、
+                    # あれを「空」と解釈すると**サーバが壊れているときに
+                    # 「証明書が無い」と記録する**ことになる（原則5）
                     return failed("http", f"HTTP {resp.status_code}")
                 try:
                     rows = resp.json()

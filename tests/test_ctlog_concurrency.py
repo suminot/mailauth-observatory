@@ -697,3 +697,52 @@ def test_時間切ればかりでは止めない(tmp_path, no_backoff):
     assert ct._succeeded == 1, "1本も通っていないと、別の判定で止まってしまう"
     assert ct.response_stats()["errors_by_kind"].get("timeout", 0) >= 50
     assert ct.upstream_down is None, f"時間切れだけで止めている: {ct.upstream_down}"
+
+
+def test_404を証明書が無いと読まない(tmp_path):
+    """**サーバが壊れているときに「証明書が無い」と記録しない**（原則5）。
+
+    2026-09-25 に実地で確かめた ── 0件のとき crt.sh は 200 と空配列を
+    返す。停止中に出る 404 は HTML のエラーページである。あれを「空」と
+    解釈すると、停止した月のドメインが全部「証明書を持たない」になる。
+    """
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, text="<!DOCTYPE HTML ...404 Not Found...")
+
+    ct = CrtShClient(
+        cache_dir=tmp_path / "crtsh",
+        month="2026-09",
+        qps=0.0,
+        retries=0,
+        concurrency=1,
+        client=httpx.Client(transport=httpx.MockTransport(handle)),
+    )
+    got = ct.search("gone.example.jp")
+    assert got.error, "404 を成功として扱っている"
+    assert got.error_kind == "http", got.error_kind
+    assert got.found == []
+
+
+def test_0件は成功として扱う(tmp_path):
+    """**200 と空配列は「観測した結果、無かった」である。**
+
+    こちらは失敗ではない。失敗にすると、証明書を持たないドメインが
+    毎月「測れなかった」に積み上がる。
+    """
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[])
+
+    ct = CrtShClient(
+        cache_dir=tmp_path / "crtsh",
+        month="2026-09",
+        qps=0.0,
+        retries=0,
+        concurrency=1,
+        client=httpx.Client(transport=httpx.MockTransport(handle)),
+    )
+    got = ct.search("empty.example.jp")
+    assert got.error is None, f"0件を失敗にしている: {got.error}"
+    assert got.found == []
+    assert ct.response_stats()["errors_by_kind"] == {}
