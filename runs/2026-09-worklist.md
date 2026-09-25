@@ -8,18 +8,32 @@
 `configs/worklist/unidentified_hosts.yaml` に理由を書いて作業リストから外してください。
 **「調べたが分からなかった」は結論であって、無かったことにはしません。**
 
-## 手を付けるもの（8 件）
+## 手を付けるもの（20 件）
 
 | 登録ドメイン | 件数 | 連続月 | 例 |
 |---|---|---|---|
-| `avnet.com` | 6 | 1 | `smtpemea02.avnet.com`, `smtp03.avnet.com`, `smtp01.avnet.com` |
-| `americanexpress.com.mx` | 2 | 1 | `servicetest.americanexpress.com.mx`, `service.americanexpress.com.mx` |
-| `avery.com` | 2 | 1 | `mail10.avery.com`, `mail11.avery.com` |
-| `cclind.com` | 2 | 1 | `mail2.cclind.com`, `mail1.cclind.com` |
-| `gpphosted.com` | 2 | 1 | `mxa-00517304.gslb.gpphosted.com`, `mxb-00517304.gslb.gpphosted.com` |
-| `aig.com.br` | 1 | 1 | `mail3.aig.com.br` |
-| `digital--analog.com` | 1 | 1 | `digital--analog.com` |
-| `unumemarketing.com` | 1 | 1 | `unumemarketing.com` |
+| `ocn.ad.jp` | 138 | 1 | `mwpremgw2.ocn.ad.jp`, `mwpremgw1.ocn.ad.jp`, `vcgw2.ocn.ad.jp` |
+| `fireeyecloud.com` | 74 | 1 | `alt3.ap.email.fireeyecloud.com`, `alt2.ap.email.fireeyecloud.com`, `primary.ap.email.fireeyecloud.com` |
+| `alpha-prm.jp` | 57 | 1 | `mxi.alpha-prm.jp` |
+| `messagelabs.com` | 57 | 1 | `cluster5a.us.messagelabs.com`, `cluster5.us.messagelabs.com`, `cluster1a.us.messagelabs.com` |
+| `kagoya.net` | 48 | 1 | `dmail.kagoya.net`, `mgws317.kagoya.net`, `mgws299.kagoya.net` |
+| `secure.ne.jp` | 46 | 1 | `ham1005.secure.ne.jp`, `vlmx-air.secure.ne.jp`, `ham1010.secure.ne.jp` |
+| `outlook.com` | 31 | 1 | `ms29696915.msv1.invalid.outlook.com`, `faltec-co-jp.mail.eo.outlook.com`, `hoshizaki-co-jp.mail.eo.outlook.com` |
+| `airnet.ne.jp` | 30 | 1 | `mxin2.airnet.ne.jp`, `mxin1.airnet.ne.jp` |
+| `worksmobile.com` | 17 | 1 | `jp1-aspmx1.worksmobile.com`, `jp1-aspmx2.worksmobile.com` |
+| `alpha-mail.net` | 16 | 1 | `ampub03.alpha-mail.net`, `ampub04.alpha-mail.net`, `ampub01.alpha-mail.net` |
+| `active-w.net` | 15 | 1 | `mx02.active-w.net`, `mx03.active-w.net`, `mx01.active-w.net` |
+| `mailsecure.jp` | 15 | 1 | `v2301-244.mailsecure.jp`, `v1700-176.mailsecure.jp`, `v1300-184.mailsecure.jp` |
+| `digitalartscloud.com` | 12 | 1 | `mail.system.digitalartscloud.com` |
+| `larksuite.com` | 12 | 1 | `mx2.larksuite.com`, `mx3.larksuite.com`, `mx1.larksuite.com` |
+| `fortimail.com` | 11 | 1 | `gw4022.fortimail.com`, `gw3018.fortimail.com`, `gw199127.fortimail.com` |
+| `heteml.jp` | 10 | 1 | `mx-proxy502.heteml.jp`, `mx-proxy501.heteml.jp` |
+| `nospamcloud.com` | 10 | 1 | `mxjp2.nospamcloud.com`, `mxjp1.nospamcloud.com` |
+| `oneoffice.jp` | 10 | 1 | `mailgw3.oneoffice.jp`, `mailgw2.oneoffice.jp`, `mailgw.oneoffice.jp` |
+| `sharedmail.jp` | 10 | 1 | `filter1.mail.sharedmail.jp`, `mx1.sharedmail.jp`, `filter2.mail.sharedmail.jp` |
+| `lolipop.jp` | 9 | 1 | `mx01.lolipop.jp` |
+
+- P6 の未知ホスト一覧が上限 20 件に達している。**一覧に無いホストが残っている**（頻度の低いものが切れている）
 
 ## 追記のしかた
 
