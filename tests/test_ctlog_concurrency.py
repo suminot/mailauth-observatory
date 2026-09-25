@@ -482,7 +482,13 @@ def test_やめた理由を残す(tmp_path):
 
 
 def test_1本でも成功していれば止めない(tmp_path):
-    """**たまたま重い数件で止めない。** 相手は生きている。"""
+    """**たまたま重い数件で止めない。** 相手は生きている。
+
+    重いとは**時間切れ**のことである。最初この試験は 502 を返していたが、
+    502 は「相手が断った」であって重さではない ── **説明と中身が合って
+    いなかった。** 断りの方は別の判定で見る（下の「断りが答えを上回ったら
+    止める」）。
+    """
     calls = {"n": 0}
     lock = threading.Lock()
 
@@ -490,10 +496,10 @@ def test_1本でも成功していれば止めない(tmp_path):
         with lock:
             calls["n"] += 1
             n = calls["n"]
-        # 1本目だけ成功、あとは全部 502
+        # 1本目だけ成功、あとは全部 時間切れ（重いドメイン）
         if n == 1:
             return httpx.Response(200, json=[{"name_value": "mail.example.jp"}])
-        return httpx.Response(502, text="502 Bad Gateway")
+        raise httpx.ReadTimeout("too slow", request=request)
 
     ct = CrtShClient(
         cache_dir=tmp_path / "crtsh",
@@ -537,3 +543,157 @@ def test_設定で止めないようにもできる(tmp_path):
     ct.prefetch([f"e{i}.example.jp" for i in range(10)])
     assert ct.upstream_down is None
     assert server.requests == 10, "止めない設定なのに止まっている"
+
+
+# --------------------------------------------------------------------------
+# まだらに落ちているとき
+#
+# 2026-09-25 の crt.sh は 30% → 17% → 10% と**まだらに**落ちていた。
+# 投げ直し2回のおかげで連続失敗が20本に届かず、「丸ごと落ちている」の
+# 判定は作動しない ── そのまま回すと、3分の1しか見えていない月ができる。
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def no_backoff(monkeypatch):
+    """投げ直しの待ちを飛ばす。**待ち方はここで見たいことではない。**
+
+    実物は 2 秒・4 秒と待つので、80ドメインぶん回すと試験が分単位になる。
+    """
+    from mailauth import ctlog as _ctlog
+
+    monkeypatch.setattr(_ctlog.time, "sleep", lambda _s: None)
+
+
+class _FlakyCrtSh:
+    """N 回に1回だけ 200、残りは 502 を返す crt.sh。"""
+
+    def __init__(self, one_in: int) -> None:
+        self.one_in = one_in
+        self.lock = threading.Lock()
+        self.requests = 0
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        with self.lock:
+            self.requests += 1
+            n = self.requests
+        if n % self.one_in == 0:
+            return httpx.Response(200, json=[{"name_value": "mail.example.jp"}])
+        return httpx.Response(502, text="502 Bad Gateway")
+
+
+def _flaky_client(tmp_path, server, *, down_after: int, retries: int = 2) -> CrtShClient:
+    return CrtShClient(
+        cache_dir=tmp_path / "crtsh",
+        month="2026-09",
+        qps=0.0,
+        retries=retries,
+        concurrency=1,
+        down_after=down_after,
+        client=httpx.Client(transport=httpx.MockTransport(server.handle)),
+    )
+
+
+def test_連続失敗の判定はまだらな相手を捕まえない(tmp_path, no_backoff):
+    """**先に、いまの判定が効かないことを確かめる。**
+
+    効かないことを示さずに2つ目を足すと、要らないものを足したことになる。
+    """
+    server = _FlakyCrtSh(one_in=10)  # 相手が答えるのは10本に1本
+    # **2つ目の判定を切って**、1つ目だけで捕まるかを見る
+    ct = _flaky_client(tmp_path, server, down_after=0)
+    ct.prefetch([f"e{i}.example.jp" for i in range(60)])
+
+    assert ct._succeeded > 0, "1本も成功していないなら、まだらではない"
+    assert ct.response_stats()["errors_by_kind"].get("http", 0) > 0
+    # down_after=0 なので当然止まらないが、**成功が混ざっている**ことが要点。
+    # 「1本も成功していない」という条件は、この相手では永久に満たされない
+    assert ct.upstream_down is None
+
+
+def test_断りが答えを上回ったら止める(tmp_path, no_backoff):
+    """**`http` は相手が断ったということ。** ドメインの重さでは起きない。"""
+    server = _FlakyCrtSh(one_in=10)
+    ct = _flaky_client(tmp_path, server, down_after=20)
+    ct.prefetch([f"e{i}.example.jp" for i in range(80)])
+
+    assert ct.upstream_down, "まだら落ちを捕まえていない"
+    assert "断られた" in ct.upstream_down
+    assert server.requests < 80 * 3, f"止まっていない。{server.requests} 本投げている"
+
+
+def test_答えの方が多ければ止めない(tmp_path, no_backoff):
+    """**たまに 502 が混ざるだけの相手は、正常である。**
+
+    ここで効かせたいのは「断り > 答え」の側なので、**断りが `down_after` に
+    届く量は起こす。** 投げ直しを入れると 502 が3回連続せず、ドメイン単位の
+    失敗が1件も起きない ── それだと比率の条件を通っていないのに通ったように
+    見える（実際そうなっていた。条件を消しても落ちなかった）。
+    """
+
+    class _MostlyOk:
+        def __init__(self):
+            self.lock = threading.Lock()
+            self.requests = 0
+
+        def handle(self, request):
+            with self.lock:
+                self.requests += 1
+                n = self.requests
+            if n % 3 == 0:
+                return httpx.Response(502, text="502")
+            return httpx.Response(200, json=[{"name_value": "mail.example.jp"}])
+
+    server = _MostlyOk()
+    ct = _flaky_client(tmp_path, server, down_after=20, retries=0)
+    ct.prefetch([f"e{i}.example.jp" for i in range(90)])
+
+    kinds = ct.response_stats()["errors_by_kind"]
+    assert kinds.get("http", 0) >= 20, (
+        f"断りが {kinds.get('http', 0)} 件しか起きておらず、比率の条件を通っていない"
+    )
+    assert ct._succeeded > kinds["http"], "答えの方が多い状況になっていない"
+    assert ct.upstream_down is None, f"正常な相手を落ちていると判断した: {ct.upstream_down}"
+
+
+def test_時間切ればかりでは止めない(tmp_path, no_backoff):
+    """**`timeout` はドメインの重さで起きる。** 相手が断ったのではない。
+
+    run 9 の失敗は実取得の58%だが、その大半は重いドメインの時間切れだった。
+    そこで止めては、正常な月が測れなくなる。
+    """
+
+    class _FirstOkThenSlow:
+        """1本目だけ答え、あとは全部時間切れ。
+
+        **「1本も成功していない」の判定を外した状態**を作るためで、
+        ここで見たいのは2つ目の判定が時間切れに反応しないことである。
+        """
+
+        def __init__(self):
+            self.lock = threading.Lock()
+            self.requests = 0
+
+        def handle(self, request):
+            with self.lock:
+                self.requests += 1
+                n = self.requests
+            if n == 1:
+                return httpx.Response(200, json=[{"name_value": "mail.example.jp"}])
+            raise httpx.ReadTimeout("too slow", request=request)
+
+    server = _FirstOkThenSlow()
+    ct = CrtShClient(
+        cache_dir=tmp_path / "crtsh",
+        month="2026-09",
+        qps=0.0,
+        retries=0,
+        concurrency=1,
+        down_after=20,
+        client=httpx.Client(transport=httpx.MockTransport(server.handle)),
+    )
+    ct.prefetch([f"e{i}.example.jp" for i in range(60)])
+
+    assert ct._succeeded == 1, "1本も通っていないと、別の判定で止まってしまう"
+    assert ct.response_stats()["errors_by_kind"].get("timeout", 0) >= 50
+    assert ct.upstream_down is None, f"時間切れだけで止めている: {ct.upstream_down}"
