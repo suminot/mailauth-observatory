@@ -2031,3 +2031,60 @@ def test_復元できたものが実行中に読める():
     assert "uses: actions/upload-artifact" in block, (
         "要約に書いているだけで成果物になっていない（API から読めない）"
     )
+
+
+def test_変更履歴の書き出し先が全部コミットされる():
+    """**片方の言語だけ進むと、両言語が違うことを言う。**
+
+    `mailauth changelog` は日本語版と英語版の両方を書く。ワークフローが
+    片方しか `git add` していないと、
+
+      1. 公開サイトの英語版が**永久に更新されない**
+      2. 追跡済みファイルが未ステージで残り、**push のやり直しが動かない**
+         （`cannot pull with rebase: You have unstaged changes.`）
+
+    2026-09 の run 11 で実際に両方起きた。全工程が通ったあと、最後の
+    push だけが落ちて成果が消えている。
+
+    **文字列を書き写すのではなく、実装から書き出し先を取って突き合わせる。**
+    出力先が増えたら、ワークフローを直すまでここが落ちる。
+    """
+    import inspect
+    import re as _re
+
+    from mailauth import cli
+
+    src = inspect.getsource(cli.changelog_cmd)
+    # `config_path("site/...")` で組み立てている書き出し先
+    targets = set(_re.findall(r'config_path\(\s*"(site/[^"]+)"\s*\)', src))
+    assert targets, "changelog の書き出し先が読み取れない（実装が変わった？）"
+
+    workflow = (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(
+        encoding="utf-8"
+    )
+    adds = [ln for ln in workflow.splitlines() if "git add" in ln]
+    assert adds, "monthly.yml に git add が無い"
+
+    for t in sorted(targets):
+        assert any(t in ln for ln in adds), (
+            f"changelog が書く {t} が monthly.yml の git add に無い。"
+            "公開サイトの片方の言語が更新されないまま残る"
+        )
+
+
+def test_pushのやり直しが未ステージの変更で止まらない():
+    """**やり直しの仕組みが、やり直せない形になっていた。**
+
+    追跡済みファイルに未ステージの変更が1つでもあると `git pull --rebase`
+    は止まる。計測は何時間もかかるので、その間に main が動くのは普通に
+    起きる ── **やり直しが効かないと、そのたびに成果を失う。**
+    """
+    workflow = (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(
+        encoding="utf-8"
+    )
+    pulls = [ln for ln in workflow.splitlines() if "git pull --rebase" in ln]
+    assert pulls, "push のやり直しが無い"
+    for ln in pulls:
+        assert "--autostash" in ln, (
+            f"未ステージの変更があると止まる: {ln.strip()}"
+        )

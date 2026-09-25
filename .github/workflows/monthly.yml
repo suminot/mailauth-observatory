@@ -380,8 +380,13 @@ jobs:
           #
           # 実行記録（runs/）は残す。**何を回したかの記録は、結果を出さない
           # 実行でも意味がある**し、60日で schedule が止まるのを防ぐ活動にもなる。
+          # **変更履歴は日英そろえて入れる。** 英語版を入れ忘れると、
+          # 日本語だけが進んで**両言語が違うことを言う**状態になる。しかも
+          # 追跡済みファイルが未ステージで残るので、下の rebase が動かなく
+          # なる（2026-09 の run 11 で実際に起きた。全工程が通ったあと、
+          # 最後の push だけが落ちて成果が消えた）。
           if [ -n "${{ github.event.inputs.limit }}" ]; then
-            git add runs site/src/changelog.md || true
+            git add runs site/src/changelog.md site/src/en/changelog.md || true
             {
               echo "### gold はコミットしていない"
               echo
@@ -391,7 +396,7 @@ jobs:
               echo "全件を出すには limit を空欄にして回すこと。"
             } >> "$GITHUB_STEP_SUMMARY"
           else
-            git add gold runs site/src/changelog.md || true
+            git add gold runs site/src/changelog.md site/src/en/changelog.md || true
           fi
           if git diff --cached --quiet; then
             # 空コミットを作る。60日で schedule が止まるのを防ぐのが目的で、
@@ -408,7 +413,12 @@ jobs:
           for attempt in 1 2 3; do
             if git push origin "$branch"; then exit 0; fi
             echo "push に失敗した（$attempt 回目）。rebase してやり直す"
-            git pull --rebase origin "$branch" || true
+            # **--autostash が無いと、やり直しの仕組みがやり直せない。**
+            # 追跡済みファイルに未ステージの変更が1つでもあると
+            # `cannot pull with rebase: You have unstaged changes.` で
+            # 止まり、3回とも同じ理由で落ちる。上の git add を直しても、
+            # 将来また別のファイルが増えたときに同じことが起きる
+            git pull --rebase --autostash origin "$branch" || true
             sleep $((attempt * 5))
           done
           echo "::error::gold と実行記録を push できなかった。成果物はこの実行のログにしか無い"
