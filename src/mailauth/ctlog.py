@@ -218,6 +218,30 @@ class CrtShClient:
                 self._down_reason = (
                     f"crt.sh に {len(self._timings)} 本投げて1本も成功していない（{kinds}）"
                 )
+            # **断られた回数が、答えてもらえた回数を上回った。**
+            #
+            # 上の判定は「丸ごと落ちている」しか捕まえない。2026-09-25 の
+            # crt.sh は 30% → 17% → 10% と**まだらに落ちて**いて、
+            # 投げ直し2回のおかげで連続失敗が20本に届かない ── つまり
+            # 上の判定は作動しないまま、3分の1しか見えていない月ができる。
+            #
+            # `http`（502 / 404 / 429 など）は**相手が断った**ということで、
+            # `timeout` と違ってドメインの重さでは起きない。**断りが答えを
+            # 上回っているなら、こちらの頼み方の問題ではない。**
+            #
+            # 割合の閾値は置いていない（置くと「いくつが正常か」を
+            # 測らずに決めることになる）。「半分を超えた」だけで判定する。
+            http_errors = self._error_kinds.get("http", 0)
+            if (
+                self.down_after > 0
+                and self._down_reason is None
+                and http_errors >= self.down_after
+                and http_errors > self._succeeded
+            ):
+                self._down_reason = (
+                    f"crt.sh に断られた回数（{http_errors}）が、"
+                    f"答えが返った回数（{self._succeeded}）を上回っている"
+                )
 
     @property
     def upstream_down(self) -> str | None:
