@@ -39,6 +39,21 @@ on:
       limit:
         description: "件数上限。初回の動作確認は 50"
         required: false
+      publish:
+        # **数字を見てから公開を決められるようにする。**
+        #
+        # 以前は「limit を入れると gold をコミットしない」しか無く、全件を
+        # 公開せずに回すには limit に大きい値を入れて副作用を使うことに
+        # なっていた。2026-09-25 に実際にそうしたが、**その経路には数字を
+        # 見る手段が無かった** ── gold はランナーごと消え、何が出たのか
+        # 分からないまま終わった。意図を名前で言えるようにする。
+        description: "gold をコミットして公開するか"
+        required: false
+        default: "yes"
+        type: choice
+        options:
+          - "yes"
+          - "no"
 
 concurrency:
   # 同じ run に対して2つ走ると manifest の書き込みが競合し、
@@ -345,6 +360,26 @@ jobs:
           mailauth run-report --run "${{ steps.run.outputs.id }}" \
             --out "runs/${{ steps.run.outputs.id }}.md"
 
+      # **公開しない実行でも、数字が読めること。**
+      #
+      # 2026-09-25 に「全件だが公開しない」形で2回回したが、**どちらも数字が
+      # 見られないまま終わった。** gold はコミットされず、ランナーごと消える。
+      # 「出す前に数字を見て決める」ためにそうしたのに、見る手段が無かった。
+      #
+      # 成果物なら実行中でも取れるし、公開とは無関係に残る。サイト用の
+      # JSON / CSV も一緒に上げる ── **parquet は手元で開く道具が要る。**
+      - name: gold を成果物にする
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-${{ steps.run.outputs.id }}
+          path: |
+            gold/month=${{ steps.run.outputs.id }}/
+            site/src/data/
+          if-no-files-found: warn
+          retention-days: 30
+
       # bronze / silver は Git に入れない（履歴肥大化の回避）。
       # 認証情報が無ければ理由付きでスキップする。**成功したふりをしない。**
       # 退避されていないことに気付くのがリポジトリを失ったあとでは遅い。
@@ -385,15 +420,24 @@ jobs:
           # 追跡済みファイルが未ステージで残るので、下の rebase が動かなく
           # なる（2026-09 の run 11 で実際に起きた。全工程が通ったあと、
           # 最後の push だけが落ちて成果が消えた）。
-          if [ -n "${{ github.event.inputs.limit }}" ]; then
+          # **公開しない理由は2つあり、別物である。** limit は「その数字が
+          # 母集団を代表していない」、publish=no は「数字は正しいが、出すかを
+          # まだ決めていない」。どちらも gold は入れないが、次にすることが違う。
+          if [ -n "${{ github.event.inputs.limit }}" ] \
+             || [ "${{ github.event.inputs.publish }}" = "no" ]; then
             git add runs site/src/changelog.md site/src/en/changelog.md || true
             {
               echo "### gold はコミットしていない"
               echo
-              echo '`--limit ${{ github.event.inputs.limit }}` を指定した動作確認の実行なので、'
-              echo "公開データセットには入れていない。実行記録は runs/ に残っている。"
+              if [ -n "${{ github.event.inputs.limit }}" ]; then
+                echo '`--limit ${{ github.event.inputs.limit }}` を指定した動作確認の実行なので、'
+                echo "公開データセットには入れていない。全件を出すには limit を空欄にして回すこと。"
+              else
+                echo "publish: no を指定したため、公開データセットには入れていない。"
+                echo "**数字は成果物 \`gold-\` から読める。** 出すと決めたら publish: yes で回し直すこと。"
+              fi
               echo
-              echo "全件を出すには limit を空欄にして回すこと。"
+              echo "実行記録は runs/ に残っている。"
             } >> "$GITHUB_STEP_SUMMARY"
           else
             git add gold runs site/src/changelog.md site/src/en/changelog.md || true

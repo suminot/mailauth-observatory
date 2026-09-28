@@ -2088,3 +2088,48 @@ def test_pushのやり直しが未ステージの変更で止まらない():
         assert "--autostash" in ln, (
             f"未ステージの変更があると止まる: {ln.strip()}"
         )
+
+
+def test_公開しない実行でも数字が読める():
+    """**「出す前に見て決める」には、見る手段が要る。**
+
+    2026-09-25 に「全件だが公開しない」形で2回回したが、どちらも数字が
+    見られないまま終わった ── gold はコミットされず、ランナーごと消える。
+    見る手段が無いまま「見てから決める」と言っていた。
+
+    成果物は実行中でも取れるし、公開とは無関係に残る。
+    """
+    text = (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "gold を成果物にする" in text, "gold を成果物にしていない"
+    block = text[text.index("gold を成果物にする") :]
+    block = block[: block.index("R2 に退避")]
+    assert "upload-artifact" in block
+    assert "gold/month=" in block, "gold そのものを上げていない"
+    # **parquet だけでは手元で開く道具が要る。** サイト用の JSON も一緒に
+    assert "site/src/data" in block, "読める形（JSON / CSV）が入っていない"
+    assert "if: always()" in block, (
+        "後段が落ちると数字が取れない。gold が書けた時点で残すこと"
+    )
+
+
+def test_公開しない意図を名前で言える():
+    """**意図は副作用で表さない。**
+
+    以前は「limit を入れると gold をコミットしない」しか無く、全件を公開
+    せずに回すには limit に大きい値を入れて副作用を使うことになっていた。
+    **limit は「その数字が母集団を代表していない」という別の意味**なので、
+    読み手は何が起きたのか分からない。
+    """
+    text = (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(
+        encoding="utf-8"
+    )
+    inputs = text[text.index("workflow_dispatch:") : text.index("concurrency:")]
+    assert "publish:" in inputs, "公開するかどうかの入力が無い"
+    assert 'default: "yes"' in inputs, (
+        "既定が公開でないと、月次の自動実行が黙って公開しなくなる"
+    )
+    # 2つの理由が両方とも gold を止めること
+    commit = text[text.index("gold と実行記録をコミット") :]
+    assert "inputs.publish" in commit, "publish の指定がコミット段で読まれていない"
