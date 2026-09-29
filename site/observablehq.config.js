@@ -43,6 +43,10 @@ export default {
   // （いま開いている言語のものだけ残す）。Framework の一覧は1つしか
   // 持てないので、両方載せたうえで隠す
   pages: [
+    // **題字からしか入れない状態にしない。** 左上のサイト名を押すと
+    // ダッシュボードに戻るが、**あれが押せることは見て分からない。**
+    // 一覧に項目として置く
+    { name: "ダッシュボード", path: "/" },
     { name: "業種別", path: "/sectors" },
     { name: "方法論", path: "/methodology" },
     { name: "データ", path: "/data" },
@@ -51,6 +55,7 @@ export default {
     // 計測が一巡したときに表紙がどう見えるか。**数字は作り物**で、
     // ページ自身が冒頭でそう断っている
     { name: "サンプル", path: "/sample" },
+    { name: "Dashboard", path: "/en/" },
     { name: "By sector", path: "/en/sectors" },
     { name: "Methodology", path: "/en/methodology" },
     { name: "Data", path: "/en/data" },

@@ -13,6 +13,7 @@ const sectors = FileAttachment("../data/stats_by_sector.json").json();
 
 ```js
 import { rate, pct, indicators, entityIndicators } from "../components/format.js";
+import { table } from "../components/table.js";
 ```
 
 The observed figures can be read on this page. **You should not have to
@@ -53,7 +54,7 @@ display(
 ```js
 display(
   row
-    ? Inputs.table(indicators(row, "en"), { sort: null, rows: 12, width: { Indicator: 300, Domains: 90, Share: 80, Note: 260 } })
+    ? table(indicators(row, "en"), { sort: null, rows: 12, width: { Indicator: 300, Domains: 90, Share: 80, Note: 260 } })
     : html`<p>This will appear once an observation exists.</p>`
 );
 ```
@@ -67,7 +68,7 @@ into the denominator would count "could not be observed" as "not configured".
 ```js
 display(
   row
-    ? Inputs.table(entityIndicators(row, "en"), {
+    ? table(entityIndicators(row, "en"), {
         sort: null,
         width: { Indicator: 300, Companies: 90, Share: 80 },
       })
@@ -80,7 +81,7 @@ display(
 ```js
 display(
   row
-    ? Inputs.table(
+    ? table(
         [
           { Category: "Stated reject (that is what it says)", Domains: row.nominal_reject_domains },
           { Category: "Effective reject (no pct, t=n, rua present)", Domains: row.enforced_reject_domains },
@@ -108,7 +109,7 @@ const sectorRows = sectors
   }));
 display(
   sectorRows.length
-    ? Inputs.table(sectorRows, { sort: "Sector", rows: 20 })
+    ? table(sectorRows, { sort: "Sector", rows: 20 })
     : html`<p>There is no sector breakdown for this month yet.</p>`
 );
 ```
@@ -131,7 +132,7 @@ const history = overall
   }));
 display(
   history.length
-    ? Inputs.table(history, { sort: null, rows: 24 })
+    ? table(history, { sort: null, rows: 24 })
     : html`<p>This will appear once an observation exists.</p>`
 );
 ```

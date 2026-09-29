@@ -8,6 +8,7 @@ const sectors = FileAttachment("data/stats_by_sector.json").json();
 
 ```js
 import { rate, pct, indicators, entityIndicators } from "./components/format.js";
+import { table } from "./components/table.js";
 ```
 
 観測した数字をこのページで読めます。**ダウンロードしなくても中身が分かる**
@@ -48,7 +49,7 @@ display(
 ```js
 display(
   row
-    ? Inputs.table(indicators(row), { sort: null, rows: 12, width: { 指標: 300, ドメイン: 90, 割合: 80, 補足: 260 } })
+    ? table(indicators(row), { sort: null, rows: 12, width: { 指標: 300, ドメイン: 90, 割合: 80, 補足: 260 } })
     : html`<p>観測が入ると表示します。</p>`
 );
 ```
@@ -62,7 +63,7 @@ SERVFAIL などで何も取れなかったドメインを分母に入れると�
 ```js
 display(
   row
-    ? Inputs.table(entityIndicators(row), {
+    ? table(entityIndicators(row), {
         sort: null,
         width: { 指標: 300, 企業: 90, 割合: 80 },
       })
@@ -75,7 +76,7 @@ display(
 ```js
 display(
   row
-    ? Inputs.table(
+    ? table(
         [
           { 区分: "名目 reject（そう書いてある）", ドメイン: row.nominal_reject_domains },
           { 区分: "実効 reject（pct 無し・t=n・rua 有）", ドメイン: row.enforced_reject_domains },
@@ -103,7 +104,7 @@ const sectorRows = sectors
   }));
 display(
   sectorRows.length
-    ? Inputs.table(sectorRows, { sort: "業種", rows: 20 })
+    ? table(sectorRows, { sort: "業種", rows: 20 })
     : html`<p>この月の業種別集計はまだありません。</p>`
 );
 ```
@@ -126,7 +127,7 @@ const history = overall
   }));
 display(
   history.length
-    ? Inputs.table(history, { sort: null, rows: 24 })
+    ? table(history, { sort: null, rows: 24 })
     : html`<p>観測が入ると表示します。</p>`
 );
 ```

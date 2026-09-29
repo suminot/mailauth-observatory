@@ -15,6 +15,7 @@ const meta = FileAttachment("../data/meta.json").json();
 
 ```js
 import { rate, pct } from "../components/format.js";
+import { table } from "../components/table.js";
 ```
 
 ```js
@@ -38,7 +39,7 @@ const rows = sectors
   }));
 display(
   rows.length
-    ? Inputs.table(rows, { sort: "Sector", rows: 20 })
+    ? table(rows, { sort: "Sector", rows: 20 })
     : html`<p>There is no sector breakdown for this month yet.</p>`
 );
 ```
