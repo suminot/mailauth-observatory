@@ -560,12 +560,33 @@ breakdown:
 
 ### 処理
 
-`official_domain` を起点に、四つの経路で候補を追加する。
+`official_domain` を起点に、五つの経路で候補を追加する。
 
 1. **Certificate Transparency**: `crt.sh` で `%.<official_domain>` と組織名を検索し、SAN から FQDN を抽出。eTLD+1 に正規化して候補に追加
-2. **SPF redirect / include の追跡**: `official_domain` の SPF を引き、`redirect=` が別の組織ドメインを指していれば候補に追加
-3. **DMARC rua 宛先**: `_dmarc.<official_domain>` の rua 宛先ドメインが自社ドメインなら候補に追加
-4. **既知の関連ドメイン辞書**: 手動メンテナンスの CSV。グループ会社や事業ブランドのドメインを人手で追加できる経路を必ず用意する
+2. **SPF redirect の追跡**: `official_domain` の SPF を引き、`redirect=` が別の組織ドメインを指していれば候補に追加
+3. **SPF include の追跡**: 同じ SPF の `include:` が**自社サブドメイン**（同一 eTLD+1）を指していれば候補に追加。他社を指す include は「その基盤を使っている」であって所有ではないので候補にしない。2 と同じ TXT を読むので問い合わせは増えない
+4. **DMARC rua 宛先**: `_dmarc.<official_domain>` の rua 宛先ドメインが自社ドメインなら候補に追加
+5. **既知の関連ドメイン辞書**: 手動メンテナンスの CSV。グループ会社や事業ブランドのドメインを人手で追加できる経路を必ず用意する
+
+#### サブドメインを捨てない
+
+候補は eTLD+1 に丸める。**ただし丸めた結果で元の名前を置き換えない。**
+
+実際のメールがサブドメイン上にある企業がある。`_dmarc.avex.co.jp` の rua は
+`av.avex.co.jp` を指しており、そちらが自分の MX と自分の `_dmarc` を持つ
+（継承ではない）。apex だけ測ると、**その企業の評価として別のドメインの
+設定を出す**ことになる。
+
+- apex は経路によらず必ず候補にする
+- サブドメインは `is_apex=false` で**別の枠・別の上限**に入れる。同じ枠から
+  取ると、サブドメインが apex を押し出して分母が月ごとに変わる
+- 残すのはメールの痕跡から出た経路（`dmarc_rua` / `spf_redirect` /
+  `spf_include` / `manual`）だけ。CT ログは1社で数百件返すので、丸ごと
+  残すと P3・P4 の計測量が桁で増える
+- **所有の裏付けがある apex の配下だけ降りる。** `official_url` /
+  `ct_log` / `manual` のいずれかで見つかっている apex に限る
+
+MX を持つかどうかは P3 で見る（`configs/candidates.yaml` の `subdomains`）。
 
 ### 出力スキーマ
 
@@ -573,8 +594,9 @@ breakdown:
 candidate_id      STRING  PK
 entity_id         STRING  FK
 run_id            STRING
-domain            STRING  eTLD+1 に正規化
-discovery_method  STRING  official_url | ct_log | spf_redirect | dmarc_rua | manual
+domain            STRING  eTLD+1、または is_apex=false のサブドメイン
+discovery_method  STRING  official_url | ct_log | spf_redirect | spf_include
+                          | dmarc_rua | manual
 discovered_at     TIMESTAMP
 source_detail     STRING  crt.sh の証明書IDなど
 is_apex           BOOLEAN
@@ -1422,6 +1444,28 @@ breakdown:
 3. 前月差分（新規導入、ポリシー強化、後退、消滅）
 4. 個社明細（第2層用）
 
+#### 分母は apex で閉じる
+
+**すべての指標の分母は `is_apex=true` のドメインだけで数える。**
+サブドメインを混ぜるとドメイン数が増え、前月との比較が効かなくなる ──
+母集団を変えて計測し直すのと同じことになる。
+
+サブドメインの数字は `subdomains_*` に別枠で出す。この列は上のどの割合の
+分母にも入らない。切り分けは `aggregate()` の入口の2行で行っており、
+**外したら落ちる検査**を置いてある。
+
+#### 自分と配下を分ける
+
+DMARC の `p=` はそのドメイン自身に、`sp=` は配下のサブドメインに効く
+（`sp=` が無ければ `p=` を継承。RFC 9989 §4.8）。
+
+`p=reject; sp=none` のドメインを「reject 達成」とだけ数えると、その企業の
+実際のメールドメインがサブドメインの場合に**適用されるのは `none` のほう**
+である。`sp_enforced_domains` / `sp_weaker_domains` で別に出す。
+
+既存の `dmarc_enforced_*` の定義は変えていない。**定義を黙って変えると
+前月との比較が意味を失う。**
+
 ### セル秘匿
 
 公的統計の実務基準では、日本の総務省統計局が n=1 または 2 を1次秘匿、米欧の多くの機関は3または5未満を秘匿する（FCSM Statistical Policy Working Paper 22、NIST SP 800-188）。k-匿名性の推奨 k は一般に3〜5、実務では k=5 が広く採用。
@@ -1449,6 +1493,17 @@ dmarc_enforced_domains   INTEGER
 nominal_reject_domains   INTEGER
 enforced_reject_domains  INTEGER   -- pct無し・t=n・rua有
 blind_reject_domains     INTEGER   -- rua無し
+
+-- 自分と配下を分ける（sp= は配下に効く。無ければ p= を継承）
+sp_enforced_domains      INTEGER
+sp_weaker_domains        INTEGER   -- sp= が p= より弱い
+
+-- 実際に引いたサブドメイン。**上のどの分母にも入らない**
+subdomains_measured          INTEGER
+subdomains_observed          INTEGER
+subdomains_with_own_dmarc    INTEGER   -- sp= を継承しない
+subdomains_dmarc_enforced    INTEGER
+entities_with_subdomain_mail INTEGER
 
 dkim_detected_domains        INTEGER
 dkim_not_found_domains       INTEGER   -- 「未設定」ではない
