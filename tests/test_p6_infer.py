@@ -648,3 +648,114 @@ def test_verification_txt_of_a_known_platform_keeps_its_category(rules):
     drafts = build_drafts(_fact(verification_txt=["MS=ms12345678"]), rules)
     assert [d.category for d in drafts] == [InferenceCategory.MAIL_PLATFORM]
     assert "辞書から決められない" not in " / ".join(drafts[0].notes)
+
+
+# ===========================================================================
+# 2026-09 の作業リストから同定したホスト（回帰防止）
+#
+# **実データで観測された生のホスト名をそのまま置く。** 正規表現を後から
+# 縮めたり広げたりしたときに、どのホストが落ちるかがここで分かる。
+# 作業リストは登録ドメイン単位で丸めるので、例に出ていた綴りを使う。
+# ===========================================================================
+
+#: (観測された MX ホスト, 期待するカテゴリ, 期待するベンダー)
+IDENTIFIED_MX_HOSTS = [
+    # Microsoft の新形式。旧形式しか見ていなかったため未知ホストに落ちていた
+    ("example-co-jp.mx.microsoft", InferenceCategory.MAIL_PLATFORM, "Microsoft"),
+    ("faltec-co-jp.mail.eo.outlook.com", InferenceCategory.MAIL_PLATFORM, "Microsoft"),
+    # 国内の実基盤
+    ("mwpremgw2.ocn.ad.jp", InferenceCategory.MAIL_PLATFORM, "NTTコミュニケーションズ"),
+    ("vcgw2.ocn.ad.jp", InferenceCategory.MAIL_PLATFORM, "NTTコミュニケーションズ"),
+    ("mxi.alpha-prm.jp", InferenceCategory.MAIL_PLATFORM, "大塚商会"),
+    ("ampub03.alpha-mail.net", InferenceCategory.MAIL_PLATFORM, "大塚商会"),
+    ("mgws317.kagoya.net", InferenceCategory.MAIL_PLATFORM, "カゴヤ・ジャパン"),
+    ("ham1005.secure.ne.jp", InferenceCategory.MAIL_PLATFORM, "KDDIウェブコミュニケーションズ"),
+    ("mxin2.airnet.ne.jp", InferenceCategory.MAIL_PLATFORM, "エアネット"),
+    ("jp1-aspmx1.worksmobile.com", InferenceCategory.MAIL_PLATFORM, "ワークスモバイルジャパン"),
+    ("mx2.larksuite.com", InferenceCategory.MAIL_PLATFORM, "Lark"),
+    ("mx-proxy502.heteml.jp", InferenceCategory.MAIL_PLATFORM, "GMOペパボ"),
+    ("mx01.lolipop.jp", InferenceCategory.MAIL_PLATFORM, "GMOペパボ"),
+    ("mx02.active-w.net", InferenceCategory.MAIL_PLATFORM, "MXモバイリング"),
+    # 受信の前段
+    ("alt3.ap.email.fireeyecloud.com", InferenceCategory.SECURITY_GATEWAY, "Trellix"),
+    ("cluster5a.us.messagelabs.com", InferenceCategory.SECURITY_GATEWAY, "Broadcom"),
+    ("gw4022.fortimail.com", InferenceCategory.SECURITY_GATEWAY, "Fortinet"),
+    ("mail.system.digitalartscloud.com", InferenceCategory.SECURITY_GATEWAY, "デジタルアーツ"),
+    ("mxjp2.nospamcloud.com", InferenceCategory.SECURITY_GATEWAY, "使えるねっと"),
+    ("mailgw3.oneoffice.jp", InferenceCategory.SECURITY_GATEWAY, "TOKAIコミュニケーションズ"),
+    ("i1.mailsecurity-nec.jp", InferenceCategory.SECURITY_GATEWAY, "NEC"),
+    # 国内版は綴りが違う（tmems-jp / tmes）。既存の規則で拾えていることを固定する
+    ("in1.in.tmems-jp.trendmicro.com", InferenceCategory.SECURITY_GATEWAY, "Trend Micro"),
+]
+
+
+@pytest.mark.parametrize("host,category,vendor", IDENTIFIED_MX_HOSTS)
+def test_worklist_host_is_identified(rules, host, category, vendor):
+    """作業リストに出ていた実ホストが、辞書で同定できること。"""
+    drafts = build_drafts(_fact(mx_hosts=[host], mx_present=True), rules)
+    got = {(d.category, d.vendor) for d in drafts}
+    assert (category, vendor) in got, f"{host} が {vendor} に一致しない（{got}）"
+
+
+def test_hennge_is_found_by_spf_not_mx(rules):
+    """**HENNGE を丸ごと落としていた。** 仮説が逆だった。
+
+    HENNGE One の Email DLP は誤送信対策＝送信側の製品で、受信 MX を
+    奪わない。辞書が MX 側のパターンしか持っていなかったため、
+    2026-09 の実測で34件あった SPF 側の痕跡を1件も拾えていなかった
+    （MX 側は0件）。
+    """
+    drafts = build_drafts(
+        _fact(spf_includes=["spf.mta.hdems.com"], spf_present=True), rules
+    )
+    gateway = next(d for d in drafts if d.vendor == "HENNGE")
+    assert gateway.category == InferenceCategory.SECURITY_GATEWAY
+    assert gateway.rule_ids == ["hennge-spf-01"]
+
+
+def test_inbound_and_outbound_gateways_can_differ(rules):
+    """**受信と送信で別ベンダーのことがある。**
+
+    実例（実測）: 受信が Symantec（messagelabs）、送信が HENNGE。
+    どちらかに丸めると実態が消える（原則2）。
+    """
+    drafts = build_drafts(
+        _fact(
+            mx_hosts=["cluster1.us.messagelabs.com"],
+            mx_present=True,
+            spf_includes=["spf.mta.hdems.com"],
+            spf_present=True,
+        ),
+        rules,
+    )
+    vendors = {d.vendor for d in drafts if d.category == InferenceCategory.SECURITY_GATEWAY}
+    assert {"Broadcom", "HENNGE"} <= vendors
+
+
+def test_specific_ocn_product_wins_over_the_catch_all(rules):
+    """受け皿の広い OCN の規則が、製品名を消さないこと。"""
+    drafts = build_drafts(_fact(mx_hosts=["mwpremgw1.ocn.ad.jp"], mx_present=True), rules)
+    platform = next(d for d in drafts if d.vendor == "NTTコミュニケーションズ")
+    assert set(platform.rule_ids) == {"ntt-ocn-mx-01", "ntt-ocn-mx-02"}
+    assert platform.product == "Bizメール&ウェブ プレミアム"
+
+
+def test_unidentified_hosts_are_recorded_not_forgotten(rules):
+    """**同定できなかったものは、同定できなかったと書いてある。**
+
+    黙って放っておくと、次の月も同じホストを調べ直すことになる。
+    そして辞書にも入っていないこと（当て推量で規則を足していないこと）。
+    """
+    from mailauth.worklist import load_unidentified
+
+    entries, available, _ = load_unidentified()
+    assert available
+    for domain in ("mailsecure.jp", "sharedmail.jp"):
+        assert domain in entries, f"{domain} の調査結果が記録されていない"
+        assert entries[domain].investigated_on is not None
+        assert entries[domain].note
+
+    for host in ("v2301-244.mailsecure.jp", "filter1.mail.sharedmail.jp"):
+        drafts = build_drafts(_fact(mx_hosts=[host], mx_present=True), rules)
+        named = [d for d in drafts if d.vendor != NOT_DETECTED_VENDOR]
+        assert not named, f"同定できていない {host} に規則が当たっている"

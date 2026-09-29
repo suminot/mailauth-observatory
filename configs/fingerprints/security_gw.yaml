@@ -5,7 +5,7 @@
 #
 # 国内ベンダーの固定ホスト名は未解決事項の筆頭（DESIGN.md 第11章 #1）。
 # 運用コンソール画面5の「未知 MX ホスト頻度順リスト」から帰納的に埋めていく。
-version: 2026-08-01
+version: 2026-09-29
 category: security_gateway
 
 rules:
@@ -122,6 +122,22 @@ rules:
       pattern: '\.hdemail\.jp\.?$'
     confidence: high
 
+  - id: hennge-spf-01
+    vendor: HENNGE
+    product: HENNGE One (Email DLP)
+    region: JP
+    match:
+      # **こちらが本命である。** Email DLP は誤送信対策＝**送信側**の製品で、
+      # 受信 MX を奪わない。辞書が MX 側（hennge-mx-01）しか持っていなかった
+      # ため、国内で2番目に多い痕跡を1件も拾えていなかった。
+      #
+      # 2026-09 の実測: `spf.mta.hdems.com` 34件 / `*.hdemail.jp` **0件**。
+      # 「HENNGE One は MX を握る」という当初の想定は逆だった。
+      record: SPF_INCLUDE
+      pattern: '^spf\.mta\.hdems\.com$'
+    confidence: high
+    note: 送信の前段。**受信 MX は別ベンダーのことがある**（実測でシマンテックとの併用あり）
+
   - id: qualitia-mx-01
     vendor: クオリティア
     product: Active! gate SS
@@ -130,6 +146,89 @@ rules:
       record: MX
       pattern: '\.activegate-ss\.jp\.?$'
     confidence: high
+
+  - id: qualitia-spf-01
+    vendor: クオリティア
+    product: Active! gate SS
+    region: JP
+    match:
+      record: SPF_INCLUDE
+      pattern: '^_spf\.activegate-ss\.jp$'
+    confidence: high
+    note: 送信の前段としての痕跡。MX を握らない構成でも立つ
+
+  # -------------------------------------------------------------------------
+  # 2026-09 の作業リスト（未知 MX の頻度順）から同定したもの
+  # -------------------------------------------------------------------------
+
+  - id: trellix-mx-01
+    vendor: Trellix
+    product: Trellix Email Security – Cloud
+    match:
+      record: MX
+      pattern: '\.email\.fireeyecloud\.com\.?$'
+    confidence: high
+    note: 旧 FireEye Email Threat Prevention。ホスト名は FireEye 時代のまま
+
+  - id: broadcom-mx-01
+    vendor: Broadcom
+    product: Symantec Email Security.cloud
+    match:
+      record: MX
+      pattern: '\.messagelabs\.com\.?$'
+    confidence: high
+    note: 旧 MessageLabs。Symantec 買収を経て現在は Broadcom
+
+  - id: fortinet-mx-01
+    vendor: Fortinet
+    product: FortiMail Cloud
+    match:
+      record: MX
+      pattern: '\.fortimail\.com\.?$'
+    confidence: high
+    note: fortimail.com の NS は fortinet.com（2026-09-29 実測）
+
+  - id: mfilter-mx-01
+    vendor: デジタルアーツ
+    product: m-FILTER@Cloud
+    region: JP
+    match:
+      # SPF 側（mfilter-spf-01）は既にあったが、**MX 側が無かった**。
+      # MX を握る構成の12ドメインが未知ホストのまま残っていた
+      record: MX
+      pattern: '\.system\.digitalartscloud\.com\.?$'
+    confidence: high
+
+  - id: tsukaeru-mx-01
+    vendor: 使えるねっと
+    region: JP
+    match:
+      record: MX
+      pattern: '\.nospamcloud\.com\.?$'
+    confidence: medium
+    note: nospamcloud.com の NS は ns1/ns2.tsukaeru.ne.jp（2026-09-29 実測）。製品名は特定していない
+
+  - id: tokai-mx-01
+    vendor: TOKAIコミュニケーションズ
+    product: OneOffice メールソリューション
+    region: JP
+    match:
+      # ホスト名は `mailgw*` で、公式にも「Office365 や Google と組み合わせて
+      # 使える」とある。**メールサーバも提供しているので実基盤のこともある** が、
+      # 前段に置いておけば背後を二段推定で探せる
+      record: MX
+      pattern: '\.oneoffice\.jp\.?$'
+    confidence: medium
+    note: 実基盤としても使われる。SPF / DKIM から背後を別途推定すること
+
+  - id: nec-mx-01
+    vendor: NEC
+    product: NEC メールセキュリティ
+    region: JP
+    match:
+      record: MX
+      pattern: '\.mailsecurity-nec\.jp\.?$'
+    confidence: medium
 
 # DNS に痕跡を残さない製品（DESIGN.md P6「API連携型製品という構造的盲点」）
 # 「検出されなかった＝使っていない」ではないことを出力とレポートに明示する。
