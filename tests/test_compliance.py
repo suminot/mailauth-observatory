@@ -2231,3 +2231,29 @@ def test_basic_auth_is_enforced_and_never_hardcoded():
         "functions/ がデプロイの引き金に入っていない。"
         "認証の中身を直しても公開に反映されない"
     )
+
+
+def test_pages_that_show_one_population_filter_by_it():
+    """**国と国を同じ表に混ぜない。**
+
+    gold は月ごとに複数の母集団を持つ（`_merge_other_populations`）。
+    月だけで絞ると国内と海外が1つの表に並び、**同じベンダーが2行に出て、
+    分母の違う行が隣り合う。**
+
+    母集団が1つのうちは見た目で気付けない ── 米国を入れる直前に
+    気付いた。だから画面ではなく原稿の側で縛る。
+    """
+    for name in (
+        "platforms.md",
+        "sectors.md",
+        "en/platforms.md",
+        "en/sectors.md",
+    ):
+        path = repo_root() / "site" / "src" / name
+        text = path.read_text(encoding="utf-8")
+        assert "population_id === population" in text, (
+            f"{name} が母集団で絞っていない。月だけで絞ると国が混ざる"
+        )
+        assert "Inputs.select(populations" in text, (
+            f"{name} に母集団の選択が無い。絞っても選べなければ片方しか見えない"
+        )

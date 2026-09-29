@@ -442,6 +442,41 @@ async function main() {
       plat.limitsBeforeLayers,
       "数字の後ろに出ている"
     );
+    // **同じベンダーが1つの層に2回出ない。** 母集団で絞り忘れると、
+    // 国内と海外が同じ表に並んで同じ名前が2行に出る。
+    // **母集団が1つのうちは当たらない検査である**（米国が入って初めて効く）
+    const dupes = await wide.evaluate(() => {
+      const out = [];
+      for (const tbl of document.querySelectorAll("main table")) {
+        const heads = [...tbl.querySelectorAll("thead th")].map((h) =>
+          h.textContent.trim()
+        );
+        const col = heads.indexOf("ベンダー");
+        if (col < 0) continue;
+        const seen = new Set();
+        for (const row of tbl.querySelectorAll("tbody tr")) {
+          const v = row.children[col]?.textContent?.trim();
+          if (!v) continue;
+          if (seen.has(v)) out.push(v);
+          seen.add(v);
+        }
+      }
+      return out;
+    });
+    check(
+      "同じベンダーが1つの層に2回出ていない",
+      dupes.length === 0,
+      `重複: ${dupes.join(" / ")}`
+    );
+    check(
+      "母集団を選べる",
+      await wide.evaluate(() =>
+        [...document.querySelectorAll("main label")].some((l) =>
+          l.textContent.includes("母集団")
+        )
+      ),
+      "母集団の選択が無い"
+    );
     check(
       "層が3つとも出ている",
       ["実基盤", "受信の前段", "送信の前段"].every((h) =>

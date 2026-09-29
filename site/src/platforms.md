@@ -17,12 +17,23 @@ import { vendorLabel } from "./components/vendor.js";
 ```
 
 ```js
+// **母集団で絞る。** 国内と海外を同じ表に混ぜると、同じベンダーが
+// 2行に出るうえ、分母が違うものが並ぶ
+const populations = [...new Set(platforms.map((d) => d.population_id))];
+const population = view(
+  Inputs.select(populations, { label: "母集団", value: populations[0] })
+);
+```
+
+```js
 const months = (meta.months ?? []).slice().reverse();
 const month = view(Inputs.select(months, { label: "月", value: meta.latest_month }));
 ```
 
 ```js
-const rows = platforms.filter((d) => d.measured_month === `${month}-01`);
+const rows = platforms.filter(
+  (d) => d.population_id === population && d.measured_month === `${month}-01`
+);
 ```
 
 ## この数字で言えないこと

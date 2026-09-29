@@ -14,6 +14,15 @@ import { table } from "./components/table.js";
 ```
 
 ```js
+// **母集団で絞る。** 国内と海外を同じ表に混ぜると、同じベンダーが
+// 2行に出るうえ、分母が違うものが並ぶ
+const populations = [...new Set(sectors.map((d) => d.population_id))];
+const population = view(
+  Inputs.select(populations, { label: "母集団", value: populations[0] })
+);
+```
+
+```js
 const month = view(
   Inputs.select((meta.months ?? []).slice().reverse(), { label: "月", value: meta.latest_month })
 );
@@ -21,7 +30,9 @@ const month = view(
 
 ```js
 const rows = sectors
-  .filter((d) => d.measured_month === `${month}-01`)
+  .filter(
+    (d) => d.population_id === population && d.measured_month === `${month}-01`
+  )
   .map((d) => ({
     業種: d.common12_label,
     企業: d.n_entities,
