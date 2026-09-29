@@ -2230,3 +2230,8 @@ def test_basic_auth_is_enforced_and_never_hardcoded():
         "正しい資格情報で通ることを確かめていない。"
         "401 だけ見ていると、誰も入れない状態を成功と読む"
     )
+    # **middleware を直しても出ないと、掛かっていない状態が黙って続く**
+    assert '- "functions/**"' in deploy, (
+        "functions/ がデプロイの引き金に入っていない。"
+        "認証の中身を直しても公開に反映されない"
+    )
