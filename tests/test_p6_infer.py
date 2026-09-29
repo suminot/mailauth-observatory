@@ -41,7 +41,11 @@ from mailauth.p6_infer.match import (
     is_corroborated,
     undetectable_draft,
 )
-from mailauth.p6_infer.runner import unknown_mx_hosts, vendor_share
+from mailauth.p6_infer.runner import (
+    unknown_mx_hosts,
+    unknown_mx_total,
+    vendor_share,
+)
 from mailauth.paths import phase_output
 
 RUN = "2026-08"
@@ -1202,3 +1206,102 @@ def test_two_engines_on_one_vendor_pick_neither(rules):
     got = next(d for d in drafts if d.vendor == "クオリティア")
     assert {"qualitia-spf-01", "qualitia-spf-99"} == set(got.rule_ids)
     assert got.engine is None
+
+
+# ===========================================================================
+# 自社運用の MX を作業リストに出さない
+#
+# **辞書に足せないものを並べても減らない。** 2026-09 の一覧には大和ハウス・
+# 丸井・神戸物産などが並んだが、`mx3.example.co.jp` に当たる規則を書いても
+# その1社にしか効かない。本当に足せる新顔が埋もれる。
+# ===========================================================================
+
+
+def _mx_fact(domain_id: str, org: str, hosts: list[str]) -> dict:
+    return _fact(domain_id=domain_id, org_domain_psl=org, mx_hosts=hosts, mx_present=True)
+
+
+def test_self_hosted_mx_is_not_listed_as_work():
+    facts = [_mx_fact("d:1", "kubota.example", ["mx3.kubota.example"])]
+    assert unknown_mx_hosts(facts, set()) == []
+
+
+def test_self_hosted_mx_is_still_counted():
+    """**一覧から外すが、数からは消さない**（原則4）。"""
+    facts = [_mx_fact("d:1", "kubota.example", ["mx3.kubota.example"])]
+    total = unknown_mx_total(facts, set())
+    assert total["self_hosted_domains"] == 1
+    assert total["self_hosted_registered_domains"] == 1
+    # 手を付ける側の数には入らない
+    assert total["domains"] == 0
+
+
+def test_a_vendor_host_is_still_listed():
+    """外しすぎない。他社のホストは今までどおり出る。"""
+    facts = [_mx_fact("d:1", "kubota.example", ["mx1.unknown-vendor.example"])]
+    listed = unknown_mx_hosts(facts, set())
+    assert [h["registered_domain"] for h in listed] == ["unknown-vendor.example"]
+    assert unknown_mx_total(facts, set())["self_hosted_domains"] == 0
+
+
+def test_a_subdomain_of_the_org_counts_as_self_hosted():
+    """`mx.mail.example.co.jp` も自社配下である。"""
+    facts = [_mx_fact("d:1", "kubota.example", ["mx.mail.kubota.example"])]
+    assert unknown_mx_hosts(facts, set()) == []
+
+
+def test_without_an_org_domain_nothing_is_dropped():
+    """**org が取れていないものを自社運用とみなさない**（原則5）。"""
+    facts = [_fact(mx_hosts=["mx3.kubota.example"], mx_present=True, org_domain_psl=None)]
+    assert len(unknown_mx_hosts(facts, set())) == 1
+
+
+# ---------------------------------------------------------------------------
+# Google の MX を取りこぼしていた
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "aspmx.l.google.com",
+        "alt1.aspmx.l.google.com",
+        "alt4.aspmx.l.google.com",
+        # **ここが当たっていなかった。** `aspmx[2-5]` を `.googlemail.com`
+        # にだけ効かせていたため、`.l.google.com` 側の連番が1つも通らない
+        "aspmx2.l.google.com",
+        "aspmx3.l.google.com",
+        "aspmx5.l.google.com",
+        # 本来は @gmail.com 自身の MX だが、独自ドメインに設定されている
+        # 例が実在する（2026-09 の作業リストに出た）
+        "gmail-smtp-in.l.google.com",
+        "alt1.gmail-smtp-in.l.google.com",
+        "aspmx2.googlemail.com",
+        "smtp.google.com",
+    ],
+)
+def test_google_mx_forms_are_all_identified(rules, host):
+    drafts = build_drafts(_fact(mx_hosts=[host], mx_present=True), rules)
+    assert any(d.vendor == "Google" for d in drafts), host
+
+
+def test_a_lookalike_domain_is_not_google(rules):
+    """**外に開かない。** 末尾を確かめずに拾うと別ドメインを Google と読む。"""
+    for host in ("aspmx.l.google.com.evil.example", "notgoogle.com", "l.google.com.cn"):
+        drafts = build_drafts(_fact(mx_hosts=[host], mx_present=True), rules)
+        assert not any(d.vendor == "Google" for d in drafts), host
+
+
+@pytest.mark.parametrize(
+    "host,vendor",
+    [
+        ("sei-co-jp-1.fortimailcloud.com", "Fortinet"),
+        ("mx11.activezone-ss.jp", "クオリティア"),
+        ("mx19.gmoserver.jp", "GMOインターネットグループ"),
+        ("mail1013.onamae.ne.jp", "GMOインターネットグループ"),
+    ],
+)
+def test_the_second_round_of_worklist_hosts(rules, host, vendor):
+    """2026-09 の測り直しで上がってきたもの。"""
+    drafts = build_drafts(_fact(mx_hosts=[host], mx_present=True), rules)
+    assert any(d.vendor == vendor for d in drafts), (host, [d.vendor for d in drafts])

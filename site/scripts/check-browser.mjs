@@ -376,6 +376,32 @@ async function main() {
       `いまの一覧: ${enNav.join(" / ")}`
     );
 
+    // -- 何から組んだかの表示 ---------------------------------------------
+    // **番号の無いコミットで commit hash に落ちない。** 月次計測の
+    // コミットは PR を経ないので件名に `(#NN)` が無く、以前はそこで
+    // 短い commit に落ちていた。画面に `Build e23fedc` と出て、
+    // 読み手には何のことか分からなかった。
+    //
+    // ここは**ビルド結果を読む**。設定の書き方を見るだけでは、
+    // 実際にどう出たかを確かめたことにならない
+    const build = await wide.evaluate(() => ({
+      meta: document
+        .querySelector('meta[name="mailauth-build"]')
+        ?.content?.trim() ?? null,
+      line: document.querySelector(".chrome-build")?.textContent?.trim() ?? null,
+    }));
+    check("何から組んだかが出ている", Boolean(build.meta), "meta が無い");
+    check(
+      "PR 番号で出ている（commit hash に落ちていない）",
+      /^#\d+$/.test(build.meta ?? ""),
+      `いまの値: ${build.meta}`
+    );
+    check(
+      "番号が3桁以上でゼロ詰めされている",
+      /^#\d{3,}$/.test(build.meta ?? ""),
+      `いまの値: ${build.meta}`
+    );
+
     // -- メール基盤のページ -----------------------------------------------
     // **限界の断りが表より前に出ていること。** 名指しはしていないが、
     // 「検出できなかった＝使っていない」と読ませるのが一番まずい読まれ方で、

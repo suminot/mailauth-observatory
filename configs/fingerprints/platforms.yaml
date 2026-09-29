@@ -3,7 +3,7 @@
 # 証拠の強さ: DKIM_CNAME >= MX > SPF_INCLUDE > VERIFICATION_TXT（DESIGN.md P3/P6）
 # ゲートウェイ型製品が MX を握っていても、SPF include / DKIM CNAME から
 # 背後の実基盤を別カテゴリとして残すこと（原則2。単一ベンダーに丸めない）。
-version: 2026-09-29
+version: 2026-09-29b
 category: mail_platform
 
 rules:
@@ -85,8 +85,16 @@ rules:
     vendor: Google
     product: Google Workspace
     match:
+      # **前の書き方は `aspmx2.l.google.com` を取りこぼしていた。**
+      # `aspmx[2-5]` を `.googlemail.com` にだけ効かせていたため、
+      # `.l.google.com` 側の連番が1つも当たらない。2026-09 の実測で
+      # 作業リストに `aspmx2.l.google.com` が残って見つかった。
+      #
+      # `gmail-smtp-in.l.google.com` も入れた。本来は @gmail.com 自身の
+      # MX だが、独自ドメインに設定されている例が実在する。**綴りとしては
+      # Google なので、未知ホストに落とさない。**
       record: MX
-      pattern: '^(aspmx|alt[1-4]\.aspmx|aspmx[2-5]\.googlemail)\.l?\.?google(mail)?\.com\.?$|\.googlemail\.com\.?$'
+      pattern: '^(alt[1-4]\.)?(aspmx\d*|gmail-smtp-in)\.l\.google\.com\.?$|^aspmx\d*\.googlemail\.com\.?$|\.googlemail\.com\.?$'
     confidence: high
 
   - id: gws-mx-02
@@ -265,6 +273,18 @@ rules:
       record: MX
       pattern: '\.lolipop\.jp\.?$'
     confidence: high
+
+  - id: gmo-mx-01
+    vendor: GMOインターネットグループ
+    region: JP
+    match:
+      # お名前.com / GMOクラウド系のレンタルサーバ。SPF 側（gmo-spf-01）は
+      # 元からあったが **MX 側が無かった**。
+      # いずれも NS は gmointernet.com（2026-09-29 実測）
+      record: MX
+      pattern: '\.(gmoserver\.jp|onamae\.ne\.jp|deskwing\.net)\.?$'
+    confidence: medium
+    note: 系列は特定していない。GMO 系の共用サーバ
 
   - id: mxmobiling-mx-01
     vendor: MXモバイリング
