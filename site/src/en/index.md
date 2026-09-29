@@ -192,15 +192,19 @@ A record reading `p=reject; sp=none` applies `reject` to the domain itself and
 subdomain.
 
 ```js
+// **Do not show a missing column as zero** (principle 5). Gold produced
+// before this section exists has no such column; an empty cell reads as none
 display(
-  table(
-    [
-      { Category: "Applies to the domain itself (p=)", Domains: current?.dmarc_enforced_domains },
-      { Category: "Applies to subdomains too (sp= or inherited)", Domains: current?.sp_enforced_domains },
-      { Category: "Weakened for subdomains via sp=", Domains: current?.sp_weaker_domains },
-    ],
-    { sort: null }
-  )
+  current?.sp_enforced_domains === undefined
+    ? html`<p class="muted">This month has no <code>sp=</code> figures yet. <strong>That is not zero.</strong></p>`
+    : table(
+        [
+          { Category: "Applies to the domain itself (p=)", Domains: current?.dmarc_enforced_domains },
+          { Category: "Applies to subdomains too (sp= or inherited)", Domains: current?.sp_enforced_domains },
+          { Category: "Weakened for subdomains via sp=", Domains: current?.sp_weaker_domains },
+        ],
+        { sort: null }
+      )
 );
 ```
 
@@ -219,16 +223,18 @@ Subdomains found through traces of mail — a `rua` destination, an SPF
 
 ```js
 display(
-  table(
-    [
-      { Category: "Subdomains measured", Count: current?.subdomains_measured },
-      { Category: "Of those, observed", Count: current?.subdomains_observed },
-      { Category: "Carrying their own DMARC", Count: current?.subdomains_with_own_dmarc },
-      { Category: "Of those, quarantine or stronger", Count: current?.subdomains_dmarc_enforced },
-      { Category: "Companies with mail on a subdomain", Count: current?.entities_with_subdomain_mail },
-    ],
-    { sort: null }
-  )
+  current?.subdomains_measured === undefined
+    ? html`<p class="muted">No subdomains were measured in this month. <strong>That is not the same as none existing.</strong></p>`
+    : table(
+        [
+          { Category: "Subdomains measured", Count: current?.subdomains_measured },
+          { Category: "Of those, observed", Count: current?.subdomains_observed },
+          { Category: "Carrying their own DMARC", Count: current?.subdomains_with_own_dmarc },
+          { Category: "Of those, quarantine or stronger", Count: current?.subdomains_dmarc_enforced },
+          { Category: "Companies with mail on a subdomain", Count: current?.entities_with_subdomain_mail },
+        ],
+        { sort: null }
+      )
 );
 ```
 

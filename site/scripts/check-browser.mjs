@@ -545,6 +545,94 @@ async function main() {
       `いまの一覧: ${enPlat.nav.join(" / ")}`
     );
 
+    // -- 数字の入らない欄を空欄で出さない ---------------------------------
+    // **無い列は 0 ではない**（原則5）。`sp=` とサブドメインの欄は、
+    // その列が入るより前に計測した月の gold には**存在しない。**
+    // `current?.x` は `undefined` になり、表にすると空のセルが並ぶ ──
+    // 読み手には「該当なし」に見える。
+    //
+    // 数字が入るときと入らないときの**両方の状態を見る。** 表紙は実データ
+    // （いまは列が無い月）、サンプルは数字の入った状態である。
+    // 片方だけ見ると、もう片方の壊れ方を見逃す
+    const sectionState = async (pageObj, url, headings) => {
+      await pageObj.goto(url, { waitUntil: "networkidle" });
+      await pageObj.waitForTimeout(500);
+      return pageObj.evaluate((wanted) => {
+        const out = {};
+        const main = document.querySelector("main");
+        for (const want of wanted) {
+          const head = [...(main?.querySelectorAll("h2,h3") ?? [])].find((h) =>
+            h.textContent.includes(want)
+          );
+          if (!head) {
+            out[want] = { found: false };
+            continue;
+          }
+          // **次の見出しまでを1節とみなす。** 深さを問わず切る ──
+          // `h2` の節に `h3` の節の表まで含めると、別の節の空欄を
+          // この節のものとして数える（最初そう書いて空振りした）
+          const cells = [];
+          let note = false;
+          for (let el = head.nextElementSibling; el; el = el.nextElementSibling) {
+            if (/^H[1-6]$/.test(el.tagName)) break;
+            for (const tbl of el.querySelectorAll?.("table") ?? []) {
+              // **`Inputs.table` は行の先頭に空のセルを出す。**
+              // 見出しのある列だけを数字の欄として見る
+              const heads = [...tbl.querySelectorAll("thead th")].map((h) =>
+                h.textContent.trim()
+              );
+              for (const row of tbl.querySelectorAll("tbody tr")) {
+                heads.forEach((label, i) => {
+                  if (!label) return;
+                  cells.push(row.children[i]?.textContent?.trim() ?? "");
+                });
+              }
+            }
+            if (el.matches?.("p.muted") || el.querySelector?.("p.muted")) note = true;
+          }
+          out[want] = { found: true, note, cells };
+        }
+        return out;
+      }, headings);
+    };
+
+    for (const [label, url, headings, mustHaveNumbers] of [
+      ["表紙", `${base}/`, ["自分と、その配下", "実際に引いたサブドメイン"], false],
+      ["サンプル", `${base}/sample`, ["自分と、その配下", "実際に引いたサブドメイン"], true],
+      [
+        "英語版の表紙",
+        `${base}/en/`,
+        ["The domain, and what sits under it", "Subdomains actually queried"],
+        false,
+      ],
+    ]) {
+      const state = await sectionState(wide, url, headings);
+      for (const [name, got] of Object.entries(state)) {
+        check(`${label}に「${name}」の節がある`, got.found, "見出しが無い");
+        if (!got.found) continue;
+        // 表が出ているなら、**どのセルも空でないこと。**
+        // 表も断りも無い、あるいは空欄が並ぶ状態を落とす
+        const hasTable = got.cells.length > 0;
+        const blank = got.cells.filter((c) => c === "").length;
+        check(
+          `${label}の「${name}」が空欄を並べていない`,
+          got.note ? !hasTable : hasTable && blank === 0,
+          got.note
+            ? "計測していない断りと表が同時に出ている"
+            : `表が無い、または空のセルが ${blank} 個ある`
+        );
+        // **サンプルは「数字が入るとこう見える」を見せるページである。**
+        // 断りが出ていたら、それはサンプルの役目を果たしていない
+        if (mustHaveNumbers) {
+          check(
+            `サンプルの「${name}」に数字が入っている`,
+            hasTable && !got.note,
+            got.note ? "計測していない断りが出ている" : "表が無い"
+          );
+        }
+      }
+    }
+
     await desktop.close();
 
     // -- コンソール -------------------------------------------------------

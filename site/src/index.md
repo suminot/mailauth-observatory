@@ -185,15 +185,19 @@ DMARC の `p=` はそのドメイン自身に効きます。**配下のサブド
 サブドメイン上にあることは珍しくありません。
 
 ```js
+// **無い列を 0 として見せない**（原則5）。この欄より前に計測した月の
+// gold には列そのものが無い。空欄で出すと「該当なし」と読まれる
 display(
-  table(
-    [
-      { 区分: "自分に効いている（p=）", ドメイン: current?.dmarc_enforced_domains },
-      { 区分: "配下にも効いている（sp= または継承）", ドメイン: current?.sp_enforced_domains },
-      { 区分: "sp= で配下だけ弱くしている", ドメイン: current?.sp_weaker_domains },
-    ],
-    { sort: null }
-  )
+  current?.sp_enforced_domains === undefined
+    ? html`<p class="muted">この月はまだ <code>sp=</code> を集計していません。<strong>0 ではありません。</strong></p>`
+    : table(
+        [
+          { 区分: "自分に効いている（p=）", ドメイン: current?.dmarc_enforced_domains },
+          { 区分: "配下にも効いている（sp= または継承）", ドメイン: current?.sp_enforced_domains },
+          { 区分: "sp= で配下だけ弱くしている", ドメイン: current?.sp_weaker_domains },
+        ],
+        { sort: null }
+      )
 );
 ```
 
@@ -213,16 +217,18 @@ display(
 
 ```js
 display(
-  table(
-    [
-      { 区分: "計測したサブドメイン", 数: current?.subdomains_measured },
-      { 区分: "うち観測できた", 数: current?.subdomains_observed },
-      { 区分: "自分の DMARC を持つ", 数: current?.subdomains_with_own_dmarc },
-      { 区分: "うち quarantine 以上", 数: current?.subdomains_dmarc_enforced },
-      { 区分: "サブドメインでメールを扱う企業数", 数: current?.entities_with_subdomain_mail },
-    ],
-    { sort: null }
-  )
+  current?.subdomains_measured === undefined
+    ? html`<p class="muted">この月はサブドメインを計測していません。<strong>「無かった」ではありません。</strong></p>`
+    : table(
+        [
+          { 区分: "計測したサブドメイン", 数: current?.subdomains_measured },
+          { 区分: "うち観測できた", 数: current?.subdomains_observed },
+          { 区分: "自分の DMARC を持つ", 数: current?.subdomains_with_own_dmarc },
+          { 区分: "うち quarantine 以上", 数: current?.subdomains_dmarc_enforced },
+          { 区分: "サブドメインでメールを扱う企業数", 数: current?.entities_with_subdomain_mail },
+        ],
+        { sort: null }
+      )
 );
 ```
 
