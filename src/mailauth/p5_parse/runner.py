@@ -342,9 +342,15 @@ def run(
 
         domains_frame = read_parquet(phase_output(run_id, "p3_domains", "domains.parquet"))
         ids: dict[str, tuple[str, str]] = {}
+        #: domain -> apex か。**分母は apex で閉じている**（BACKLOG 14）。
+        #: P3 が決めたものを引き継ぐ。ここで名前から作り直さない
+        apex_by_domain: dict[str, bool] = {}
         if domains_frame is not None:
             for _, row in domains_frame.iterrows():
-                ids[str(row["domain"])] = (str(row["domain_id"]), str(row["entity_id"]))
+                name = str(row["domain"])
+                ids[name] = (str(row["domain_id"]), str(row["entity_id"]))
+                value = row.get("is_apex")
+                apex_by_domain[name] = True if value is None or value != value else bool(value)
 
         grouped = group_bronze_by_domain(records)
         domain_names = sorted(grouped)
@@ -385,6 +391,7 @@ def run(
                     entity_id=entity_id,
                     run_id=run_id,
                     measured_month=month,
+                    is_apex=apex_by_domain.get(domain, True),
                     parser_version=PARSER_VERSION,
                     **parsed,
                 )

@@ -1051,3 +1051,149 @@ def test_落ちていなければその警告は出さない(seeded_run):
     out = _run_p2()
     codes = [w["code"] for w in out["warnings"]]
     assert "CT_UPSTREAM_UNAVAILABLE" not in codes, codes
+
+
+# ===========================================================================
+# サブドメインを捨てない（BACKLOG 14）
+# ===========================================================================
+
+#: avex と同じ形。apex の rua が自社サブドメインを指していて、そちらが
+#: **自分の MX と自分の DMARC を持っている。**
+#:
+#:     avex.co.jp            MX  aspmx.l.google.com ほか
+#:     _dmarc.avex.co.jp     rua=mailto:...@av.avex.co.jp
+#:     av.avex.co.jp         MX  aspmx.l.google.com ほか（自分の MX）
+#:     _dmarc.av.avex.co.jp  v=DMARC1; p=none（自分の DMARC）
+SUBDOMAIN_ANSWERS = {
+    **ANSWERS,
+    ("sample-info.co.jp", "TXT"): make_answer(
+        "sample-info.co.jp",
+        "TXT",
+        ["v=spf1 include:_spf2.sample-info.co.jp include:spf.protection.outlook.com -all"],
+    ),
+    ("_dmarc.sample-info.co.jp", "TXT"): make_answer(
+        "_dmarc.sample-info.co.jp",
+        "TXT",
+        ["v=DMARC1; p=reject; sp=none; rua=mailto:agg@mail.sample-info.co.jp"],
+    ),
+    # 実際のメールはここにある。自分の MX と自分の DMARC を持つ
+    ("mail.sample-info.co.jp", "MX"): make_answer(
+        "mail.sample-info.co.jp", "MX", ["aspmx.l.google.com."]
+    ),
+    ("_dmarc.mail.sample-info.co.jp", "TXT"): make_answer(
+        "_dmarc.mail.sample-info.co.jp", "TXT", ["v=DMARC1; p=none"]
+    ),
+    # SPF を自社サブドメインに分割している。MX は無いが DMARC も無い
+    # （＝メールドメインではない）ので P3 が落とす
+    ("_spf2.sample-info.co.jp", "TXT"): make_answer(
+        "_spf2.sample-info.co.jp", "TXT", ["v=spf1 ip4:192.0.2.0/24 -all"]
+    ),
+}
+
+
+def _run_subdomain_p2():
+    return run_p2(run_id=RUN, resolver=StaticResolver(SUBDOMAIN_ANSWERS), ct_source=CT)
+
+
+def test_p2_keeps_a_subdomain_that_the_rua_points_at(seeded_run):
+    """**見つけたものを捨てない。** apex に丸めて消していた（BACKLOG 14）。
+
+    候補としては元から見つかっていた。`etld_plus_one()` が apex に丸めて
+    いただけである ── 直すのに新しい問い合わせは要らない。
+    """
+    _run_subdomain_p2()
+    df = candidates()
+    rows = df[df["domain"] == "mail.sample-info.co.jp"]
+    assert len(rows) == 1, sorted(df["domain"])
+    assert rows.iloc[0]["discovery_method"] == "dmarc_rua"
+    assert bool(rows.iloc[0]["is_apex"]) is False
+
+    # **apex は消えていない。** 差し替えると分母が動き、前月と比べられなくなる
+    apex = df[df["domain"] == "sample-info.co.jp"]
+    assert len(apex) >= 1
+    assert all(bool(v) for v in apex["is_apex"])
+
+
+def test_p2_keeps_a_subdomain_from_spf_include(seeded_run):
+    """`include:` が自社サブドメインを指す形。**問い合わせは増えない。**"""
+    _run_subdomain_p2()
+    df = candidates()
+    rows = df[df["domain"] == "_spf2.sample-info.co.jp"]
+    assert len(rows) == 1, sorted(df["domain"])
+    assert rows.iloc[0]["discovery_method"] == "spf_include"
+    assert bool(rows.iloc[0]["is_apex"]) is False
+
+
+def test_p2_does_not_keep_a_third_party_subdomain_from_include(seeded_run):
+    """**他社を指す include は所有の証拠にならない。**
+
+    `include:spf.protection.outlook.com` が示すのはその基盤を使っている
+    ことだけで、そのサブドメインを測るとマイクロソフトの設定を
+    その企業の評価として公開することになる。
+    """
+    _run_subdomain_p2()
+    names = set(candidates()["domain"])
+    assert "spf.protection.outlook.com" not in names
+    # **apex ですら候補にしない。** `include:` は所有を示さないので、
+    # `etld_plus_one("spf.protection.outlook.com")` も候補に入れない
+    assert "outlook.com" not in names
+
+
+def test_p3_measures_a_subdomain_that_has_its_own_mx(seeded_run):
+    """自分の MX を持つサブドメインは測る。**apex とは別の行になる。**"""
+    _run_subdomain_p2()
+    run_p3(run_id=RUN, resolver=StaticResolver(SUBDOMAIN_ANSWERS))
+    df = domains()
+    row = df[df["domain"] == "mail.sample-info.co.jp"].iloc[0]
+    assert bool(row["is_apex"]) is False
+    assert bool(row["mx_exists"]) is True
+    assert bool(row["is_measured"]) is True
+
+
+def test_p3_drops_a_subdomain_with_no_mail_of_its_own(seeded_run):
+    """MX も `_dmarc` も無いサブドメインは測らない。**理由を残して外す。**
+
+    落としてしまうと、翌月に同じ名前をまた拾って同じ判断をし直すことになる。
+    """
+    _run_subdomain_p2()
+    run_p3(run_id=RUN, resolver=StaticResolver(SUBDOMAIN_ANSWERS))
+    df = domains()
+    row = df[df["domain"] == "_spf2.sample-info.co.jp"].iloc[0]
+    assert bool(row["is_measured"]) is False
+    assert row["exclusion_reason"] == "subdomain_without_own_mail"
+
+
+def test_p3_counts_apex_and_subdomains_apart(seeded_run):
+    """受け入れ基準の分布に**サブドメインを混ぜない。**
+
+    混ぜると confirmed 率の意味が月ごとに変わり、前月と比べられなくなる。
+    """
+    _run_subdomain_p2()
+    out = run_p3(run_id=RUN, resolver=StaticResolver(SUBDOMAIN_ANSWERS))
+    b = out["breakdown"]
+    assert b["subdomains"] == 2
+    assert b["subdomains_measured"] == 1
+    assert b["subdomains_without_own_mail"] == 1
+    assert b["apex_domains"] == sum(b["by_confidence"].values())
+
+
+def test_subdomains_can_be_switched_off(seeded_run, tmp_path):
+    """**設定は外に出す**（原則7）。切れば従来どおり apex に丸まる。"""
+    import yaml
+
+    from mailauth.paths import config_path
+
+    cfg = yaml.safe_load(config_path("configs/candidates.yaml").read_text(encoding="utf-8"))
+    cfg["subdomains"]["enabled"] = False
+    path = tmp_path / "candidates-no-sub.yaml"
+    path.write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding="utf-8")
+
+    run_p2(
+        run_id=RUN,
+        resolver=StaticResolver(SUBDOMAIN_ANSWERS),
+        ct_source=CT,
+        config=str(path),
+    )
+    df = candidates()
+    assert "mail.sample-info.co.jp" not in set(df["domain"])
+    assert all(bool(v) for v in df["is_apex"])

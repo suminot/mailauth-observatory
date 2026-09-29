@@ -90,6 +90,7 @@ def _row(**kwargs) -> DomainRow:
     base = {
         "domain_id": "d:1",
         "entity_id": "jp:1",
+        "is_apex": True,
         "observed": True,
         "spf_present": False,
         "dmarc_present": False,
@@ -219,8 +220,8 @@ def test_subdomain_policy_is_counted_apart_from_the_domain_itself():
     # 既存の指標は apex 自身の p= のまま。**定義を黙って変えない**
     assert stats.dmarc_enforced_domains == 2
     # 配下に効いているのは1件だけ
-    assert stats.subdomain_enforced_domains == 1
-    assert stats.subdomain_weaker_domains == 1
+    assert stats.sp_enforced_domains == 1
+    assert stats.sp_weaker_domains == 1
 
 
 def test_unobserved_domains_do_not_reach_the_subdomain_metrics():
@@ -236,8 +237,8 @@ def test_unobserved_domains_do_not_reach_the_subdomain_metrics():
             )
         ]
     )
-    assert stats.subdomain_enforced_domains == 0
-    assert stats.subdomain_weaker_domains == 0
+    assert stats.sp_enforced_domains == 0
+    assert stats.sp_weaker_domains == 0
 
 
 def test_enforced_quarantine_is_not_counted_as_enforced_reject():
@@ -802,3 +803,58 @@ def test_前月比と変更履歴が追っている():
     )
     before = aggregate([], measured_month=MONTH, population_id=POP, total_entities=9)
     assert diff_stats(now, before)["entities_with_domains"] == 1
+
+
+def test_subdomains_are_counted_apart_and_never_enter_the_denominator():
+    """**分母は apex で閉じている**（BACKLOG 14、運営者の判断は「別枠」）。
+
+    サブドメインを混ぜるとドメイン数が増え、前月との比較が効かなくなる ──
+    母集団を変えて計測し直すのと同じことになる。
+    """
+    stats = _agg(
+        [
+            _row(domain_id="d:1", entity_id="jp:1", spf_present=True, dmarc_present=True),
+            # 実際のメールがここにある（avex の av.avex.co.jp に相当）
+            _row(
+                domain_id="d:2",
+                entity_id="jp:1",
+                is_apex=False,
+                spf_present=True,
+                dmarc_present=True,
+                effective_7489="none",
+            ),
+            _row(
+                domain_id="d:3",
+                entity_id="jp:2",
+                is_apex=False,
+                dmarc_present=True,
+                effective_7489="reject",
+            ),
+        ]
+    )
+    # apex は1件だけ。**サブドメインは分母に入らない**
+    assert stats.total_domains == 1
+    assert stats.observed_domains == 1
+    assert stats.spf_adopted_domains == 1
+    assert stats.dmarc_adopted_domains == 1
+    assert stats.entities_with_domains == 1
+
+    # サブドメインは別枠で全部出る
+    assert stats.subdomains_measured == 2
+    assert stats.subdomains_observed == 2
+    assert stats.subdomains_with_own_dmarc == 2
+    assert stats.subdomains_dmarc_enforced == 1
+    assert stats.entities_with_subdomain_mail == 2
+
+
+def test_facts_without_the_is_apex_column_are_treated_as_apex():
+    """過去の run には列が無い。**無い列を「サブドメイン」と読まない。**
+
+    False を既定にすると、前月のドメインが丸ごと分母から消えて
+    採用率が跳ね上がる。
+    """
+    from mailauth.p7_aggregate.metrics import DomainRow
+
+    assert DomainRow.from_fact({"domain_id": "d:1", "entity_id": "jp:1"}).is_apex is True
+    assert DomainRow.from_fact({"domain_id": "d:1", "is_apex": float("nan")}).is_apex is True
+    assert DomainRow.from_fact({"domain_id": "d:1", "is_apex": False}).is_apex is False

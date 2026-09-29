@@ -196,8 +196,8 @@ display(
   table(
     [
       { Category: "Applies to the domain itself (p=)", Domains: current?.dmarc_enforced_domains },
-      { Category: "Applies to subdomains too (sp= or inherited)", Domains: current?.subdomain_enforced_domains },
-      { Category: "Weakened for subdomains via sp=", Domains: current?.subdomain_weaker_domains },
+      { Category: "Applies to subdomains too (sp= or inherited)", Domains: current?.sp_enforced_domains },
+      { Category: "Weakened for subdomains via sp=", Domains: current?.sp_weaker_domains },
     ],
     { sort: null }
   )
@@ -206,11 +206,41 @@ display(
 
 <div class="limits">
 
-- **This site measures registered domains.** Subdomains are not yet measured
-  themselves, so what appears here is only what `sp=` says. **What the
-  subdomains actually do has not been measured**
-- A subdomain carrying its own `_dmarc` record does not inherit `sp=`. Where
-  that is the case, these figures do not describe it
+- **What appears here is only what `sp=` says.** A subdomain carrying its own
+  `_dmarc` record does not inherit `sp=`, so these figures do not describe it
+- Subdomains that were actually queried are counted separately, below
+
+</div>
+
+### Subdomains actually queried
+
+Subdomains found through traces of mail — a `rua` destination, an SPF
+`include:` — that **carried an MX record or a `_dmarc` record of their own**.
+
+```js
+display(
+  table(
+    [
+      { Category: "Subdomains measured", Count: current?.subdomains_measured },
+      { Category: "Of those, observed", Count: current?.subdomains_observed },
+      { Category: "Carrying their own DMARC", Count: current?.subdomains_with_own_dmarc },
+      { Category: "Of those, quarantine or stronger", Count: current?.subdomains_dmarc_enforced },
+      { Category: "Companies with mail on a subdomain", Count: current?.entities_with_subdomain_mail },
+    ],
+    { sort: null }
+  )
+);
+```
+
+<div class="limits">
+
+- **These counts enter no denominator anywhere else on this page.** Mixing them
+  in would raise the domain count and break comparison with earlier months, so
+  they are kept apart
+- **Only what was found.** There is no way to enumerate every subdomain.
+  Absence here does not mean absence
+- The routes used are `rua` destinations and SPF `include:` targets. A
+  subdomain sending mail by any other route is not visible here
 
 </div>
 

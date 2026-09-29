@@ -189,8 +189,8 @@ display(
   table(
     [
       { 区分: "自分に効いている（p=）", ドメイン: current?.dmarc_enforced_domains },
-      { 区分: "配下にも効いている（sp= または継承）", ドメイン: current?.subdomain_enforced_domains },
-      { 区分: "sp= で配下だけ弱くしている", ドメイン: current?.subdomain_weaker_domains },
+      { 区分: "配下にも効いている（sp= または継承）", ドメイン: current?.sp_enforced_domains },
+      { 区分: "sp= で配下だけ弱くしている", ドメイン: current?.sp_weaker_domains },
     ],
     { sort: null }
   )
@@ -199,11 +199,41 @@ display(
 
 <div class="limits">
 
-- **このサイトは登記ドメインを測っています。** 配下のサブドメインそのものは
-  まだ計測対象に入っていないため、ここに出るのは「`sp=` に何と書いてあるか」
-  だけです。**サブドメインが実際にどうなっているかは測っていません**
-- サブドメインが自分の `_dmarc` を持っている場合、`sp=` は継承されません。
-  その場合この欄は実態を表しません
+- **ここに出るのは「`sp=` に何と書いてあるか」です。** サブドメインが自分の
+  `_dmarc` を持っている場合、`sp=` は継承されないので、この欄は
+  そのサブドメインの実態を表しません
+- 実際に引いたサブドメインは下の表に別枠で出しています
+
+</div>
+
+### 実際に引いたサブドメイン
+
+メールの痕跡（`rua` の宛先、SPF の `include:`）から見つかったサブドメインの
+うち、**自分の MX か自分の `_dmarc` を持っていたもの**です。
+
+```js
+display(
+  table(
+    [
+      { 区分: "計測したサブドメイン", 数: current?.subdomains_measured },
+      { 区分: "うち観測できた", 数: current?.subdomains_observed },
+      { 区分: "自分の DMARC を持つ", 数: current?.subdomains_with_own_dmarc },
+      { 区分: "うち quarantine 以上", 数: current?.subdomains_dmarc_enforced },
+      { 区分: "サブドメインでメールを扱う企業数", 数: current?.entities_with_subdomain_mail },
+    ],
+    { sort: null }
+  )
+);
+```
+
+<div class="limits">
+
+- **この数はこのページの他のどの割合の分母にも入っていません。** 混ぜると
+  ドメイン数が増えて前月と比べられなくなるため、別枠で数えています
+- **見つかった分だけです。** サブドメインの全数を探す方法はありません。
+  ここに出ないことは「無い」を意味しません
+- 見つける経路は `rua` の宛先と SPF の `include:` に限っています。
+  それ以外の経路でメールを出しているサブドメインは見えません
 
 </div>
 
