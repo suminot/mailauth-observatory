@@ -214,6 +214,7 @@ def run(
         by_category: dict[str, int] = defaultdict(int)
         by_confidence: dict[str, int] = defaultdict(int)
         by_park: dict[str, int] = defaultdict(int)
+        by_undetectable: dict[str, int] = defaultdict(int)
         matched_hosts: set[str] = set()
         no_inference_domains: list[str] = []
         notes_sample: list[str] = []
@@ -249,7 +250,7 @@ def run(
                 d.category == InferenceCategory.SECURITY_GATEWAY for d in drafts
             )
             if not has_gateway:
-                drafts = [*drafts, undetectable_draft(rules)]
+                drafts = [*drafts, undetectable_draft(rules, fact)]
                 counters["undetectable_security_gateway"] += 1
 
             by_park[str(parked.park_class)] += 1
@@ -259,6 +260,8 @@ def run(
             for index, draft in enumerate(drafts):
                 by_category[draft.category] += 1
                 by_confidence[draft.confidence] += 1
+                if draft.undetectable_reason:
+                    by_undetectable[str(draft.undetectable_reason)] += 1
                 if draft.is_stale:
                     counters["stale_verification"] += 1
                 elif draft.stale_streak_months:
@@ -310,6 +313,9 @@ def run(
             by_category=dict(sorted(by_category.items())),
             by_confidence=dict(sorted(by_confidence.items())),
             by_park_class=dict(sorted(by_park.items())),
+            # **「検出できなかった」を1つに丸めない。** 理由が違えば
+            # 読み方が違う（DESIGN-platform.md §5）
+            by_undetectable_reason=dict(sorted(by_undetectable.items())),
             domains_with_no_inference=len(no_inference_domains),
             no_inference_rate=round(no_inference_rate, 4),
             # **辞書を育てる主要な経路。** ここを見て手で辞書に追記する
@@ -355,8 +361,12 @@ def run(
                 count=counters["undetectable_security_gateway"],
                 message=(
                     "セキュリティ製品を DNS 上で検出できなかったドメイン。"
-                    "API / OAuth 連携型の製品は原理的に痕跡を残さないため、"
-                    "「使っていない」と解釈してはならない"
+                    "**理由の内訳: "
+                    + "、".join(
+                        f"{reason} {count}件"
+                        for reason, count in sorted(by_undetectable.items())
+                    )
+                    + "。** どれも「使っていない」と解釈してはならない"
                 ),
             )
         if counters.get("park_unclassified"):
@@ -391,12 +401,20 @@ def run(
 def vendor_share(inferences_frame, category: str) -> list[dict[str, Any]]:
     """ベンダー別の件数。コンソールと P7 の下ごしらえ。
 
-    `not_detected`（API 連携型製品の盲点を示す番兵）は**除外する**。
-    シェアの分母に混ぜると「未検出」が1ベンダーとして数えられてしまう。
+    **`undetectable_reason` が入っている行は数えない。** あの列は
+    「検出できなかった」ことの記録であって、利用の証拠ではない。
+
+    番兵（`not_detected`）だけを名前で弾いていたが、それでは足りない。
+    Microsoft の仮 MX `*.msv1.invalid` のように、**ベンダーは分かるのに
+    使っているとは言えない**痕跡があり、名前で弾く方式だとそれが
+    「Microsoft を使っている」に化ける。理由の列で弾く。
     """
     counts: dict[str, int] = defaultdict(int)
     for _, row in inferences_frame.iterrows():
         if str(row["category"]) != category:
+            continue
+        reason = row.get("undetectable_reason")
+        if isinstance(reason, str) and reason:
             continue
         vendor = str(row["vendor"])
         if vendor == NOT_DETECTED_VENDOR:

@@ -18,7 +18,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..config import load_yaml
-from ..contracts import ConfidenceLevel, EvidenceRecordType, InferenceCategory
+from ..contracts import (
+    ConfidenceLevel,
+    EvidenceRecordType,
+    InferenceCategory,
+    UndetectableReason,
+)
 from ..paths import config_path
 
 #: 辞書の置き場所
@@ -35,6 +40,7 @@ VERIFICATION_CATEGORY = "verification_txt"
 _KNOWN_RECORDS = {r.value for r in EvidenceRecordType}
 _KNOWN_CATEGORIES = {c.value for c in InferenceCategory} | {VERIFICATION_CATEGORY}
 _KNOWN_CONFIDENCE = {c.value for c in ConfidenceLevel}
+_KNOWN_UNDETECTABLE = {u.value for u in UndetectableReason}
 
 
 class FingerprintError(ValueError):
@@ -63,6 +69,11 @@ class Rule:
     note: str | None = None
     source: str | None = None
     corroborated_by: Corroboration | None = None
+    #: **一致しても「使っている」ことにはならない規則**の理由。
+    #: Microsoft の仮 MX `*.msv1.invalid` のように、「登録はあるが受信は
+    #: そこではない」ことを示す痕跡がある。ベンダーは分かるので未知ホストに
+    #: 落としたくないが、利用数に数えてはいけない（`UndetectableReason`）
+    undetectable_reason: str | None = None
     #: 読み込み元ファイルの `version`。inference に記録して再現性を確保する
     fingerprint_version: str | None = None
 
@@ -152,6 +163,15 @@ def _parse_rule(raw: dict, *, default_category: str, version: str, origin: str) 
     if not vendor:
         raise FingerprintError(f"{origin}: 規則 {rule_id} に vendor が無い")
 
+    undetectable = raw.get("undetectable_reason")
+    if undetectable is not None:
+        undetectable = str(undetectable).strip()
+        if undetectable not in _KNOWN_UNDETECTABLE:
+            raise FingerprintError(
+                f"{origin}: 規則 {rule_id} の undetectable_reason が未知の値 "
+                f"{undetectable!r}。既知は {sorted(_KNOWN_UNDETECTABLE)}"
+            )
+
     return Rule(
         id=rule_id,
         vendor=vendor,
@@ -164,6 +184,7 @@ def _parse_rule(raw: dict, *, default_category: str, version: str, origin: str) 
         note=(str(raw["note"]).strip() if raw.get("note") else None),
         source=(str(raw["source"]).strip() if raw.get("source") else None),
         corroborated_by=_corroboration(raw.get("corroborated_by")),
+        undetectable_reason=undetectable,
         fingerprint_version=version,
     )
 
