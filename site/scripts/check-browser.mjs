@@ -376,6 +376,82 @@ async function main() {
       `いまの一覧: ${enNav.join(" / ")}`
     );
 
+    // -- メール基盤のページ -----------------------------------------------
+    // **限界の断りが表より前に出ていること。** 名指しはしていないが、
+    // 「検出できなかった＝使っていない」と読ませるのが一番まずい読まれ方で、
+    // それを止めるのは表の手前に置いた断りだけである
+    await wide.goto(`${base}/platforms`, { waitUntil: "networkidle" });
+    await wide.waitForTimeout(400);
+    const plat = await wide.evaluate(() => {
+      const main = document.querySelector("main");
+      const limits = main?.querySelector(".limits");
+      // **表ではなく層の見出しと比べる。** データが空の月は表が1つも
+      // 描かれず、表と比べる書き方だと**何も確かめずに通ってしまう**
+      // （最初そう書いて、空の月で素通りした）。見出しは常にある
+      const firstLayer = [...(main?.querySelectorAll("h2") ?? [])].find((h) =>
+        h.textContent.includes("実基盤")
+      );
+      const order =
+        limits && firstLayer
+          ? limits.compareDocumentPosition(firstLayer) &
+            Node.DOCUMENT_POSITION_FOLLOWING
+          : 0;
+      const lists = document.querySelectorAll("#observablehq-sidebar > ol");
+      const items = [
+        ...(lists[lists.length - 1]?.querySelectorAll("li.observablehq-link > a") ?? []),
+      ].map((a) => a.textContent.trim());
+      return {
+        hasLimits: Boolean(limits),
+        limitsBeforeLayers: Boolean(order),
+        headings: [...(main?.querySelectorAll("h2") ?? [])].map((h) =>
+          h.textContent.trim()
+        ),
+        nav: items,
+      };
+    });
+    check("基盤のページに限界の断りがある", plat.hasLimits, "`.limits` が無い");
+    check(
+      "限界の断りが層の見出しより前にある",
+      plat.limitsBeforeLayers,
+      "数字の後ろに出ている"
+    );
+    check(
+      "層が3つとも出ている",
+      ["実基盤", "受信の前段", "送信の前段"].every((h) =>
+        plat.headings.some((x) => x.includes(h))
+      ),
+      `いまの見出し: ${plat.headings.join(" / ")}`
+    );
+    check(
+      "一覧にメール基盤がある",
+      plat.nav.includes("メール基盤"),
+      `いまの一覧: ${plat.nav.join(" / ")}`
+    );
+
+    // **英語側も見る。** 片方しか見ないと壊れ方を見逃す（実際に見逃した）
+    await wide.goto(`${base}/en/platforms`, { waitUntil: "networkidle" });
+    await wide.waitForTimeout(400);
+    const enPlat = await wide.evaluate(() => {
+      const main = document.querySelector("main");
+      const lists = document.querySelectorAll("#observablehq-sidebar > ol");
+      const items = [
+        ...(lists[lists.length - 1]?.querySelectorAll("li.observablehq-link > a") ?? []),
+      ].map((a) => a.textContent.trim());
+      return {
+        hasLimits: Boolean(main?.querySelector(".limits")),
+        // 本文に日本語（ひらがな・カタカナ）が混ざっていないこと
+        jp: /[ぁ-んァ-ヶ]/.test(main?.textContent ?? ""),
+        nav: items,
+      };
+    });
+    check("英語版にも限界の断りがある", enPlat.hasLimits, "`.limits` が無い");
+    check("英語版の本文に日本語が混ざっていない", !enPlat.jp, "かなが出ている");
+    check(
+      "英語版の一覧に Mail platforms がある",
+      enPlat.nav.includes("Mail platforms"),
+      `いまの一覧: ${enPlat.nav.join(" / ")}`
+    );
+
     await desktop.close();
 
     // -- コンソール -------------------------------------------------------

@@ -869,6 +869,87 @@ STATS_BY_SECTOR_ARROW_SCHEMA = pa.schema(
     ]
 )
 
+class StatsPlatform(_Model):
+    """メール基盤・前段の採用状況（DESIGN-platform.md §1、§6）。
+
+    **1行 = 1つの（母集団 × 層 × ベンダー）。** 層を分けるのは、受信と送信で
+    別ベンダーを使っている企業が実在するためである（実測）。
+
+    ## 数え方
+
+    運営者の判断で、**企業数とドメイン数の両方**を出す。
+
+    「使っている」は2つの強さで出す。**1つに丸めない。**
+
+      `*_receiving`  MX がそこを指している。**最も堅い**
+      `*_any`        MX / SPF / DKIM のいずれかに痕跡がある。前段の背後も拾う
+
+    DESIGN-platform.md の①②③でいう①と②に当たる。**③（テナントの実在）は
+    DNS の外に出ないと確かめられないので、ここには無い** ── 「0」ではなく
+    「測っていない」である（原則5）。
+
+    ## 分母を2つ持つ
+
+      `observed_domains`    観測できたドメイン全部（同定できなかったものを含む）
+      `identified_domains`  その層で基盤を同定できたドメインだけ
+
+    **片方だけだと誤読される。** 前者だけだと採用率が低く見え、後者だけだと
+    分母が何なのか読み手に伝わらない。
+
+    ## 秘匿
+
+    ベンダー名と企業数の組は個社の特定につながりうる。業種別と同じく
+    n<`MIN_CELL_SIZE` のセルは「その他」に束ねる。
+    """
+
+    measured_month: dt.date
+    population_id: str
+    #: 実基盤 / 受信前段 / 送信前段（`InferenceLayer`）
+    layer: str
+    vendor: str
+    #: OEM 元の製品。別の会社が同じ仕組みを売っていることがある
+    engine: str | None = None
+
+    entities_any: int = 0
+    domains_any: int = 0
+    entities_receiving: int = 0
+    domains_receiving: int = 0
+
+    #: 分母（その層・その母集団で共通の値を各行が持ち回る）
+    observed_domains: int = 0
+    identified_domains: int = 0
+    observed_entities: int = 0
+    identified_entities: int = 0
+
+    #: n<MIN_CELL_SIZE で「その他」に束ねた行
+    suppressed: bool = False
+
+
+STATS_PLATFORM_ARROW_SCHEMA = pa.schema(
+    [
+        ("measured_month", pa.date32()),
+        ("population_id", pa.string()),
+        ("layer", pa.string()),
+        ("vendor", pa.string()),
+        ("engine", pa.string()),
+        ("entities_any", pa.int32()),
+        ("domains_any", pa.int32()),
+        ("entities_receiving", pa.int32()),
+        ("domains_receiving", pa.int32()),
+        ("observed_domains", pa.int32()),
+        ("identified_domains", pa.int32()),
+        ("observed_entities", pa.int32()),
+        ("identified_entities", pa.int32()),
+        ("suppressed", pa.bool_()),
+    ]
+)
+
+STATS_PLATFORM_SORT_KEYS = ["population_id", "layer", "vendor"]
+
+#: n<MIN_CELL_SIZE のベンダーを束ねる先。**個別のベンダー名は出さない**
+SUPPRESSED_VENDOR = "その他（秘匿）"
+
+
 STATS_OVERALL_SORT_KEYS = ["population_id"]
 STATS_BY_SECTOR_SORT_KEYS = ["population_id", "common12_code"]
 

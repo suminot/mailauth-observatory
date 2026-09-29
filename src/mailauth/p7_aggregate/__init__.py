@@ -15,6 +15,7 @@ from .runner import (
     BY_SECTOR_FILENAME,
     OVERALL_FILENAME,
     PHASE,
+    PLATFORM_FILENAME,
     MissingInputError,
     run,
 )
@@ -24,6 +25,7 @@ __all__ = [
     "PHASE",
     "OVERALL_FILENAME",
     "BY_SECTOR_FILENAME",
+    "PLATFORM_FILENAME",
     "AGGREGATOR_VERSION",
     "MissingInputError",
 ]
