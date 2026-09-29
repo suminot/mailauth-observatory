@@ -323,6 +323,59 @@ async function main() {
     });
     check("Alt-K で検索欄に合う", focused.tag === "INPUT", `いまの焦点: ${focused.tag}`);
 
+    // 表に押せるだけで何も起きないものを置かない。
+    // **`Inputs.table` は既定で選択用のチェックボックスを出す。** 選択を
+    // 受け取っていないので押しても何も起きず、読み手の手を止めるだけ
+    const boxes = await wide.evaluate(
+      () => document.querySelectorAll("table input[type=checkbox]").length
+    );
+    check("表に意味の無いチェックボックスが無い", boxes === 0, `${boxes} 個ある`);
+
+    // **題字からしか入れない状態にしない。** 左上のサイト名を押すと
+    // ダッシュボードに戻るが、押せることは見て分からない
+    await wide.goto(`${base}/data`, { waitUntil: "networkidle" });
+    await wide.waitForTimeout(400);
+    const nav = await wide.evaluate(() => {
+      const lists = document.querySelectorAll("#observablehq-sidebar > ol");
+      const items = [...(lists[lists.length - 1]?.querySelectorAll("li.observablehq-link > a") ?? [])];
+      return {
+        labels: items.map((a) => a.textContent.trim()),
+        homes: items.filter((a) => new URL(a.href, location.href).pathname === "/").length,
+      };
+    });
+    check(
+      "一覧にダッシュボードがある",
+      nav.labels.includes("ダッシュボード"),
+      `いまの一覧: ${nav.labels.join(" / ")}`
+    );
+    check(
+      "一覧に他方の言語が混ざっていない",
+      !nav.labels.includes("Dashboard"),
+      `いまの一覧: ${nav.labels.join(" / ")}`
+    );
+    check("ダッシュボードが重複していない", nav.homes === 1, `${nav.homes} 個ある`);
+
+    // **英語側も見る。** 題字を道（`/`）で見分ける実装だと、日本語側は
+    // 正しく出るのに英語側にだけ「ダッシュボード」が残って二重になる。
+    // 片方しか見ないと、その壊れ方を見逃す（実際に見逃した）
+    await wide.goto(`${base}/en/data`, { waitUntil: "networkidle" });
+    await wide.waitForTimeout(400);
+    const enNav = await wide.evaluate(() => {
+      const lists = document.querySelectorAll("#observablehq-sidebar > ol");
+      const items = [...(lists[lists.length - 1]?.querySelectorAll("li.observablehq-link > a") ?? [])];
+      return items.map((a) => a.textContent.trim());
+    });
+    check(
+      "英語版の一覧に Dashboard がある",
+      enNav.includes("Dashboard"),
+      `いまの一覧: ${enNav.join(" / ")}`
+    );
+    check(
+      "英語版の一覧に日本語が混ざっていない",
+      !enNav.includes("ダッシュボード"),
+      `いまの一覧: ${enNav.join(" / ")}`
+    );
+
     await desktop.close();
 
     // -- コンソール -------------------------------------------------------

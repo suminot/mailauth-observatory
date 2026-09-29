@@ -112,6 +112,12 @@ function counterpartPath() {
  */
 function filterSidebarByLang() {
   const lang = currentLang();
+  // **題字とページ一覧は別々の `<ol>` に入る。** 道だけで見分けると、
+  // 一覧に置いた「ダッシュボード」（道は `/`）まで題字と同じ扱いに
+  // なり、英語版で二重に出る。入れ物で分ける
+  const lists = document.querySelectorAll("#observablehq-sidebar > ol");
+  const titleList = lists[0];
+
   for (const a of document.querySelectorAll("#observablehq-sidebar li.observablehq-link > a")) {
     let path;
     try {
@@ -119,10 +125,9 @@ function filterSidebarByLang() {
     } catch (e) {
       continue;
     }
-    // 題字（一覧の先頭に出るサイト名）は消さずに行き先を差し替える。
-    // **消すと英語版だけ題字が無くなる。** 設定に /en/ を別項目として
-    // 足すと、今度は英語版だけ題字が本文の一覧に並んで体裁が変わる
-    if (path === "/" || path === "/index.html") {
+    // 題字（一覧の上に出るサイト名）は消さずに行き先を差し替える。
+    // **消すと英語版だけ題字が無くなる。**
+    if (titleList && titleList.contains(a)) {
       if (lang === "en") a.href = a.href.replace(/\/(index\.html)?$/, "/en/$1");
       continue;
     }

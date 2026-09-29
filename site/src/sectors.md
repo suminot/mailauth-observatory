@@ -10,6 +10,7 @@ const meta = FileAttachment("data/meta.json").json();
 
 ```js
 import { rate, pct } from "./components/format.js";
+import { table } from "./components/table.js";
 ```
 
 ```js
@@ -31,7 +32,7 @@ const rows = sectors
     "実効 reject": pct(rate(d.enforced_reject_domains, d.observed_domains)),
     秘匿: d.suppressed ? "束ねた" : "",
   }));
-display(Inputs.table(rows, { sort: "業種", rows: 20 }));
+display(table(rows, { sort: "業種", rows: 20 }));
 ```
 
 ## なぜ12分類までなのか

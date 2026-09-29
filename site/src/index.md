@@ -14,6 +14,7 @@ const overall = FileAttachment("data/stats_overall.json").json();
 ```js
 import { rate, pct, band, BAND_COLORS, checklist, checklistClass, indicators, entityIndicators, num } from "./components/format.js";
 import { coverageRing } from "./components/gauge.js";
+import { table } from "./components/table.js";
 ```
 
 ```js
@@ -133,7 +134,7 @@ display(
 そのまま読み取れる形にしています。
 
 ```js
-display(Inputs.table(indicators(current ?? {}), { sort: null, rows: 12, width: { 指標: 300, ドメイン: 90, 割合: 80, 補足: 260 } }));
+display(table(indicators(current ?? {}), { sort: null, rows: 12, width: { 指標: 300, ドメイン: 90, 割合: 80, 補足: 260 } }));
 ```
 
 棒の長さは傾向を見るのに向きますが、「SPF は何ドメインか」には答えません。
@@ -143,7 +144,7 @@ display(Inputs.table(indicators(current ?? {}), { sort: null, rows: 12, width: {
 
 ```js
 display(
-  Inputs.table(entityIndicators(current ?? {}), {
+  table(entityIndicators(current ?? {}), {
     sort: null,
     width: { 指標: 300, 企業: 90, 割合: 80 },
   })
@@ -163,7 +164,7 @@ display(
 
 ```js
 display(
-  Inputs.table(
+  table(
     [
       { 区分: "名目 reject（そう書いてある）", ドメイン: current?.nominal_reject_domains },
       { 区分: "実効 reject（pct 無し・t=n・rua 有）", ドメイン: current?.enforced_reject_domains },
@@ -246,7 +247,7 @@ display(
 
 ```js
 display(
-  Inputs.table(
+  table(
     [
       { 分類: "送信ドメイン（MX あり）", ドメイン: current?.sending_domains,
         補足: `うち強制ポリシー ${pct(rate(current?.sending_enforced, current?.sending_domains))}` },

@@ -27,6 +27,7 @@ const overall = FileAttachment("../sample/stats_overall.json").json();
 ```js
 import { rate, pct, band, BAND_COLORS, checklist, indicators, entityIndicators, num } from "../components/format.js";
 import { coverageRing } from "../components/gauge.js";
+import { table } from "../components/table.js";
 ```
 
 ```js
@@ -145,7 +146,7 @@ summary mark is attached. Whether each individual standard is met is meant to
 be readable on its own.
 
 ```js
-display(Inputs.table(indicators(current ?? {}, "en"), { sort: null, rows: 12, width: { Indicator: 300, Domains: 90, Share: 80, Note: 260 } }));
+display(table(indicators(current ?? {}, "en"), { sort: null, rows: 12, width: { Indicator: 300, Domains: 90, Share: 80, Note: 260 } }));
 ```
 
 Bar length is good for seeing a trend, but it does not answer "how many
@@ -156,7 +157,7 @@ for every share is the number of domains observed.**
 
 ```js
 display(
-  Inputs.table(entityIndicators(current ?? {}, "en"), {
+  table(entityIndicators(current ?? {}, "en"), {
     sort: null,
     width: { Indicator: 300, Companies: 90, Share: 80 },
   })
@@ -177,7 +178,7 @@ being rejected.
 
 ```js
 display(
-  Inputs.table(
+  table(
     [
       { Category: "Stated reject (that is what it says)", Domains: current?.nominal_reject_domains },
       { Category: "Effective reject (no pct, t=n, rua present)", Domains: current?.enforced_reject_domains },
@@ -260,7 +261,7 @@ from domains with nothing configured.
 
 ```js
 display(
-  Inputs.table(
+  table(
     [
       { Category: "Sending domains (MX present)", Domains: current?.sending_domains,
         Note: `of which enforcing ${pct(rate(current?.sending_enforced, current?.sending_domains))}` },
