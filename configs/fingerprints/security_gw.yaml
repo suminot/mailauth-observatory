@@ -5,7 +5,7 @@
 #
 # 国内ベンダーの固定ホスト名は未解決事項の筆頭（DESIGN.md 第11章 #1）。
 # 運用コンソール画面5の「未知 MX ホスト頻度順リスト」から帰納的に埋めていく。
-version: 2026-09-29
+version: 2026-09-29b
 category: security_gateway
 
 rules:
@@ -180,6 +180,21 @@ rules:
     confidence: high
     layer: inbound_gateway
 
+  - id: qualitia-mx-02
+    vendor: クオリティア
+    product: Active! zone SS
+    region: JP
+    match:
+      record: MX
+      pattern: '\.activezone-ss\.jp\.?$'
+    confidence: high
+    layer: inbound_gateway
+    note: >-
+      Active! gate SS と**同じ会社の別製品**（OEM ではない）。SPF の IP
+      ブロックが2つとも本家と同じで、TXT の `pardot124481=` も一致する
+      （2026-09-29 実測）。`mx11.activezone-ss.jp` は 223.27.118.22 で、
+      本家の `223.27.116.0/22` の中にある
+
   - id: qualitia-spf-01
     vendor: クオリティア
     product: Active! gate SS
@@ -264,6 +279,17 @@ rules:
       # MX を握る構成の12ドメインが未知ホストのまま残っていた
       record: MX
       pattern: '\.system\.digitalartscloud\.com\.?$'
+    confidence: high
+    layer: inbound_gateway
+
+  - id: fortinet-mx-02
+    vendor: Fortinet
+    product: FortiMail Cloud
+    match:
+      # 顧客ごとのホスト名はこちらのドメインに出る。
+      # NS は fortinet.com（2026-09-29 実測）
+      record: MX
+      pattern: '\.fortimailcloud\.com\.?$'
     confidence: high
     layer: inbound_gateway
 

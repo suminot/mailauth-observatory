@@ -7,11 +7,22 @@
 
 import { execSync } from "node:child_process";
 
-/** 何から組んだか。画面の下端に `Build #49` のように出す。
+/** 何から組んだか。画面の下端に `Build #079` のように出す。
  *
- * squash マージの件名は `… (#49)` で終わるので、そこから拾う。月次計測の
- * ように PR を経ないコミットもあるので、**取れなければ短い commit を出す。**
- * どちらも取れなければ null ── 分からないなら出さない。
+ * squash マージの件名は `… (#79)` で終わるので、そこから拾う。
+ *
+ * **直近のコミットだけを見ない。** 月次計測のコミット（`月次計測 2026-09`）
+ * は PR を経ないので番号が無く、以前はそこで短い commit に落ちていた。
+ * 実際そうなり、画面に `Build e23fedc` と出た ── **読み手には何のことか
+ * 分からない。** 番号が付いた直近のコミットまで遡る。
+ *
+ * 遡って出るのは「サイトがどの PR の状態か」で、それは正しい。データだけ
+ * が新しい場合でも、ページの作りはその PR のままである。
+ *
+ * **3桁でゼロ詰めする。** 桁が変わると並びが揺れて、見比べたときに
+ * 増えたのか減ったのか一瞬迷う。3桁を超えたらそのまま伸ばす。
+ *
+ * どれも取れなければ null ── 分からないなら出さない。
  *
  * `MAILAUTH_BUILD_REF` を渡せばそれを優先する（CI から明示できるように）。
  * **受け取った値はそのまま埋めない。** HTML の属性に入るので、番号と
@@ -26,9 +37,14 @@ function buildRef() {
   if (given) return given;
   try {
     const run = (cmd) => execSync(cmd, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-    const pr = run("git log -1 --pretty=%s").trim().match(/\(#(\d+)\)\s*$/);
-    if (pr) return `#${pr[1]}`;
-    return clean(run("git rev-parse --short HEAD"));
+    // **遡る範囲に上限を置く。** 番号付きが1つも無いリポジトリで
+    // 履歴を全部読ませない
+    const subjects = run("git log -50 --pretty=%s").split("\n");
+    for (const subject of subjects) {
+      const pr = subject.trim().match(/\(#(\d+)\)\s*$/);
+      if (pr) return `#${pr[1].padStart(3, "0")}`;
+    }
+    return null;
   } catch {
     // git が無い／リポジトリの外。**推測しない**
     return null;

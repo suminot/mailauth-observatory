@@ -947,7 +947,15 @@ STATS_PLATFORM_ARROW_SCHEMA = pa.schema(
 STATS_PLATFORM_SORT_KEYS = ["population_id", "layer", "vendor"]
 
 #: n<MIN_CELL_SIZE のベンダーを束ねる先。**個別のベンダー名は出さない**
-SUPPRESSED_VENDOR = "その他（秘匿）"
+#:
+#: **機械が読む値にする。** 最初は日本語の表示名を入れていたが、
+#: これは公開データの列に入るので、英語版のページにも CC0 の CSV にも
+#: そのまま日本語で出てしまう（ブラウザ検査が実際に捕まえた）。
+#: ベンダー名そのもの（大塚商会など）は実在の社名なのでそのままでよいが、
+#: **こちらが付けたラベルは言語に依存させない。**
+SUPPRESSED_VENDOR = "other_suppressed"
+#: 2026-09 の gold まではこの表示名が入っている。読む側で両方を受ける
+LEGACY_SUPPRESSED_VENDOR = "その他（秘匿）"
 
 
 STATS_OVERALL_SORT_KEYS = ["population_id"]

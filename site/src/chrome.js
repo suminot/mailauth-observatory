@@ -31,7 +31,8 @@ function buildRefLine() {
   if (!ref) return null;
   const line = document.createElement("div");
   line.className = "chrome-build";
-  // PR 番号なら `#49`、取れなければ短い commit。**出せるものをそのまま出す**
+  // 3桁でゼロ詰めした PR 番号（`#079`）。番号が取れなければ
+  // 設定側が null を返すので、ここには来ない
   line.textContent = `Build ${ref}`;
   return line;
 }

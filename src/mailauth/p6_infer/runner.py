@@ -118,6 +118,19 @@ def load_prior_streaks(run_id: str) -> dict[str, dict[tuple[str, str], int]]:
     return dict(out)
 
 
+def is_self_hosted_mx(fact: dict, host: str) -> bool:
+    """その MX は自社ドメイン配下か。
+
+    **自社運用は辞書に足せない。** `mx3.kubota.co.jp` に当たる規則を
+    書いても、その1社にしか効かない。作業リストに並べても永久に
+    減らないので、手を付ける一覧からは外す（件数は別に残す）。
+    """
+    own = (fact.get("org_domain_psl") or "").strip().rstrip(".").lower()
+    if not own:
+        return False
+    return (resolve_psl(host) or host) == own
+
+
 def unknown_mx_hosts(
     facts: list[dict], matched_hosts: set[str]
 ) -> list[dict[str, Any]]:
@@ -126,6 +139,11 @@ def unknown_mx_hosts(
     集約は**ホスト名そのものではなく登録ドメイン単位**で行う。
     `mx1.cust0042.example-vendor.co.jp` のような顧客別ホスト名は
     1件ずつ数えても辞書を育てる手がかりにならない。
+
+    **自社運用の MX は出さない。** 2026-09 の一覧には大和ハウス・丸井・
+    神戸物産などが並んだが、**どれも辞書に足せない**（その1社にしか
+    効かない規則になる）。手を付ける一覧に混ぜると、本当に足せる新顔が
+    埋もれる。件数は `unknown_mx_total` の `self_hosted` に残す。
     """
     counts: dict[str, int] = defaultdict(int)
     examples: dict[str, list[str]] = defaultdict(list)
@@ -133,6 +151,8 @@ def unknown_mx_hosts(
         for host in fact.get("mx_hosts") or []:
             normalized = (host or "").strip().rstrip(".").lower()
             if not normalized or normalized in matched_hosts:
+                continue
+            if is_self_hosted_mx(fact, normalized):
                 continue
             key = resolve_psl(normalized) or normalized
             counts[key] += 1
@@ -154,12 +174,18 @@ def unknown_mx_total(facts: list[dict], matched_hosts: set[str]) -> dict[str, in
     （2026-09 に実際にそうなった）。
     """
     counts: dict[str, int] = defaultdict(int)
+    self_hosted: dict[str, int] = defaultdict(int)
     for fact in facts:
         for host in fact.get("mx_hosts") or []:
             normalized = (host or "").strip().rstrip(".").lower()
             if not normalized or normalized in matched_hosts:
                 continue
-            counts[resolve_psl(normalized) or normalized] += 1
+            key = resolve_psl(normalized) or normalized
+            # **自社運用は一覧に出さないが、数からは消さない**（原則4）
+            if is_self_hosted_mx(fact, normalized):
+                self_hosted[key] += 1
+                continue
+            counts[key] += 1
     ranked = sorted(counts.values(), reverse=True)
     return {
         "distinct_registered_domains": len(ranked),
@@ -168,6 +194,9 @@ def unknown_mx_total(facts: list[dict], matched_hosts: set[str]) -> dict[str, in
         # **一覧から漏れた分。** ここが 0 でなければ、まだ先がある
         "omitted_registered_domains": max(len(ranked) - UNKNOWN_MX_TOP_N, 0),
         "omitted_domains": sum(ranked[UNKNOWN_MX_TOP_N:]),
+        # **辞書に足せないので一覧から外した分。** 手付かずではない
+        "self_hosted_registered_domains": len(self_hosted),
+        "self_hosted_domains": sum(self_hosted.values()),
     }
 
 
@@ -373,6 +402,13 @@ def run(
                         f"（{unknown_total['omitted_domains']} ドメイン）が載っていない。"
                         if unknown_total["omitted_registered_domains"]
                         else "**全部を一覧に出している。**"
+                    )
+                    + (
+                        f"**自社ドメイン配下の MX {unknown_total['self_hosted_domains']} "
+                        f"ドメイン（{unknown_total['self_hosted_registered_domains']} 社）は"
+                        "一覧から外している** ── 辞書に足してもその1社にしか効かない。"
+                        if unknown_total["self_hosted_domains"]
+                        else ""
                     )
                     + "頻度順の上位を手で辞書に追記すると推定率が上がる"
                     "（DESIGN.md P6 実装メモ）"

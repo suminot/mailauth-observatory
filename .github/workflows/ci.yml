@@ -63,6 +63,12 @@ jobs:
         working-directory: site
     steps:
       - uses: actions/checkout@v4
+        # **浅い clone だとビルドの表示が出ない。** 既定の深さ1では
+        # `git log` が1件しか見えず、そのコミットに `(#NN)` が無ければ
+        # 番号まで遡れない（月次計測のコミットがまさにそれ）。
+        # observablehq.config.js が遡る件数（50）と揃える
+        with:
+          fetch-depth: 50
 
       - uses: actions/setup-node@v4
         with:

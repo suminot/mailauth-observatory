@@ -20,6 +20,7 @@ const meta = FileAttachment("../data/meta.json").json();
 ```js
 import { rate, pct } from "../components/format.js";
 import { table } from "../components/table.js";
+import { vendorLabel } from "../components/vendor.js";
 ```
 
 ```js
@@ -77,7 +78,7 @@ function layerTable(layer) {
       .slice()
       .sort((a, b) => b.domains_any - a.domains_any)
       .map((d) => ({
-        Vendor: d.vendor,
+        Vendor: vendorLabel(d.vendor, "en"),
         "OEM of": d.engine ?? "—",
         Companies: d.entities_any,
         Domains: d.domains_any,

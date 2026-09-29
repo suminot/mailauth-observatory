@@ -211,18 +211,18 @@ PLATFORMS = [
     ("platform", "Google", 288, 402, 288, None),
     ("platform", "NTTコミュニケーションズ", 96, 121, 96, None),
     ("platform", "大塚商会", 51, 60, 51, None),
-    ("platform", "その他（秘匿）", 44, 52, 44, None),
+    ("platform", "other_suppressed", 44, 52, 44, None),
     ("inbound_gateway", "Proofpoint", 121, 168, 121, None),
     ("inbound_gateway", "IIJ", 88, 110, 88, None),
     ("inbound_gateway", "Trellix", 52, 66, 52, None),
     ("inbound_gateway", "クオリティア", 31, 38, 31, "Active! gate SS"),
-    ("inbound_gateway", "その他（秘匿）", 27, 31, 27, None),
+    ("inbound_gateway", "other_suppressed", 27, 31, 27, None),
     # **送信の前段は MX を握らないので、受信は 0 になる。**
     # ここが 0 でも「使っていない」ではない
     ("outbound_gateway", "HENNGE", 34, 41, 0, None),
     ("outbound_gateway", "クオリティア", 22, 27, 0, "Active! gate SS"),
     ("outbound_gateway", "SBテクノロジー", 9, 11, 0, "Active! gate SS"),
-    ("outbound_gateway", "その他（秘匿）", 12, 14, 0, None),
+    ("outbound_gateway", "other_suppressed", 12, 14, 0, None),
 ]
 
 
@@ -253,7 +253,7 @@ def _platforms(month: str, i: int) -> list[StatsPlatform]:
                 identified_domains=by_layer_d[layer],
                 observed_entities=observed_entities,
                 identified_entities=by_layer_e[layer],
-                suppressed=vendor == "その他（秘匿）",
+                suppressed=vendor == "other_suppressed",
             )
         )
     return out

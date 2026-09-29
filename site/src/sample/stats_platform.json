@@ -77,7 +77,7 @@
   "observed_entities": 1902,
   "population_id": "jp-all-listed",
   "suppressed": true,
-  "vendor": "その他（秘匿）"
+  "vendor": "other_suppressed"
  },
  {
   "domains_any": 168,
@@ -157,7 +157,7 @@
   "observed_entities": 1902,
   "population_id": "jp-all-listed",
   "suppressed": true,
-  "vendor": "その他（秘匿）"
+  "vendor": "other_suppressed"
  },
  {
   "domains_any": 41,
@@ -221,7 +221,7 @@
   "observed_entities": 1902,
   "population_id": "jp-all-listed",
   "suppressed": true,
-  "vendor": "その他（秘匿）"
+  "vendor": "other_suppressed"
  },
  {
   "domains_any": 919,
@@ -301,7 +301,7 @@
   "observed_entities": 1913,
   "population_id": "jp-all-listed",
   "suppressed": true,
-  "vendor": "その他（秘匿）"
+  "vendor": "other_suppressed"
  },
  {
   "domains_any": 169,
@@ -381,7 +381,7 @@
   "observed_entities": 1913,
   "population_id": "jp-all-listed",
   "suppressed": true,
-  "vendor": "その他（秘匿）"
+  "vendor": "other_suppressed"
  },
  {
   "domains_any": 42,
@@ -445,7 +445,7 @@
   "observed_entities": 1913,
   "population_id": "jp-all-listed",
   "suppressed": true,
-  "vendor": "その他（秘匿）"
+  "vendor": "other_suppressed"
  },
  {
   "domains_any": 920,
@@ -525,7 +525,7 @@
   "observed_entities": 1924,
   "population_id": "jp-all-listed",
   "suppressed": true,
-  "vendor": "その他（秘匿）"
+  "vendor": "other_suppressed"
  },
  {
   "domains_any": 170,
@@ -605,7 +605,7 @@
   "observed_entities": 1924,
   "population_id": "jp-all-listed",
   "suppressed": true,
-  "vendor": "その他（秘匿）"
+  "vendor": "other_suppressed"
  },
  {
   "domains_any": 43,
@@ -669,7 +669,7 @@
   "observed_entities": 1924,
   "population_id": "jp-all-listed",
   "suppressed": true,
-  "vendor": "その他（秘匿）"
+  "vendor": "other_suppressed"
  },
  {
   "domains_any": 921,
@@ -749,7 +749,7 @@
   "observed_entities": 1935,
   "population_id": "jp-all-listed",
   "suppressed": true,
-  "vendor": "その他（秘匿）"
+  "vendor": "other_suppressed"
  },
  {
   "domains_any": 171,
@@ -829,7 +829,7 @@
   "observed_entities": 1935,
   "population_id": "jp-all-listed",
   "suppressed": true,
-  "vendor": "その他（秘匿）"
+  "vendor": "other_suppressed"
  },
  {
   "domains_any": 44,
@@ -893,7 +893,7 @@
   "observed_entities": 1935,
   "population_id": "jp-all-listed",
   "suppressed": true,
-  "vendor": "その他（秘匿）"
+  "vendor": "other_suppressed"
  },
  {
   "domains_any": 922,
@@ -973,7 +973,7 @@
   "observed_entities": 1946,
   "population_id": "jp-all-listed",
   "suppressed": true,
-  "vendor": "その他（秘匿）"
+  "vendor": "other_suppressed"
  },
  {
   "domains_any": 172,
@@ -1053,7 +1053,7 @@
   "observed_entities": 1946,
   "population_id": "jp-all-listed",
   "suppressed": true,
-  "vendor": "その他（秘匿）"
+  "vendor": "other_suppressed"
  },
  {
   "domains_any": 45,
@@ -1117,7 +1117,7 @@
   "observed_entities": 1946,
   "population_id": "jp-all-listed",
   "suppressed": true,
-  "vendor": "その他（秘匿）"
+  "vendor": "other_suppressed"
  },
  {
   "domains_any": 923,
@@ -1197,7 +1197,7 @@
   "observed_entities": 1957,
   "population_id": "jp-all-listed",
   "suppressed": true,
-  "vendor": "その他（秘匿）"
+  "vendor": "other_suppressed"
  },
  {
   "domains_any": 173,
@@ -1277,7 +1277,7 @@
   "observed_entities": 1957,
   "population_id": "jp-all-listed",
   "suppressed": true,
-  "vendor": "その他（秘匿）"
+  "vendor": "other_suppressed"
  },
  {
   "domains_any": 46,
@@ -1341,6 +1341,6 @@
   "observed_entities": 1957,
   "population_id": "jp-all-listed",
   "suppressed": true,
-  "vendor": "その他（秘匿）"
+  "vendor": "other_suppressed"
  }
 ]
