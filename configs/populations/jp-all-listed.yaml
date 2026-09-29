@@ -47,6 +47,9 @@ source:
 
   # 法人番号（P3225）で突合して公式サイト（P856）を補う。CC0
   wikidata_identity_query: configs/populations/_sparql/jp_houjin_identity.rq
+  # **主鍵で当たらなかった分を、弱い鍵で拾い直す。**
+  # 衝突は捨て、社名の一致を見る（誤った突合は取り逃がしより悪い）
+  wikidata_ticker_query: configs/populations/_sparql/jp_securities_identity.rq
 
   industry:
     primary_scheme: EDINET33

@@ -24,12 +24,23 @@ import { vendorLabel } from "../components/vendor.js";
 ```
 
 ```js
+// **Filter by population.** Mixing countries into one table lists the same
+// vendor twice and puts rows with different denominators side by side.
+const populations = [...new Set(platforms.map((d) => d.population_id))];
+const population = view(
+  Inputs.select(populations, { label: "Population", value: populations[0] })
+);
+```
+
+```js
 const months = (meta.months ?? []).slice().reverse();
 const month = view(Inputs.select(months, { label: "Month", value: meta.latest_month }));
 ```
 
 ```js
-const rows = platforms.filter((d) => d.measured_month === `${month}-01`);
+const rows = platforms.filter(
+  (d) => d.population_id === population && d.measured_month === `${month}-01`
+);
 ```
 
 ## What these figures cannot tell you

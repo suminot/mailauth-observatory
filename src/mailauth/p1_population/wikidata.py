@@ -168,6 +168,63 @@ def fetch(query_path: str | Path, *, client: httpx.Client | None = None):
     return parse_bindings(run_query(query, client=client))
 
 
+def _ticker_key(raw: str) -> str | None:
+    """ティッカー。大文字に揃え、英数と `.` `-` だけを通す。
+
+    **弱い鍵である。** CIK や法人番号と違って一意性が保証されていないので、
+    これで突合するときは衝突を捨てること（`drop_on_conflict`）。
+    """
+    s = "".join(c for c in raw.strip().upper() if c.isalnum() or c in ".-")
+    return s or None
+
+
+def _securities_code_key(raw: str) -> str | None:
+    """国内の証券コード。4桁の数字だけを通す。
+
+    **桁数が違うものは捨てる。** Wikidata の P249 には海外市場の
+    ティッカーも入るので、4桁でないものを通すと別の会社に化ける。
+    """
+    digits = "".join(c for c in raw if c.isdigit())
+    return digits if len(digits) == 4 else None
+
+
+#: 社名の比較で落とす語。法人格と記号だけを落とし、**中身の語は残す**
+_NAME_NOISE = (
+    "株式会社", "有限会社", "合同会社", "ホールディングス",
+    "corporation", "incorporated", "company", "limited", "holdings",
+    "corp", "inc", "ltd", "llc", "plc", "co", "group", "the",
+)
+
+
+def _name_tokens(name: str) -> set[str]:
+    s = name.lower()
+    for ch in ".,&'\"()-/":
+        s = s.replace(ch, " ")
+    for noise in _NAME_NOISE:
+        s = s.replace(noise.lower(), " ")
+    return {w for w in s.split() if w}
+
+
+def names_agree(ours: str | None, theirs: str | None) -> bool:
+    """同じ会社の名前と見てよいか。**弱い鍵で突合するときの歯止め。**
+
+    ティッカーは一意ではない。使い回しや上場廃止後の再割当てがあるので、
+    **鍵が当たっただけでは別の会社のサイトを紐づけうる。**
+    「突合できない」は取り逃がしで済むが、誤った突合は**その企業の
+    データとして別の会社の測定値を出す**ので、桁違いに悪い。
+
+    片方が空なら判断できないので False を返す（通さない）。
+    語が完全に含まれている方向があれば同じと見る ── 表記ゆれ
+    （`Alphabet Inc.` と `Alphabet`）を通し、別会社は落とす。
+    """
+    if not ours or not theirs:
+        return False
+    a, b = _name_tokens(ours), _name_tokens(theirs)
+    if not a or not b:
+        return False
+    return a <= b or b <= a
+
+
 def _cik_key(raw: str) -> str | None:
     """Wikidata の CIK は桁揃えがまちまち。SEC に合わせて10桁に揃える。"""
     try:
@@ -191,6 +248,10 @@ def _houjin_bangou_key(raw: str) -> str | None:
 IDENTITY_KEYS: dict[str, Callable[[str], str | None]] = {
     "cik": _cik_key,
     "houjin_bangou": _houjin_bangou_key,
+    # **弱い鍵。** 一意性が保証されていないので、突合するときは
+    # `drop_on_conflict=True` と `names_agree` を併せて使う
+    "ticker": _ticker_key,
+    "securities_code": _securities_code_key,
 }
 
 
@@ -200,6 +261,7 @@ def fetch_identity(
     key: str = "cik",
     fields: tuple[str, ...] = ("website", "lei"),
     client: httpx.Client | None = None,
+    drop_on_conflict: bool = False,
 ) -> tuple[dict[str, dict[str, str]], dict[str, Any]]:
     """突合鍵 -> {website, lei, …} を**1クエリで**引く。
 
@@ -208,6 +270,11 @@ def fetch_identity(
 
     同じ鍵に複数の値があったら**最初のものを採って競合を数える。**
     黙って上書きすると、どちらが採用されたか分からなくなる。
+
+    **弱い鍵では `drop_on_conflict=True` にする。** CIK や法人番号は
+    一意なので競合は向こうのデータ誤りだが、ティッカーは一意ではない
+    ── 競合はそのまま「どちらの会社か分からない」を意味する。
+    最初のものを採ると**別の会社のサイトを紐づける。**
 
     鍵は名簿によって違う（米国は CIK、国内は法人番号）。正規化のしかたも
     違うので `IDENTITY_KEYS` に分けてある。
@@ -224,9 +291,12 @@ def fetch_identity(
         "key_count": 0,
         "unusable_keys": 0,
         "conflicts": 0,
+        # 弱い鍵で、どちらの会社か決められずに捨てた数
+        "dropped_ambiguous": 0,
     }
     for field_name in fields:
         stats[field_name] = 0
+    ambiguous: set[str] = set()
 
     for binding in bindings:
         raw = _value(binding, key)
@@ -248,7 +318,15 @@ def fetch_identity(
                 stats[field_name] += 1
             elif entry[field_name] != value:
                 stats["conflicts"] += 1
+                if drop_on_conflict:
+                    # **どちらか分からないなら、両方使わない。**
+                    # 取り逃がしは取り逃がしで済むが、誤った突合は
+                    # 別の会社の測定値をその企業のものとして出す
+                    ambiguous.add(normalized)
 
+    for bad in ambiguous:
+        out.pop(bad, None)
+    stats["dropped_ambiguous"] = len(ambiguous)
     stats["key_count"] = len(out)
     return out, stats
 

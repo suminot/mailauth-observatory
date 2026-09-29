@@ -17,9 +17,14 @@ source:
   # SEC EDGAR の company_tickers_exchange.json。パブリックドメイン
   primary: sec_edgar
   exchanges: [NYSE, Nasdaq, CBOE]   # OTC は上場企業とは言えないので外す
-  # SEC の submissions は website 欄がほぼ空（実測 40社中0件）。
+  # **SEC の submissions は website を持たない。** 2026-09 に 6,068社
+  # 全件で引いて **0件**（`sec_enrichment.website_found`）。以前は
+  # 「40社中0件」としていたが、標本ではなく全数で確定した。
   # 公式サイトは Wikidata（CC0）の P856 から補う
   wikidata_identity_query: configs/populations/_sparql/us_cik_identity.rq
+  # **主鍵で当たらなかった分を、弱い鍵で拾い直す。**
+  # 衝突は捨て、社名の一致を見る（誤った突合は取り逃がしより悪い）
+  wikidata_ticker_query: configs/populations/_sparql/us_ticker_identity.rq
   enrich:
     - sec_edgar_submissions         # SIC（website はほぼ取れない）
     - wikidata_identity             # official_url と LEI
@@ -37,9 +42,14 @@ acceptance:
   expected_count_min: 5000
   expected_count_max: 7500
   max_missing_rate:
-    # 2026-08 実測: official_url 被覆 25.6%（1,553 / 6,065）、LEI 20.1%。
+    # 2026-09 実測: official_url 被覆 25.6%（1,553 / 6,068）、LEI 20.1%。
     # Wikidata に項目がある企業しか付かず、小型株ほど項目が無い。
-    # SEC の submissions は website 欄がほぼ空なので補えない。
+    # SEC の submissions は website を持たないので補えない（全数で0件）。
+    #
+    # **突合のバグではない。** CIK は両側とも10桁ゼロ詰めで揃えてある。
+    # Wikidata 側に CIK 付きの項目が 3,654 件あり website は 3,432 件
+    # あるが、その多くは OTC・上場廃止・ファンドで、こちらの
+    # NYSE/Nasdaq/CBOE 6,068社とは重ならない。
     #
     # **この閾値は「これ以上悪くなったら気付く」ための線である。**
     # 被覆率そのものが低いことは既知の制約で、P2 の候補生成が

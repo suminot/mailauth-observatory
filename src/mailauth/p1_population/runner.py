@@ -368,6 +368,22 @@ def _fill_missing_urls_from_wikidata(
             "still_missing": sum(1 for e in entities if not e.official_domain),
         }
     )
+    # **法人番号で当たらなかった分を、証券コードで拾い直す。**
+    # 弱い鍵なので、衝突は捨て、社名の一致を見る（`_fill_from_weak_key`）
+    weak_query = getattr(cfg.source, "wikidata_ticker_query", None)
+    if weak_query:
+        manifest.set_breakdown(
+            wikidata_securities_code=_fill_from_weak_key(
+                entities,
+                query_path=weak_query,
+                key="securities_code",
+                key_of=lambda e: getattr(e, "securities_code", None),
+                name_of=lambda e: e.name,
+                manifest=manifest,
+                label="securities_code",
+            )
+        )
+
     if not filled and missing_before:
         manifest.add_warning(
             "WIKIDATA_FILLED_NOTHING",
@@ -379,6 +395,90 @@ def _fill_missing_urls_from_wikidata(
                 f"読めなかった値 {stats['unusable_keys']} 件）"
             ),
         )
+
+
+def _fill_from_weak_key(
+    entities: list,
+    *,
+    query_path: str,
+    key: str,
+    key_of,
+    name_of,
+    manifest: RunManifest,
+    label: str,
+) -> dict[str, Any]:
+    """一意でない鍵（ティッカー・証券コード）で、残りを埋める。
+
+    **取り逃がしと誤った突合は、悪さの桁が違う。** 突合できなければ
+    その企業が分母から落ちるだけだが、誤って突合すると**別の会社の
+    測定値をその企業のものとして出す。** だから2段で防ぐ。
+
+      1. 同じ鍵に2件以上当たったら、どちらも使わない（`drop_on_conflict`）
+      2. 社名が一致しなければ使わない（`names_agree`）
+
+    弾いた数も残す ── 「当たらなかった」のか「当てたが名前が違った」のかで
+    次の手が違う（原則5）。
+    """
+    from .wikidata import WikidataError, fetch_identity, names_agree
+
+    missing_before = [e for e in entities if not e.official_domain]
+    if not missing_before:
+        return {"missing_before": 0, "filled": 0}
+
+    try:
+        identity, stats = fetch_identity(
+            query_path, key=key, fields=("website", "lei", "label"),
+            drop_on_conflict=True,
+        )
+    except WikidataError as exc:
+        manifest.add_warning(f"ENRICH_FAILED_WIKIDATA_{label.upper()}", message=str(exc))
+        return {"missing_before": len(missing_before), "filled": 0, "error": str(exc)}
+
+    filled = 0
+    name_rejected = 0
+    no_key = 0
+    for entity in missing_before:
+        raw = key_of(entity)
+        if not raw:
+            no_key += 1
+            continue
+        extra = identity.get(str(raw).strip().upper()) or identity.get(str(raw).strip())
+        if not extra:
+            continue
+        if not names_agree(name_of(entity), extra.get("label")):
+            # **名前が合わないものは使わない。** 鍵が当たっただけで
+            # 別の会社のサイトを紐づけるのが、この経路で一番怖い
+            name_rejected += 1
+            continue
+        website = extra.get("website")
+        domain = domain_from_url(website) if website else None
+        if not domain:
+            continue
+        entity.official_url = website
+        entity.official_domain = domain
+        filled += 1
+        if extra.get("lei") and not entity.lei:
+            entity.lei = extra["lei"]
+
+    out = {
+        **stats,
+        "missing_before": len(missing_before),
+        "filled": filled,
+        "name_rejected": name_rejected,
+        "without_key": no_key,
+        "still_missing": sum(1 for e in entities if not e.official_domain),
+    }
+    if name_rejected:
+        manifest.add_warning(
+            "WIKIDATA_NAME_MISMATCH",
+            count=name_rejected,
+            message=(
+                f"{label} で鍵は当たったが社名が一致しない項目を {name_rejected} 件"
+                "使わなかった。**別の会社のサイトを紐づけないための歯止めである。**"
+                "多すぎるなら鍵か国の絞り込みを見直すこと"
+            ),
+        )
+    return out
 
 
 def _from_parquet(value: Any) -> Any:
@@ -960,7 +1060,24 @@ def _run_sec(
             industry_missing += 1
         entities.append(entity)
 
+    # **CIK で当たらなかった分を、ティッカーで拾い直す。**
+    # 6,068社中 1,553社しか当たらない（2026-09 実測）。弱い鍵なので、
+    # 衝突は捨て、社名の一致を見る（`_fill_from_weak_key`）
+    ticker_query = getattr(cfg.source, "wikidata_ticker_query", None)
+    weak_stats: dict[str, Any] = {}
+    if ticker_query and not offline:
+        weak_stats = _fill_from_weak_key(
+            entities,
+            query_path=ticker_query,
+            key="ticker",
+            key_of=lambda e: e.ticker,
+            name_of=lambda e: e.name_en or e.name,
+            manifest=manifest,
+            label="ticker",
+        )
+
     manifest.set_breakdown(
+        wikidata_ticker=weak_stats,
         sec_enrichment={
             "submissions_fetched": client.stats.submissions_fetched if client else 0,
             "submissions_failed": client.stats.submissions_failed if client else 0,
