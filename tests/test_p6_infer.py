@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
@@ -1080,3 +1081,124 @@ def test_the_id_keeps_the_two_layers_apart(rules):
     a = inference_id("d:1", RUN, InferenceCategory.SECURITY_GATEWAY, "IIJ", "inbound_gateway")
     b = inference_id("d:1", RUN, InferenceCategory.SECURITY_GATEWAY, "IIJ", "outbound_gateway")
     assert a != b
+
+
+# ===========================================================================
+# 別名の束ね ── OEM（DESIGN-platform.md §6.3）
+#
+# **別の会社が同じ仕組みを売っていることがある。** ベンダー別に数えると
+# 1つの製品が3つに割れて小さく見え、3社を1つに丸めると「どこと契約して
+# いるか」が消える。両方を別の数字として出せるようにする。
+# ===========================================================================
+
+
+@pytest.mark.parametrize(
+    "spf_include,vendor,product",
+    [
+        ("_spf.activegate-ss.jp", "クオリティア", "Active! gate SS"),
+        ("active-w.net", "MXモバイリング", "Active! world"),
+        ("_spf.active-w.net", "MXモバイリング", "Active! world"),
+        ("_spf.sbt-mailgate.jp", "SBテクノロジー", "Mail Safe"),
+    ],
+)
+def test_the_oem_family_keeps_its_own_vendor(rules, spf_include, vendor, product):
+    """**どこと契約しているかは消さない。**"""
+    drafts = build_drafts(
+        _fact(spf_includes=[spf_include], spf_present=True), rules
+    )
+    got = next(d for d in drafts if d.vendor == vendor)
+    assert got.product == product
+    assert got.engine == "Active! gate SS"
+    assert got.layer == InferenceLayer.OUTBOUND_GATEWAY
+
+
+def test_the_oem_family_can_be_counted_as_one_product(rules):
+    """**ベンダー別だと1つの製品が3つに割れて小さく見える。**"""
+    import pandas as pd
+
+    from mailauth.p6_infer.runner import engine_share
+
+    frame = pd.DataFrame(
+        [
+            {
+                "category": InferenceCategory.SECURITY_GATEWAY,
+                "vendor": v,
+                "engine": "Active! gate SS",
+                "undetectable_reason": None,
+                "is_layer_primary": True,
+            }
+            for v in ("クオリティア", "MXモバイリング", "SBテクノロジー")
+        ]
+        + [
+            {
+                "category": InferenceCategory.SECURITY_GATEWAY,
+                "vendor": "Mimecast",
+                "engine": None,
+                "undetectable_reason": None,
+                "is_layer_primary": True,
+            },
+            # **代表でない行。** 数えると合計が実態より増える
+            {
+                "category": InferenceCategory.SECURITY_GATEWAY,
+                "vendor": "クオリティア",
+                "engine": "Active! gate SS",
+                "undetectable_reason": None,
+                "is_layer_primary": False,
+            },
+        ]
+    )
+    assert engine_share(frame, InferenceCategory.SECURITY_GATEWAY) == [
+        {"engine": "Active! gate SS", "count": 3}
+    ]
+    # **ベンダー別の数字は別に残る。** 丸めない
+    assert len(vendor_share(frame, InferenceCategory.SECURITY_GATEWAY)) == 4
+
+
+def test_synergy_and_spiral_are_different_companies(rules):
+    """**調査は1社に丸めていたが、確かめたら別の会社だった。**
+
+    `smp.ne.jp` は SPIRAL（パイプドビッツ）で、シナジーマーケティングでは
+    ない（NS が `ns.pi-pe.co.jp`、`support.smp.ne.jp` が SPIRAL の
+    サポートサイト）。丸めていたら**他社の顧客をシナジーの顧客として
+    数えるところだった。**
+    """
+    drafts = build_drafts(
+        _fact(
+            spf_includes=["smp.ne.jp", "support.crmstyle.com"], spf_present=True
+        ),
+        rules,
+    )
+    vendors = {d.vendor for d in drafts if d.category == InferenceCategory.ESP}
+    assert vendors == {"パイプドビッツ", "シナジーマーケティング"}
+    # **OEM ではない。** 同じ仕組みを売っているわけではないので engine は無い
+    assert all(d.engine is None for d in drafts if d.category == InferenceCategory.ESP)
+
+
+def test_two_engines_on_one_vendor_pick_neither(rules):
+    """**1つに決まらなければ付けない。**
+
+    同じベンダー・同じ層に別の仕組みを指す規則が同時に当たることは
+    無いはずだが、起きたときに片方を勝手に選ぶと嘘になる。
+    （辞書にこの形は無いので、作って確かめる。）
+    """
+    from dataclasses import replace
+
+    base = next(r for r in rules.rules if r.id == "qualitia-spf-01")
+    other = replace(
+        base,
+        id="qualitia-spf-99",
+        engine="べつの仕組み",
+        pattern=re.compile(r"^_spf2\.activegate-ss\.jp$"),
+    )
+    two = RuleSet(rules=[base, other], undetectable=rules.undetectable)
+
+    drafts = build_drafts(
+        _fact(
+            spf_includes=["_spf.activegate-ss.jp", "_spf2.activegate-ss.jp"],
+            spf_present=True,
+        ),
+        two,
+    )
+    got = next(d for d in drafts if d.vendor == "クオリティア")
+    assert {"qualitia-spf-01", "qualitia-spf-99"} == set(got.rule_ids)
+    assert got.engine is None

@@ -83,6 +83,9 @@ class Rule:
     #: そこではない」ことを示す痕跡がある。ベンダーは分かるので未知ホストに
     #: 落としたくないが、利用数に数えてはいけない（`UndetectableReason`）
     undetectable_reason: str | None = None
+    #: OEM 元の製品名。別の会社が同じ仕組みを売っているとき、
+    #: ここを揃えておくと製品別に数え直せる（DESIGN-platform.md §6.3）
+    engine: str | None = None
     #: 経路のどこにいるか（`InferenceLayer`）。**前段は1つではない。**
     #: 受信（MX を握る）と送信（MX を握らない）を分けないと、
     #: 「受信 Symantec ／ 送信 HENNGE」という実態が消える
@@ -215,6 +218,7 @@ def _parse_rule(raw: dict, *, default_category: str, version: str, origin: str) 
         source=(str(raw["source"]).strip() if raw.get("source") else None),
         corroborated_by=_corroboration(raw.get("corroborated_by")),
         undetectable_reason=undetectable,
+        engine=(str(raw["engine"]).strip() if raw.get("engine") else None),
         layer=layer,
         fingerprint_version=version,
     )

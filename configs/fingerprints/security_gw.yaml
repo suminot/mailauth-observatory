@@ -151,9 +151,28 @@ rules:
     layer: outbound_gateway
     note: 送信の前段。**受信 MX は別ベンダーのことがある**（実測でシマンテックとの併用あり）
 
+  # -------------------------------------------------------------------------
+  # Active! gate SS の一族（OEM）
+  #
+  # **別の会社が同じ仕組みを売っている。** ベンダー別に数えると1つの製品が
+  # 3つに割れて小さく見え、3社を1つに丸めると「どこと契約しているか」が
+  # 消える。`engine` を揃えて、**両方を別の数字として出せる**ようにする。
+  #
+  # 2026-09-29 の実測:
+  #   active-w.net          v=spf1 ... include:_spf.activegate-ss.jp ~all
+  #   _spf.activegate-ss.jp v=spf1 ip4:223.27.116.0/22 ip4:202.241.206.0/25 …
+  #   _spf.sbt-mailgate.jp  v=spf1 ip4:202.241.206.0/25 ip4:223.27.116.0/22 ?all
+  #
+  # Active! world は**本家の SPF を include している**（IP が似ているどころ
+  # ではなく、明示的に参照している）。Mail Safe は本家の2ブロックだけを持つ。
+  # 調査は「IP レンジが完全一致」と報告していたが、**一致ではない** ──
+  # 本家には個別ホストの ip4 が余分にある。
+  # -------------------------------------------------------------------------
+
   - id: qualitia-mx-01
     vendor: クオリティア
     product: Active! gate SS
+    engine: Active! gate SS
     region: JP
     match:
       record: MX
@@ -164,6 +183,7 @@ rules:
   - id: qualitia-spf-01
     vendor: クオリティア
     product: Active! gate SS
+    engine: Active! gate SS
     region: JP
     match:
       record: SPF_INCLUDE
@@ -171,6 +191,35 @@ rules:
     confidence: high
     layer: outbound_gateway
     note: 送信の前段としての痕跡。MX を握らない構成でも立つ
+
+  - id: mxmobiling-spf-01
+    vendor: MXモバイリング
+    product: Active! world
+    engine: Active! gate SS
+    region: JP
+    match:
+      record: SPF_INCLUDE
+      pattern: '^(_spf\d*\.)?active-w\.net$'
+    confidence: medium
+    layer: outbound_gateway
+    note: >-
+      `active-w.net` の SPF は本家 `_spf.activegate-ss.jp` を include する
+      （2026-09-29 実測）。**受信側の MX は platforms.yaml 側にある**
+
+  - id: sbt-spf-01
+    vendor: SBテクノロジー
+    product: Mail Safe
+    engine: Active! gate SS
+    region: JP
+    match:
+      record: SPF_INCLUDE
+      pattern: '^(_spf\.)?sbt-mailgate\.jp$'
+    confidence: medium
+    layer: outbound_gateway
+    note: >-
+      Mail Safe は誤送信対策（送信側）。`_spf.sbt-mailgate.jp` は本家と
+      同じ2つの IP ブロックだけを持つ（2026-09-29 実測）。**ドメインの
+      持ち主は DNS からは確かめられていない**ので medium に留める
 
   # -------------------------------------------------------------------------
   # 2026-09 の作業リスト（未知 MX の頻度順）から同定したもの
