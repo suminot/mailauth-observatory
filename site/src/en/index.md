@@ -182,6 +182,74 @@ display(
 );
 ```
 
+## The domain, and what sits under it
+
+A DMARC `p=` tag applies to the domain itself. **What applies to its
+subdomains is `sp=`, and when that is absent they inherit `p=`.**
+
+A record reading `p=reject; sp=none` applies `reject` to the domain itself and
+**`none` to everything under it.** A company's real mail commonly sits on a
+subdomain.
+
+```js
+// **Do not show a missing column as zero** (principle 5). Gold produced
+// before this section exists has no such column; an empty cell reads as none
+display(
+  current?.sp_enforced_domains === undefined
+    ? html`<p class="muted">This month has no <code>sp=</code> figures yet. <strong>That is not zero.</strong></p>`
+    : table(
+        [
+          { Category: "Applies to the domain itself (p=)", Domains: current?.dmarc_enforced_domains },
+          { Category: "Applies to subdomains too (sp= or inherited)", Domains: current?.sp_enforced_domains },
+          { Category: "Weakened for subdomains via sp=", Domains: current?.sp_weaker_domains },
+        ],
+        { sort: null }
+      )
+);
+```
+
+<div class="limits">
+
+- **What appears here is only what `sp=` says.** A subdomain carrying its own
+  `_dmarc` record does not inherit `sp=`, so these figures do not describe it
+- Subdomains that were actually queried are counted separately, below
+
+</div>
+
+### Subdomains actually queried
+
+Subdomains found through traces of mail — a `rua` destination, an SPF
+`include:` — that **carried an MX record or a `_dmarc` record of their own**.
+
+```js
+display(
+  current?.subdomains_measured === undefined
+    ? html`<p class="muted">No subdomains were measured in this month. <strong>That is not the same as none existing.</strong></p>`
+    : table(
+        [
+          { Category: "Subdomains measured", Count: current?.subdomains_measured },
+          { Category: "Of those, observed", Count: current?.subdomains_observed },
+          { Category: "Carrying their own DMARC", Count: current?.subdomains_with_own_dmarc },
+          { Category: "Of those, quarantine or stronger", Count: current?.subdomains_dmarc_enforced },
+          { Category: "Companies with mail on a subdomain", Count: current?.entities_with_subdomain_mail },
+        ],
+        { sort: null }
+      )
+);
+```
+
+<div class="limits">
+
+- **These counts enter no denominator anywhere else on this page.** Mixing them
+  in would raise the domain count and break comparison with earlier months, so
+  they are kept apart
+- **Only what was found.** There is no way to enumerate every subdomain.
+  Absence here does not mean absence
+- The routes used are `rua` destinations and SPF `include:` targets. A
+  subdomain sending mail by any other route is not visible here
+
+</div>
+
 ## Over time
 
 ```js

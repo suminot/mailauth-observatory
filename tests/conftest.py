@@ -100,11 +100,19 @@ def isolated_data_root(tmp_path, monkeypatch):
     """data/ をテストごとに使い捨てにする。実行結果が互いに干渉しないように。"""
     monkeypatch.setenv("MAILAUTH_DATA_ROOT", str(tmp_path / "data"))
     monkeypatch.setenv("MAILAUTH_GOLD_ROOT", str(tmp_path / "gold"))
-    # 認証情報が開発機に残っていてもテストでは使わない
+    # 認証情報が開発機に残っていてもテストでは使わない。
+    #
+    # **環境変数を消すだけでは足りなかった。** `credential()` は毎回
+    # `.env` を読み直すので、消した鍵がファイルから戻ってくる。開発機に
+    # `.env` があるかどうかでテストの結果が変わり、CI（`.env` が無い）では
+    # 通るのに手元で落ちる ── しかも落ちるのは「鍵が無いときの振る舞い」の
+    # 検査なので、**守れていない側で緑になる**。ファイルごと塞ぐ
+    monkeypatch.setenv("MAILAUTH_NO_DOTENV", "1")
     for key in (
         "MAILAUTH_EDINET_SUBSCRIPTION_KEY",
         "MAILAUTH_GBIZINFO_TOKEN",
         "MAILAUTH_HOUJIN_BANGOU_APP_ID",
+        "MAILAUTH_CONTACT_EMAIL",
     ):
         monkeypatch.delenv(key, raising=False)
     yield tmp_path

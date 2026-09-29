@@ -44,6 +44,13 @@ class DmarcResult:
 
     effective_7489: str | None = None
     effective_9989: str | None = None
+    #: **配下のサブドメインに効く強度。** `sp=` が無ければ `p=` を継承する
+    #: （RFC 9989 §4.8）。`p=reject; sp=none` の会社は、自分は reject でも
+    #: 配下は無防備である ── その差を消さずに持つ
+    sp_effective_7489: str | None = None
+    sp_effective_9989: str | None = None
+    #: 自分より配下のほうが弱い。**危ない向きの誤りはここに出る**
+    sp_weaker: bool = False
     policy_label: str | None = None
     blind_enforcement: bool = False
     spec_version: str | None = None
@@ -98,6 +105,30 @@ def classify_policy(
         eff_9989 = downgrade_one_step(eff_9989)
 
     return eff_7489, eff_9989, build_label(p, pct, t, has_rua)
+
+
+#: 実効強度の順序。`classify_policy` が返しうる値をすべて含む。
+#: 知らない値は比較しない（順序を推測すると静かに嘘をつく）
+POLICY_STRENGTH = {
+    "none": 0,
+    "quarantine_partial": 1,
+    "quarantine": 2,
+    "reject": 3,
+}
+
+
+def is_weaker(policy: str | None, than: str | None) -> bool:
+    """`policy` が `than` より弱いか。
+
+    **どちらかが順序表に無ければ False を返す。** 「分からない」を
+    「弱くない」と読ませるのは本意ではないが、知らない値に順序を
+    でっち上げるよりはよい。未知の値が来たら表を足すこと。
+    """
+    left = POLICY_STRENGTH.get(policy or "")
+    right = POLICY_STRENGTH.get(than or "")
+    if left is None or right is None:
+        return False
+    return left < right
 
 
 def build_label(p: str | None, pct: int | None, t: str | None, has_rua: bool) -> str:
@@ -208,6 +239,14 @@ def parse(txt_records: list[str]) -> DmarcResult:
     result.policy_label = label
     result.blind_enforcement = eff_7489 in ("reject", "quarantine") and not rua
 
+    # **配下に効く強度を別に計算する。** `sp=` が無ければ `p=` を継承する
+    # （RFC 9989 §4.8）。継承したときは自分と同じ値になり、差は出ない
+    sp_applied = result.sp if result.sp in VALID_POLICIES else p
+    result.sp_effective_7489, result.sp_effective_9989, _ = classify_policy(
+        sp_applied, pct, t, bool(rua)
+    )
+    result.sp_weaker = is_weaker(result.sp_effective_7489, eff_7489)
+
     # spec_version は「このレコードがどちらの世代の書き方か」を表す。
     # pct や psd の有無で判別する。t= は RFC 9989 で導入された
     if pct is not None:
@@ -226,6 +265,11 @@ def parse(txt_records: list[str]) -> DmarcResult:
         result.notes.append(f"未知タグ: {sorted(result.unknown_tags)}（保持のみ、評価しない）")
     if result.blind_enforcement:
         result.notes.append("強制ポリシーだが rua が無い。何が落ちているか可視化されていない")
+    if result.sp_weaker:
+        result.notes.append(
+            f"sp={result.sp} により配下のサブドメインは "
+            f"{result.sp_effective_7489} にとどまる（このドメイン自身は {eff_7489}）"
+        )
     if eff_7489 != eff_9989:
         result.notes.append(
             f"RFC 7489 と RFC 9989 で実効強度が異なる: {eff_7489} / {eff_9989}"

@@ -194,6 +194,52 @@ def test_blind_enforcement_is_flagged():
     assert result.policy_label == PolicyLabel.BLIND_REJECT
 
 
+def test_sp_absent_means_subdomains_inherit_p():
+    """`sp=` が無ければ配下は `p=` を継承する（RFC 9989 §4.8）。差は出ない。"""
+    result = dmarc_mod.parse(["v=DMARC1; p=reject; rua=mailto:a@example.jp"])
+    assert result.sp is None
+    assert result.sp_effective_7489 == "reject"
+    assert result.sp_weaker is False
+
+
+def test_sp_none_under_p_reject_is_flagged():
+    """**危ない向きの誤り。** 自分は reject でも配下は無防備。
+
+    この会社の実際のメールドメインがサブドメインなら、apex だけ見て
+    「reject 達成」と数えるのは間違っている。
+    """
+    result = dmarc_mod.parse(["v=DMARC1; p=reject; sp=none; rua=mailto:a@example.jp"])
+    assert result.effective_7489 == "reject"
+    assert result.sp_effective_7489 == "none"
+    assert result.sp_weaker is True
+    assert any("sp=none" in n for n in result.notes)
+
+
+def test_sp_stronger_than_p_is_not_flagged_as_weaker():
+    """配下のほうが強いのは問題ではない。弱いときだけ立てる。"""
+    result = dmarc_mod.parse(["v=DMARC1; p=none; sp=reject; rua=mailto:a@example.jp"])
+    assert result.effective_7489 == "none"
+    assert result.sp_effective_7489 == "reject"
+    assert result.sp_weaker is False
+
+
+def test_invalid_sp_falls_back_to_p():
+    """`sp=` に知らない値が来たら継承として扱う。推測で下げない。"""
+    result = dmarc_mod.parse(["v=DMARC1; p=reject; sp=banana; rua=mailto:a@example.jp"])
+    assert result.sp == "banana"
+    assert result.sp_effective_7489 == "reject"
+    assert result.sp_weaker is False
+
+
+def test_is_weaker_refuses_to_order_unknown_values():
+    """知らない値に順序をでっち上げない。"""
+    assert dmarc_mod.is_weaker("none", "reject") is True
+    assert dmarc_mod.is_weaker("reject", "none") is False
+    assert dmarc_mod.is_weaker("quarantine_partial", "quarantine") is True
+    assert dmarc_mod.is_weaker("banana", "reject") is False
+    assert dmarc_mod.is_weaker("none", "banana") is False
+
+
 def test_rua_local_part_is_not_stored():
     """個人情報を集めないという非目的（DESIGN.md 1.2）。"""
     result = dmarc_mod.parse(["v=DMARC1; p=none; rua=mailto:tanaka.taro@example.co.jp"])

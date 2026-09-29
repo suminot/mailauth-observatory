@@ -181,6 +181,11 @@ Parquet は月ごとに保管しています。同じ数字を二重に持つと
 | `nominal_reject_domains` | `p=reject` と書いてある |
 | `enforced_reject_domains` | `pct` 無し・`t=n`・`rua` 有 |
 | `blind_reject_domains` | 強制しているが `rua` が無い |
+| `sp_enforced_domains` | **配下のサブドメインに効く強度**が `quarantine` 以上。`sp=` が無ければ `p=` を継承する |
+| `sp_weaker_domains` | `sp=` が `p=` より弱い。**そのドメイン自身と配下で適用される強度が違う** |
+| `subdomains_measured` | **実際に引いたサブドメイン数。** 上のどの割合の分母にも入っていない（別枠） |
+| `subdomains_with_own_dmarc` | そのサブドメイン自身が `_dmarc` を持つ。`sp=` を継承しない |
+| `entities_with_subdomain_mail` | サブドメインでメールを扱っていた企業数 |
 | `dkim_detected_domains` | 既知セレクタで検出できた |
 | `dkim_not_found_domains` | 既知セレクタでは検出できなかった。**未設定ではない** |
 | `mta_sts_domains` | MTA-STS を公開している |

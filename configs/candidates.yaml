@@ -3,12 +3,35 @@
 # P2 は再現率を優先する。ここで絞ると P3 で拾い直せない。
 
 discovery:
-  # 四つの経路（DESIGN.md P2）。個別に切れるようにしてある
+  # 五つの経路（DESIGN.md P2）。個別に切れるようにしてある
   official_url: true      # P1 の official_domain を起点にする
   ct_log: true            # crt.sh。重いので qps を絞る
   spf_redirect: true      # SPF の redirect= が別組織を指していれば候補に
+  spf_include: true       # SPF の include: が自社サブドメインを指していれば候補に
   dmarc_rua: true         # rua 宛先が自社ドメインなら候補に
   manual: true            # 手動辞書。グループ会社・事業ブランド用
+
+# **サブドメインを捨てない**（BACKLOG 14）。
+#
+# 実際のメールがサブドメイン上にある企業がある。avex は
+# `_dmarc.avex.co.jp` の rua が `av.avex.co.jp` を指していて、
+# そちらが**自分の MX と自分の DMARC を持っている。**
+#
+# 候補としては既に見つけていた。`etld_plus_one()` で `avex.co.jp` に
+# 丸めて捨てていただけである ── **見つけられないのではなく、
+# 見つけたものを捨てていた。**
+#
+# 残すのはメールの痕跡から出てきた経路だけにする。CT ログは1社で
+# 数百件の名前を返すので、そこから丸ごと残すと P3 / P4 の計測量が
+# 桁で増える。**MX を持つかどうかは P3 で見る。**
+subdomains:
+  enabled: true
+  # この経路で見つかったサブドメインだけ残す。他は apex に丸める
+  keep_from: [dmarc_rua, spf_redirect, spf_include, manual]
+  # 1社あたりの上限。**apex の枠とは別に持つ。**
+  # 同じ枠から取ると、サブドメインが apex を押し出して
+  # **分母が月ごとに変わる**（前月との比較が効かなくなる）
+  max_per_entity: 20
 
 manual_domains: configs/domains/manual_domains.csv
 

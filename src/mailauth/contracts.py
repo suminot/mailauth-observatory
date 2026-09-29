@@ -36,6 +36,9 @@ class DiscoveryMethod(StrEnum):
     OFFICIAL_URL = "official_url"
     CT_LOG = "ct_log"
     SPF_REDIRECT = "spf_redirect"
+    #: `include:` が自社サブドメインを指している場合のみ。
+    #: 他社を指す include は「その基盤を使っている」であって所有ではない
+    SPF_INCLUDE = "spf_include"
     DMARC_RUA = "dmarc_rua"
     MANUAL = "manual"
 
@@ -354,6 +357,10 @@ class Domain(_Model):
     domain_role: str
     confidence: str
 
+    #: eTLD+1 そのものか、その配下のサブドメインか。
+    #: **分母は apex で閉じている。** サブドメインは別枠で数える（BACKLOG 14）
+    is_apex: bool = True
+
     mx_exists: bool | None = None
     spf_exists: bool | None = None
     spf_aligned: bool | None = None
@@ -379,6 +386,7 @@ DOMAIN_ARROW_SCHEMA = pa.schema(
         ("domain", pa.string()),
         ("domain_role", pa.string()),
         ("confidence", pa.string()),
+        ("is_apex", pa.bool_()),
         ("mx_exists", pa.bool_()),
         ("spf_exists", pa.bool_()),
         ("spf_aligned", pa.bool_()),
@@ -466,6 +474,10 @@ class Fact(_Model):
     run_id: str
     measured_month: dt.date
 
+    #: eTLD+1 そのものか、その配下のサブドメインか（P3 から引き継ぐ）。
+    #: **集計の分母は apex で閉じている。** 混ぜると前月と比べられなくなる
+    is_apex: bool = True
+
     observed: bool
     record_present: bool | None = None
 
@@ -508,6 +520,11 @@ class Fact(_Model):
 
     effective_7489: str | None = None
     effective_9989: str | None = None
+    #: 配下のサブドメインに効く強度（`sp=` 無しなら `p=` を継承）
+    sp_effective_7489: str | None = None
+    sp_effective_9989: str | None = None
+    #: 自分より配下が弱い。**apex だけ見ると達成側に数えてしまう向きの誤り**
+    sp_weaker: bool | None = None
     policy_label: str | None = None
     blind_enforcement: bool | None = None
 
@@ -568,6 +585,7 @@ FACT_ARROW_SCHEMA = pa.schema(
         ("entity_id", pa.string()),
         ("run_id", pa.string()),
         ("measured_month", pa.date32()),
+        ("is_apex", pa.bool_()),
         ("observed", pa.bool_()),
         ("record_present", pa.bool_()),
         ("raw_spf", pa.string()),
@@ -599,6 +617,9 @@ FACT_ARROW_SCHEMA = pa.schema(
         ("dmarc_multiple_records", pa.bool_()),
         ("effective_7489", pa.string()),
         ("effective_9989", pa.string()),
+        ("sp_effective_7489", pa.string()),
+        ("sp_effective_9989", pa.string()),
+        ("sp_weaker", pa.bool_()),
         ("policy_label", pa.string()),
         ("blind_enforcement", pa.bool_()),
         ("org_domain_psl", pa.string()),
@@ -765,6 +786,22 @@ class StatsOverall(_Model):
     enforced_reject_domains: int = 0
     blind_reject_domains: int = 0
 
+    # **自分と配下を分ける。** `sp=` は配下のサブドメインに効く強度で、
+    # 無ければ `p=` を継承する。`p=reject; sp=none` は自分だけ守られた状態
+    sp_enforced_domains: int = 0
+    sp_weaker_domains: int = 0
+
+    # **実際に計測したサブドメイン**（BACKLOG 14）。上の `sp_*` は
+    # 「apex に何と書いてあるか」で、こちらは「そのサブドメインを引いた結果」。
+    #
+    # **上のすべての指標の分母には入っていない。** 混ぜるとドメイン数が
+    # 増えて前月と比較できなくなるため、別枠で数える
+    subdomains_measured: int = 0
+    subdomains_observed: int = 0
+    subdomains_with_own_dmarc: int = 0
+    subdomains_dmarc_enforced: int = 0
+    entities_with_subdomain_mail: int = 0
+
     dkim_detected_domains: int = 0
     dkim_not_found_domains: int = 0
     mta_sts_domains: int = 0
@@ -827,6 +864,13 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("nominal_reject_domains", pa.int32()),
     ("enforced_reject_domains", pa.int32()),
     ("blind_reject_domains", pa.int32()),
+    ("sp_enforced_domains", pa.int32()),
+    ("subdomains_measured", pa.int32()),
+    ("subdomains_observed", pa.int32()),
+    ("subdomains_with_own_dmarc", pa.int32()),
+    ("subdomains_dmarc_enforced", pa.int32()),
+    ("entities_with_subdomain_mail", pa.int32()),
+    ("sp_weaker_domains", pa.int32()),
     ("dkim_detected_domains", pa.int32()),
     ("dkim_not_found_domains", pa.int32()),
     ("mta_sts_domains", pa.int32()),

@@ -17,7 +17,7 @@ security assessment.**
 | Phase | What it does |
 |---|---|
 | P1 Population | Fixes the set of listed companies from a primary register (**which register depends on the population** — see below) |
-| P2 Domain candidates | Widens the candidate set from official sites, CT logs, SPF `redirect=` and DMARC `rua` |
+| P2 Domain candidates | Widens the candidate set from official sites, CT logs, SPF `redirect=` / `include:`, DMARC `rua=` and a manual dictionary |
 | P3 Mail domains | Narrows the candidates and assigns a confidence (confirmed / likely / unknown / parked) |
 | P4 DNS measurement | Fetches the records and stores the responses verbatim |
 | P5 Parsing | Interprets the stored responses against the specifications |
@@ -84,6 +84,136 @@ failure.**
 Values read directly from DNS and inferences drawn from dictionary matching
 are treated as different things, and are separated visually on this site.
 Every inference carries a confidence level and the evidence behind it.
+
+## How the mail platform is inferred
+
+An inference such as "this domain appears to run on Microsoft 365" comes from
+**matching four kinds of DNS trace against a dictionary of patterns**. For
+Microsoft 365 they are:
+
+| Trace | What it is | Example |
+|---|---|---|
+| MX | the host that accepts incoming mail | `<name>.mail.protection.outlook.com` |
+| SPF `include:` | who is permitted to send | `spf.protection.outlook.com` |
+| DKIM CNAME | where the signing key lives | `<selector>._domainkey` → `*.onmicrosoft.com` |
+| Verification TXT | the value placed at sign-up | `MS=ms########` |
+
+**None of these is a record of a contract.** They say what is published in
+DNS, and nothing more.
+
+### The traces differ in strength
+
+They are treated in this order, strongest first:
+**DKIM CNAME ≥ MX > SPF `include:` > verification TXT.**
+
+- **The DKIM CNAME is the strongest.** A signing key's location means nothing
+  unless signing actually happens there
+- **MX points at reception, but a front-end product may hold it.** Where it
+  does, MX shows only the front-end; the platform behind it is not visible
+- **An `include:` only permits sending**, which is not the same as using it
+- **The verification TXT is the weakest.** It is commonly left behind after a
+  service is dropped. Where it is the only evidence, the confidence is set to
+  `low` and whether any MX / SPF / DKIM corroborates it is recorded separately
+
+Two or more kinds of trace raise the confidence one step. A DKIM CNAME sets it
+to `high`.
+
+### Front-ends and platforms are published separately
+
+Where a product holds the MX record, reading MX alone suggests that product is
+the company's platform. **That erases the platform sitting behind it.**
+
+So the inferences are split into three layers and counted separately.
+
+| Layer | What it is |
+|---|---|
+| Platform | where the mailboxes are |
+| Inbound front-end | products holding the MX record; a platform sits behind them |
+| Outbound front-end | products that do not hold MX and only handle outgoing mail |
+
+**One company can appear in all three layers.** We have observed companies
+using different vendors for inbound and outbound mail. Within one layer a
+domain is counted once — where several traces appear, the stronger evidence
+wins, because counting both would push the total past 100%.
+
+Where one engine is sold under several names (OEM), **each seller gets its own
+row and the engine is named alongside it**. Folding them together loses whose
+customers they are; leaving them apart loses that the mechanism is the same.
+
+### Reasons for "unknown" are kept apart
+
+"The platform is unknown" covers several different situations, and mixing them
+invites misreading.
+
+| Reason | What it means |
+|---|---|
+| API-integrated | the product never enters the delivery path. **It cannot appear in DNS at all** |
+| MX inside their own domain | mail is being handled; the product simply is not visible |
+| SPF flattened | `include:` has been expanded to IP ranges, leaving no vendor name |
+| Tenant placeholder MX | the domain is registered, but reception does not happen there |
+| Not observed | the query did not return. That is not "absent" |
+
+**None of these means "not in use."** They enter neither the numerator nor the
+denominator of any adoption share.
+
+### About the dictionary
+
+The matching dictionary is a configuration file, and **its version is recorded
+alongside the results**, so it can later be traced which dictionary produced a
+given figure.
+
+MX hosts not in the dictionary are published each month as a worklist, most
+frequent first. **A dictionary always lags** — how far it lags is made visible.
+
+Vendors with fewer than five companies are folded into "Other". The counts are
+kept.
+
+## Which domains are measured
+
+Measurement starts from each company's **registered domain** (the eTLD+1, such
+as `example.com`) and widens from there.
+
+| Route | What it is |
+|---|---|
+| Official site | the official URL from government registries and Wikidata |
+| CT logs | names appearing in Certificate Transparency logs |
+| SPF `redirect=` | where SPF is delegated |
+| SPF `include:` | own subdomains the record has been split across |
+| DMARC `rua=` | the report destination, where it is the company's own domain |
+| Manual dictionary | group companies and business brands, added by hand |
+
+### A company's mail can sit on a subdomain
+
+Some companies do not run mail on their registered domain. The report
+destination in `_dmarc.example.com` points at `mail.example.com`, and **that
+name carries an MX record and a DMARC record of its own**. In that case,
+figures drawn from the registered domain alone say nothing about the company's
+actual mail.
+
+So **subdomains found through traces of mail** — `rua=` destinations, SPF
+`redirect=` / `include:` targets, the manual dictionary — are kept rather than
+rolled up, and those **carrying an MX record or a `_dmarc` record of their
+own** are measured. Names appearing only in certificate logs (used for
+delivery or validation) carry neither, so they fall away.
+
+- **Subdomains enter no other share's denominator.** Mixing them in would raise
+  the domain count and break comparison with earlier months, so they are
+  counted apart
+- **Only what was found.** There is no way to enumerate every subdomain from
+  DNS. Absence here does not mean absence
+- The routes are limited to those three. A subdomain sending mail by any other
+  route is not visible here
+
+### `p=` and `sp=` are different things
+
+A DMARC `p=` tag applies to the domain itself. **What applies to its subdomains
+is `sp=`, and when that is absent they inherit `p=`.**
+
+A record reading `p=reject; sp=none` applies `reject` to the domain itself and
+`none` to everything under it. Both are counted separately.
+
+**A subdomain carrying its own `_dmarc` record does not inherit `sp=`**, and
+where that is the case the `sp=` figures do not describe it.
 
 ## What cannot be detected
 

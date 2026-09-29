@@ -32,6 +32,20 @@ def _truthy(value: Any) -> bool:
     return bool(value)
 
 
+def _truthy_or(value: Any, *, default: bool) -> bool:
+    """欠けている値を `default` にする。
+
+    `_truthy` は欠けを False にする。**「列がまだ無い」を False として
+    扱ってよい列と、そうでない列がある** ── `is_apex` は既定が True で、
+    False にすると過去の run のドメインが全部サブドメイン扱いになる。
+    """
+    if value is None:
+        return default
+    if isinstance(value, float) and value != value:  # NaN
+        return default
+    return bool(value)
+
+
 def _text(value: Any) -> str | None:
     if value is None:
         return None
@@ -46,10 +60,13 @@ class DomainRow:
 
     domain_id: str
     entity_id: str
+    is_apex: bool
     observed: bool
     spf_present: bool
     dmarc_present: bool
     effective_7489: str | None
+    sp_effective_7489: str | None
+    sp_weaker: bool
     dmarc_p: str | None
     policy_label: str | None
     dkim_status: str | None
@@ -67,10 +84,14 @@ class DomainRow:
         return cls(
             domain_id=str(fact.get("domain_id") or ""),
             entity_id=str(fact.get("entity_id") or ""),
+            # 列が無い過去の run も読めるようにする（既定は apex）
+            is_apex=_truthy_or(fact.get("is_apex"), default=True),
             observed=_truthy(fact.get("observed")),
             spf_present=_truthy(fact.get("spf_present")),
             dmarc_present=_truthy(fact.get("dmarc_present")),
             effective_7489=_text(fact.get("effective_7489")),
+            sp_effective_7489=_text(fact.get("sp_effective_7489")),
+            sp_weaker=_truthy(fact.get("sp_weaker")),
             dmarc_p=_text(fact.get("dmarc_p")),
             policy_label=_text(fact.get("policy_label")),
             dkim_status=_text(fact.get("dkim_status")),
@@ -86,6 +107,16 @@ class DomainRow:
     @property
     def dmarc_enforced(self) -> bool:
         return self.effective_7489 in ENFORCING
+
+    @property
+    def subdomain_enforced(self) -> bool:
+        """**配下のサブドメインに効く強度。** `sp=` が無ければ `p=` を継承する。
+
+        `dmarc_enforced` と別に持つ。`p=reject; sp=none` の会社を
+        「reject 達成」と数えると、実際のメールドメインがサブドメインの
+        場合に無防備なものを達成側に入れてしまう。
+        """
+        return self.sp_effective_7489 in ENFORCING
 
     @property
     def stage(self) -> int:
@@ -140,10 +171,22 @@ def aggregate(
     出す。**分母を正しく保つことと、読み手にその中身を見せることは別の
     仕事である** ── 差を出さないと、読み手は total_entities 社を測ったと読む。
     """
+    # **分母は apex で閉じる**（BACKLOG 14、運営者の判断は「別枠」）。
+    #
+    # サブドメインを混ぜるとドメイン数が増え、前月との比較が効かなくなる ──
+    # 母集団を変えて計測し直すのと同じことになる。サブドメインの数字は
+    # `subdomains_*` に別枠で出す。
+    #
+    # **この1行が契約そのものである。** ここを外すと、下のすべての指標の
+    # 分母が黙って変わる
+    subdomains = [r for r in rows if not r.is_apex]
+    rows = [r for r in rows if r.is_apex]
+
     observed = [r for r in rows if r.observed]
     # 観測できたかは問わない。**候補が1件でもあれば「計測に現れた」**
     # （SERVFAIL は「取れなかった」であって、起点が無いのとは別の欠け方）
     with_domains = len({r.entity_id for r in rows if r.entity_id})
+    subdomains_observed = [r for r in subdomains if r.observed]
 
     def entities_where(predicate) -> int:
         return len({r.entity_id for r in observed if predicate(r)})
@@ -174,6 +217,17 @@ def aggregate(
         ),
         blind_reject_domains=sum(
             1 for r in observed if r.policy_label == PolicyLabel.BLIND_REJECT
+        ),
+        # 自分と配下を分ける。差が出るのは sp= を明示して下げている場合だけ
+        sp_enforced_domains=sum(1 for r in observed if r.subdomain_enforced),
+        sp_weaker_domains=sum(1 for r in observed if r.sp_weaker),
+        # **実際に引いたサブドメイン。** 上のどの分母にも入っていない
+        subdomains_measured=len(subdomains),
+        subdomains_observed=len(subdomains_observed),
+        subdomains_with_own_dmarc=sum(1 for r in subdomains_observed if r.dmarc_present),
+        subdomains_dmarc_enforced=sum(1 for r in subdomains_observed if r.dmarc_enforced),
+        entities_with_subdomain_mail=len(
+            {r.entity_id for r in subdomains if r.entity_id}
         ),
         dkim_detected_domains=sum(
             1 for r in observed if r.dkim_status == DkimStatus.DETECTED

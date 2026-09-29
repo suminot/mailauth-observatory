@@ -200,9 +200,17 @@ def run(
 
         # 同じ (entity, domain) が経路ごとに複数行ある。ドメイン単位に畳む
         grouped: dict[tuple[str, str], list[str]] = {}
+        #: (entity, domain) -> apex か。**P2 が決めたものを引き継ぐ。**
+        #: ここで名前から再計算すると、P2 と丸め方がずれたときに黙って食い違う
+        is_apex_by_key: dict[tuple[str, str], bool] = {}
         for _, row in candidates.iterrows():
             key = (str(row["entity_id"]), str(row["domain"]))
             grouped.setdefault(key, []).append(str(row["discovery_method"]))
+            value = row.get("is_apex")
+            # 列が無い過去の run も読めるようにする（既定は apex）
+            flag = True if value is None or value != value else bool(value)
+            # 同じドメインが両方で来たら apex を優先する（分母を欠けさせない）
+            is_apex_by_key[key] = is_apex_by_key.get(key, False) or flag
 
         # 除外の再確認。**P2 の出力が古い可能性がある。** 除外の依頼は
         # 前月の候補には効いていないので、ここでも落とす（多重防御）
@@ -239,6 +247,8 @@ def run(
 
         domains: list[Domain] = []
         by_confidence: dict[str, int] = {}
+        #: サブドメインの分布。**apex の分布に混ぜない**（BACKLOG 14）
+        sub_by_confidence: dict[str, int] = {}
         by_role: dict[str, int] = {}
         by_tier: dict[str, int] = {}
         entities_with_confirmed: set[str] = set()
@@ -280,12 +290,35 @@ def run(
             )
             role = classify_role(domain, official_by_entity.get(entity_id), confidence)
             tier = assign_tier(confidence)
+            is_apex = is_apex_by_key.get((entity_id, domain), True)
 
-            by_confidence[confidence] = by_confidence.get(confidence, 0) + 1
-            by_role[role] = by_role.get(role, 0) + 1
-            by_tier[tier] = by_tier.get(tier, 0) + 1
-            if confidence == Confidence.CONFIRMED:
-                entities_with_confirmed.add(entity_id)
+            # **サブドメインは自分のメールの痕跡があるものだけ測る。**
+            #
+            # rua や include から出てくる名前には、メールを扱わないものも
+            # 混じる。MX も `_dmarc` も無いなら、そこにメールドメインは無い。
+            #
+            # 落とすのではなく「測らない」として残す ── 何を見て外したかが
+            # 残らないと、翌月に同じ名前をまた拾って同じ判断をし直すことになる
+            # **引けなかった場合は「痕跡が無い」ではない**（原則5）。
+            # 観測できたときだけ判定する。取れなかったものは
+            # primary_probe_failed のままにする
+            subdomain_without_mail = (
+                not is_apex
+                and probe.observed
+                and not (probe.mx_exists or probe.dmarc_exists)
+            )
+
+            # **受け入れ基準の分布は apex だけで取る。** サブドメインを混ぜると
+            # confirmed 率の意味が変わり、前月と比べられなくなる。
+            # サブドメインの件数は下の breakdown に別枠で出る
+            if is_apex:
+                by_confidence[confidence] = by_confidence.get(confidence, 0) + 1
+                by_role[role] = by_role.get(role, 0) + 1
+                by_tier[tier] = by_tier.get(tier, 0) + 1
+                if confidence == Confidence.CONFIRMED:
+                    entities_with_confirmed.add(entity_id)
+            else:
+                sub_by_confidence[confidence] = sub_by_confidence.get(confidence, 0) + 1
 
             domains.append(
                 Domain(
@@ -295,6 +328,7 @@ def run(
                     domain=domain,
                     domain_role=role,
                     confidence=confidence,
+                    is_apex=is_apex,
                     mx_exists=probe.mx_exists,
                     spf_exists=probe.spf_exists,
                     spf_aligned=probe.spf_aligned,
@@ -304,9 +338,15 @@ def run(
                     evidence=json.dumps(build_evidence(probe), ensure_ascii=False),
                     # 一次実証が取れなかったドメインは計測対象にしない。
                     # 「取れなかった」を「無かった」として下流に渡さないため
-                    is_measured=probe.observed,
+                    is_measured=probe.observed and not subdomain_without_mail,
                     measure_tier=tier,
-                    exclusion_reason=None if probe.observed else "primary_probe_failed",
+                    exclusion_reason=(
+                        "primary_probe_failed"
+                        if not probe.observed
+                        else "subdomain_without_own_mail"
+                        if subdomain_without_mail
+                        else None
+                    ),
                     null_mx=probe.null_mx,
                     spf_hard_deny=probe.spf_hard_deny,
                 )
@@ -342,6 +382,15 @@ def run(
             resolver=getattr(resolver, "stats", {}),
             null_mx_domains=sum(1 for d in domains if d.null_mx),
             spf_hard_deny_domains=sum(1 for d in domains if d.spf_hard_deny),
+            # **apex とサブドメインを混ぜて数えない**（BACKLOG 14）。
+            # 分母は apex で閉じている
+            apex_domains=sum(1 for d in domains if d.is_apex),
+            subdomains=sum(1 for d in domains if not d.is_apex),
+            subdomains_by_confidence=dict(sorted(sub_by_confidence.items())),
+            subdomains_measured=sum(1 for d in domains if not d.is_apex and d.is_measured),
+            subdomains_without_own_mail=sum(
+                1 for d in domains if d.exclusion_reason == "subdomain_without_own_mail"
+            ),
             # **除外は黙って行わない。** 分母から抜いた分を記録する（原則4）
             excluded=excluded.to_dict(),
         )
@@ -356,8 +405,14 @@ def run(
                     "P2 の出力より後に依頼が入った場合ここで落ちる"
                 ),
             )
-        _check_acceptance(cfg, by_confidence, len(domains), len(without_confirmed),
-                          len(all_entities), manifest)
+        _check_acceptance(
+            cfg,
+            by_confidence,
+            sum(1 for d in domains if d.is_apex),
+            len(without_confirmed),
+            len(all_entities),
+            manifest,
+        )
 
         if dry_run:
             manifest.add_warning("DRY_RUN", message="dry_run のため出力を書いていない")

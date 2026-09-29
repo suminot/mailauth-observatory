@@ -26,7 +26,15 @@ def load_dotenv(path: Path | None = None) -> dict[str, str]:
     """.env を読んで os.environ に反映する（既存の環境変数は上書きしない）。
 
     python-dotenv を足すほどの処理ではないので自前で持つ。
+
+    **`MAILAUTH_NO_DOTENV` が立っていたら読まない。** テストは
+    `monkeypatch.delenv` で認証情報を外すが、`.env` がここで読み直されると
+    消したはずの鍵が戻ってくる ── 開発機に `.env` があるかどうかで検査の
+    結果が変わり、CI（`.env` が無い）と手元で違う壊れ方をする。
+    `path` を明示した呼び出しは対象外（読み込み処理そのものの検査）。
     """
+    if path is None and os.environ.get("MAILAUTH_NO_DOTENV"):
+        return {}
     p = path or repo_root() / ".env"
     loaded: dict[str, str] = {}
     if not p.is_file():

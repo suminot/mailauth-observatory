@@ -175,6 +175,74 @@ display(
 );
 ```
 
+## 自分と、その配下
+
+DMARC の `p=` はそのドメイン自身に効きます。**配下のサブドメインに効くのは
+`sp=` で、書かれていなければ `p=` を継承します。**
+
+`p=reject; sp=none` と書いてある場合、そのドメイン自身には `reject` が、
+**配下のサブドメインには `none` が適用されます。** 会社の実際のメールが
+サブドメイン上にあることは珍しくありません。
+
+```js
+// **無い列を 0 として見せない**（原則5）。この欄より前に計測した月の
+// gold には列そのものが無い。空欄で出すと「該当なし」と読まれる
+display(
+  current?.sp_enforced_domains === undefined
+    ? html`<p class="muted">この月はまだ <code>sp=</code> を集計していません。<strong>0 ではありません。</strong></p>`
+    : table(
+        [
+          { 区分: "自分に効いている（p=）", ドメイン: current?.dmarc_enforced_domains },
+          { 区分: "配下にも効いている（sp= または継承）", ドメイン: current?.sp_enforced_domains },
+          { 区分: "sp= で配下だけ弱くしている", ドメイン: current?.sp_weaker_domains },
+        ],
+        { sort: null }
+      )
+);
+```
+
+<div class="limits">
+
+- **ここに出るのは「`sp=` に何と書いてあるか」です。** サブドメインが自分の
+  `_dmarc` を持っている場合、`sp=` は継承されないので、この欄は
+  そのサブドメインの実態を表しません
+- 実際に引いたサブドメインは下の表に別枠で出しています
+
+</div>
+
+### 実際に引いたサブドメイン
+
+メールの痕跡（`rua` の宛先、SPF の `include:`）から見つかったサブドメインの
+うち、**自分の MX か自分の `_dmarc` を持っていたもの**です。
+
+```js
+display(
+  current?.subdomains_measured === undefined
+    ? html`<p class="muted">この月はサブドメインを計測していません。<strong>「無かった」ではありません。</strong></p>`
+    : table(
+        [
+          { 区分: "計測したサブドメイン", 数: current?.subdomains_measured },
+          { 区分: "うち観測できた", 数: current?.subdomains_observed },
+          { 区分: "自分の DMARC を持つ", 数: current?.subdomains_with_own_dmarc },
+          { 区分: "うち quarantine 以上", 数: current?.subdomains_dmarc_enforced },
+          { 区分: "サブドメインでメールを扱う企業数", 数: current?.entities_with_subdomain_mail },
+        ],
+        { sort: null }
+      )
+);
+```
+
+<div class="limits">
+
+- **この数はこのページの他のどの割合の分母にも入っていません。** 混ぜると
+  ドメイン数が増えて前月と比べられなくなるため、別枠で数えています
+- **見つかった分だけです。** サブドメインの全数を探す方法はありません。
+  ここに出ないことは「無い」を意味しません
+- 見つける経路は `rua` の宛先と SPF の `include:` に限っています。
+  それ以外の経路でメールを出しているサブドメインは見えません
+
+</div>
+
 ## 時系列
 
 ```js

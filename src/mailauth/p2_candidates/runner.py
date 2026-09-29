@@ -7,6 +7,7 @@
   1. official_url  P1 が gBizINFO から取った公式サイトのドメイン
   2. ct_log        crt.sh の SAN から eTLD+1 を抽出
   3. spf_redirect  SPF の redirect= が別組織を指していれば候補に
+     spf_include   SPF の include: が自社サブドメインを指していれば候補に
   4. dmarc_rua     _dmarc の rua 宛先が自社ドメインなら候補に
   5. manual        手動メンテナンスの CSV。グループ会社・事業ブランド用
 """
@@ -41,7 +42,7 @@ from ..exclusions import ExclusionRegistry, require_available
 from ..exclusions import load as load_exclusions
 from ..io import read_parquet, write_parquet
 from ..manifest import RunManifest, config_hash
-from ..normalize import etld_plus_one
+from ..normalize import etld_plus_one, normalize_hostname
 from ..paths import cache_root, config_path, month_date, phase_dir, phase_output
 from ..progress import Progress
 from ..records import (
@@ -49,6 +50,7 @@ from ..records import (
     find_dmarc_records,
     find_spf_records,
     join_txt_strings,
+    spf_includes,
     spf_redirect,
 )
 from ..resolver import DnsResolver, Resolver, shuffled
@@ -100,14 +102,38 @@ SHARED_RUA_MIN_ENTITIES = 2
 
 #: DNS から辿っただけの経路。**所有の裏付けにはならない。**
 #: redirect 先も rua 宛先も、他社の基盤を指していることがある
-DNS_DERIVED_METHODS = frozenset({DiscoveryMethod.SPF_REDIRECT, DiscoveryMethod.DMARC_RUA})
+DNS_DERIVED_METHODS = frozenset(
+    {
+        DiscoveryMethod.SPF_REDIRECT,
+        DiscoveryMethod.SPF_INCLUDE,
+        DiscoveryMethod.DMARC_RUA,
+    }
+)
+
+#: 所有の裏付けになる発見経路。**DNS 由来はここに入らない。**
+#: `redirect=` や `include:` が指す先は「使っている」であって「持っている」
+#: ではない（DNS_DERIVED_METHODS の裏返し）
+OWNERSHIP_METHODS = frozenset(
+    {
+        DiscoveryMethod.OFFICIAL_URL,
+        DiscoveryMethod.CT_LOG,
+        DiscoveryMethod.MANUAL,
+    }
+)
 
 
-def _domain_entities(collectors: dict[str, _Collector]) -> dict[str, set[str]]:
-    """domain -> それを候補に持つ entity_id の集合。"""
+def _domain_entities(
+    collectors: dict[str, _Collector], attr: str = "found"
+) -> dict[str, set[str]]:
+    """domain -> それを候補に持つ entity_id の集合。
+
+    `attr` で apex 側（`found`）とサブドメイン側（`subdomains`）を切り替える。
+    **同じ判定を両方に掛けるため**で、片方だけに掛けると、apex では落とす
+    第三者のドメインがサブドメインとして残る。
+    """
     out: dict[str, set[str]] = {}
     for entity_id, collector in collectors.items():
-        for domain in collector.found:
+        for domain in getattr(collector, attr):
             out.setdefault(domain, set()).add(entity_id)
     return out
 
@@ -125,18 +151,34 @@ class _Collector:
         limit: int,
         *,
         excluded: ExclusionRegistry | None = None,
+        subdomain_methods: frozenset[str] = frozenset(),
+        subdomain_limit: int = 0,
     ) -> None:
         self.entity_id = entity_id
         self.limit = limit
+        #: apex（eTLD+1）。**分母はここだけで閉じている**
         #: domain -> {method: source_detail}
         self.found: dict[str, dict[str, str]] = {}
+        #: apex 配下のサブドメイン。**別枠で持つ。**
+        #: 同じ枠にすると、サブドメインが apex を押し出して分母が動く
+        self.subdomains: dict[str, dict[str, str]] = {}
+        #: サブドメインとして残す発見経路。メールの痕跡から出てきたものだけ
+        self.subdomain_methods = subdomain_methods
+        self.subdomain_limit = subdomain_limit
         self.truncated = 0
+        self.subdomains_truncated = 0
         self.excluded = excluded
         #: 除外して落とした件数。**黙って落とさない**（原則4）
         self.skipped_excluded = 0
 
     def add(self, domain: str | None, method: str, detail: str = "") -> None:
-        apex = etld_plus_one(domain) if domain else None
+        """候補を足す。**apex は必ず足し、サブドメインは条件付きで足す。**
+
+        サブドメインを足しても apex は足す。apex を差し替えると
+        「その企業の登記ドメイン」が母集団から消え、前月と比較できなくなる。
+        """
+        name = normalize_hostname(domain) if domain else None
+        apex = etld_plus_one(name) if name else None
         if not apex:
             return
         if self.excluded is not None and self.excluded.excludes(apex):
@@ -150,6 +192,24 @@ class _Collector:
             self.truncated += 1
             return
         self.found.setdefault(apex, {}).setdefault(method, detail)
+
+        if name == apex or str(method) not in self.subdomain_methods:
+            return
+        # **その企業が持っていると裏付けのある apex の配下だけ残す。**
+        #
+        # `redirect=` や `include:` は他社の基盤を指すことがある。
+        # `_spf.esp-vendor.jp` を「その企業のメールドメイン」として測ると、
+        # 他社の設定をその企業の評価として公開することになる。
+        #
+        # apex 自体は従来どおり候補にする（そこは経路が何であれ変わらない）。
+        # 配下まで降りるのは、official_url / ct_log / manual の裏付けが
+        # ある apex に限る
+        if not set(self.found.get(apex, {})) & OWNERSHIP_METHODS:
+            return
+        if name not in self.subdomains and len(self.subdomains) >= self.subdomain_limit:
+            self.subdomains_truncated += 1
+            return
+        self.subdomains.setdefault(name, {}).setdefault(method, detail)
 
 
 def load_report_vendor_patterns(
@@ -189,20 +249,34 @@ def _discover_from_dns(
     vendor_patterns: list[tuple[str, re.Pattern[str]]],
     vendor_hits: dict[str, int],
     unaligned_rua: dict[str, set[str]],
+    use_include: bool = False,
 ) -> None:
-    """SPF redirect と DMARC rua から候補を足す。
+    """SPF redirect / include と DMARC rua から候補を足す。
 
     どちらも DNS 由来なので、確度判定では「独立した裏付け」に数えない
     （configs/candidates.yaml の confidence.independent_methods）。
     """
-    if use_redirect:
+    if use_redirect or use_include:
         txt = resolver.query(apex, "TXT")
         if txt.observed and txt.record_present:
             records = [join_txt_strings(c) for c in txt.txt_strings] or txt.values
             for record in find_spf_records(records):
-                target = spf_redirect(record)
+                target = spf_redirect(record) if use_redirect else None
                 if target:
                     collector.add(target, DiscoveryMethod.SPF_REDIRECT, f"redirect from {apex}")
+                if not use_include:
+                    continue
+                for target in spf_includes(record):
+                    # **他社を指す include は所有の証拠にならない。**
+                    # `include:spf.protection.outlook.com` が示すのは
+                    # その基盤を使っていることだけである。自社サブドメインに
+                    # 分割している例（`_spf2.dena.com` 等）を拾うのが狙いなので、
+                    # 同じ apex の下にあるものだけ候補にする。
+                    # **問い合わせは増えない** ── TXT は上で引いている
+                    if etld_plus_one(target) == etld_plus_one(apex):
+                        collector.add(
+                            target, DiscoveryMethod.SPF_INCLUDE, f"include from {apex}"
+                        )
 
     if use_rua:
         dmarc = resolver.query(f"_dmarc.{apex}", "TXT")
@@ -329,6 +403,15 @@ def run(
         per_entity_limit = int(limits.get("max_per_entity", 500))
         total_limit = int(limits.get("max_candidates_total", 30000))
 
+        # **サブドメインを捨てない**（BACKLOG 14）。設定で切れる
+        sub_cfg = cfg.get("subdomains") or {}
+        subdomain_methods = (
+            frozenset(str(m) for m in (sub_cfg.get("keep_from") or []))
+            if sub_cfg.get("enabled")
+            else frozenset()
+        )
+        subdomain_limit = int(sub_cfg.get("max_per_entity", 20))
+
         # 起点となる official_domain が無い企業は、手動辞書が無ければ候補ゼロになる
         without_domain = [
             str(r["entity_id"])
@@ -420,7 +503,13 @@ def run(
             row = rows.iloc[idx]
             cache_before = ct_stats["from_cache"]
             entity_id = str(row["entity_id"])
-            collector = _Collector(entity_id, per_entity_limit, excluded=excluded)
+            collector = _Collector(
+                entity_id,
+                per_entity_limit,
+                excluded=excluded,
+                subdomain_methods=subdomain_methods,
+                subdomain_limit=subdomain_limit,
+            )
             collectors[entity_id] = collector
 
             official = _seed(idx)
@@ -465,6 +554,7 @@ def run(
                     vendor_patterns,
                     vendor_hits,
                     unaligned_rua,
+                    use_include=bool(discovery.get("spf_include")),
                 )
 
             total += len(collector.found)
@@ -516,21 +606,38 @@ def run(
         #
         # 落とすのは rua だけで見つかったものに限る。official_url や ct_log の
         # 裏付けがあるドメインは、グループ共用の本物なので残す。
-        rua_only_shared: dict[str, list[str]] = {}
-        for domain, entity_ids in _domain_entities(collectors).items():
-            if len(entity_ids) < SHARED_RUA_MIN_ENTITIES:
-                continue
-            methods = {m for eid in entity_ids for m in collectors[eid].found.get(domain, {})}
-            # official_url / ct_log / manual は所有の裏付けなので、
-            # それが1つでもあれば本物のグループ共用ドメインとして残す。
-            # DNS 由来の経路（rua / redirect）だけで見つかったものは
-            # **他社の基盤である可能性が高い**（ESP の redirect 先など）
-            if methods and methods <= DNS_DERIVED_METHODS:
-                rua_only_shared[domain] = sorted(entity_ids)
+        def _shared_dns_only(attr: str) -> dict[str, list[str]]:
+            shared: dict[str, list[str]] = {}
+            for domain, entity_ids in _domain_entities(collectors, attr).items():
+                if len(entity_ids) < SHARED_RUA_MIN_ENTITIES:
+                    continue
+                methods = {
+                    m for eid in entity_ids for m in getattr(collectors[eid], attr).get(domain, {})
+                }
+                # official_url / ct_log / manual は所有の裏付けなので、
+                # それが1つでもあれば本物のグループ共用ドメインとして残す。
+                # DNS 由来の経路（rua / redirect / include）だけで見つかった
+                # ものは**他社の基盤である可能性が高い**（ESP の redirect 先など）
+                if methods and methods <= DNS_DERIVED_METHODS:
+                    shared[domain] = sorted(entity_ids)
+            return shared
+
+        rua_only_shared = _shared_dns_only("found")
+        # **同じ判定をサブドメイン側にも掛ける。** apex で落とす第三者の
+        # ドメインが、サブドメインとして残っては意味がない
+        shared_subdomains = _shared_dns_only("subdomains")
 
         for domain, entity_ids in rua_only_shared.items():
             for entity_id in entity_ids:
                 collectors[entity_id].found.pop(domain, None)
+        for domain, entity_ids in shared_subdomains.items():
+            for entity_id in entity_ids:
+                collectors[entity_id].subdomains.pop(domain, None)
+        # apex ごと落としたなら、その配下も残さない
+        for domain in rua_only_shared:
+            for collector in collectors.values():
+                for name in [s for s in collector.subdomains if etld_plus_one(s) == domain]:
+                    collector.subdomains.pop(name, None)
 
         if rua_only_shared:
             manifest.add_warning(
@@ -555,30 +662,47 @@ def run(
         per_entity: list[int] = []
         domain_to_entities: dict[str, set[str]] = {}
 
+        subdomain_count = 0
         for entity_id, collector in collectors.items():
+            # **受け入れ基準の「1社あたり候補数」は apex だけで数える。**
+            # サブドメインを混ぜると、閾値の意味が月ごとに変わる
             per_entity.append(len(collector.found))
-            for domain, methods in collector.found.items():
-                domain_to_entities.setdefault(domain, set()).add(entity_id)
-                for method, detail in methods.items():
-                    method_counts[str(method)] = method_counts.get(str(method), 0) + 1
-                    candidates.append(
-                        DomainCandidate(
-                            candidate_id=candidate_id(entity_id, domain, method),
-                            entity_id=entity_id,
-                            run_id=run_id,
-                            domain=domain,
-                            discovery_method=method,
-                            discovered_at=discovered_at,
-                            source_detail=detail or None,
-                            is_apex=True,
+            for is_apex, source in ((True, collector.found), (False, collector.subdomains)):
+                for domain, methods in source.items():
+                    if is_apex:
+                        domain_to_entities.setdefault(domain, set()).add(entity_id)
+                    else:
+                        subdomain_count += 1
+                    for method, detail in methods.items():
+                        method_counts[str(method)] = method_counts.get(str(method), 0) + 1
+                        candidates.append(
+                            DomainCandidate(
+                                candidate_id=candidate_id(entity_id, domain, method),
+                                entity_id=entity_id,
+                                run_id=run_id,
+                                domain=domain,
+                                discovery_method=method,
+                                discovered_at=discovered_at,
+                                source_detail=detail or None,
+                                is_apex=is_apex,
+                            )
                         )
-                    )
             if collector.truncated:
                 manifest.add_warning(
                     "PER_ENTITY_LIMIT_REACHED",
                     count=collector.truncated,
                     sample=[entity_id],
                     message=f"1社あたりの候補上限 {per_entity_limit} を超えた分を捨てた",
+                )
+            if collector.subdomains_truncated:
+                manifest.add_warning(
+                    "SUBDOMAIN_LIMIT_REACHED",
+                    count=collector.subdomains_truncated,
+                    sample=[entity_id],
+                    message=(
+                        f"1社あたりのサブドメイン上限 {subdomain_limit} を超えた分を捨てた。"
+                        "**apex の枠は減っていない**"
+                    ),
                 )
 
         shared = {d: sorted(e) for d, e in domain_to_entities.items() if len(e) > 1}
@@ -615,6 +739,10 @@ def run(
             entities_with_zero_candidates=zero,
             unique_domains=len(domain_to_entities),
             candidate_rows=len(candidates),
+            # **apex とサブドメインを混ぜて数えない。** 分母は apex で閉じており、
+            # サブドメインは別枠（BACKLOG 14）
+            subdomain_candidates=subdomain_count,
+            shared_subdomains_dropped=len(shared_subdomains),
             ct=ct_stats,
             # **crt.sh にどれだけ待たされたかを残す。** 2026-09 の実行は
             # P2 に4時間21分かかったが、残っていたのは失敗の件数だけで、

@@ -126,6 +126,21 @@ _MULTI_LABEL_SUFFIXES = {
 }
 
 
+def normalize_hostname(host: str | None) -> str | None:
+    """ホスト名を比較できる形に揃える。丸めない。
+
+    `etld_plus_one` と**同じ前処理**（小文字化・末尾ドット除去）をして、
+    ラベルは落とさずに返す。両者を突き合わせて「これは apex か、その配下か」
+    を判定するので、前処理がずれると判定もずれる。
+    """
+    if not host:
+        return None
+    h = host.strip().lower().rstrip(".")
+    if not h or "." not in h:
+        return None
+    return h
+
+
 def etld_plus_one(host: str) -> str | None:
     """ホスト名を eTLD+1 に丸める。
 

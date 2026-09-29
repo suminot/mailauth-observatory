@@ -71,7 +71,6 @@ export default {
     { name: "変更履歴", path: "/changelog" },
     // 計測が一巡したときに表紙がどう見えるか。**数字は作り物**で、
     // ページ自身が冒頭でそう断っている
-    { name: "サンプル", path: "/sample" },
     { name: "Dashboard", path: "/en/" },
     { name: "By sector", path: "/en/sectors" },
     { name: "Mail platforms", path: "/en/platforms" },
@@ -79,7 +78,6 @@ export default {
     { name: "Data", path: "/en/data" },
     { name: "Terms and disclaimer", path: "/en/terms" },
     { name: "Change log", path: "/en/changelog" },
-    { name: "Sample", path: "/en/sample" },
   ],
   root: "src",
   theme: "dark",
