@@ -1,0 +1,25 @@
+#+ 法人番号で突合できなかった企業を、証券コードで拾い直す。
+#+
+#+ **国内も 16.3%（623社）で起点ドメインが取れていない**（2026-09 実測）。
+#+ gBizINFO の company_url が空で、Wikidata に法人番号（P3225）が
+#+ 入っていない企業がここに残る。**証券コードは入っていることがある。**
+#+
+#+ **証券コードは弱い鍵である。** P249 には海外市場のティッカーも入るので、
+#+ 国を日本（Q17）に限り、呼び出し側で4桁の数字だけを通す。さらに
+#+   1. 同じコードに2件以上当たったら捨てる（drop_on_conflict）
+#+   2. 社名が一致しなければ使わない（names_agree）
+#+ の2段で防ぐ。だから `?label` を一緒に返す。
+#+
+#+ ラベルは日本語を優先し、無ければ英語。国内企業の商号は日本語で
+#+ 入っていることが多い。
+#+
+#+ **1クエリで全件取る。** endpoint: https://query.wikidata.org/sparql
+
+SELECT ?securities_code ?website ?lei ?label WHERE {
+  ?company wdt:P17 wd:Q17 .                  # 国＝日本
+  ?company wdt:P249 ?securities_code .       # 証券コード（ティッカー）
+  ?company wdt:P856 ?website .               # **公式サイトがある項目だけ**
+  OPTIONAL { ?company wdt:P1278 ?lei }
+  ?company rdfs:label ?label .
+  FILTER(LANG(?label) = "ja" || LANG(?label) = "en")
+}
