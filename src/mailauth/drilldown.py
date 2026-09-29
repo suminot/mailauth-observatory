@@ -125,13 +125,21 @@ def build_rows(run_id: str) -> list[dict]:
         suffixes=("", "_fact"),
     )
 
-    # 推察は1ドメインに複数行つく。**種類ごとにまとめる**
+    # 推察は1ドメインに複数行つく。**層ごとにまとめる**
     by_domain: dict[str, dict] = {}
     for _, r in inferences.iterrows():
-        d = by_domain.setdefault(str(r.get("domain_id")), {"vendors": [], "undetectable": []})
+        d = by_domain.setdefault(
+            str(r.get("domain_id")),
+            {"vendors": [], "undetectable": [], "layers": {}},
+        )
         v = r.get("vendor")
         if isinstance(v, str) and v:
             d["vendors"].append(f"{r.get('category')}:{v}")
+            layer = r.get("layer")
+            # **代表だけを層の欄に出す。** 同じ層に2つ並べると、
+            # 読む人は「どちらも使っている」と読む
+            if isinstance(layer, str) and layer and r.get("is_layer_primary") is not False:
+                d["layers"].setdefault(layer, []).append(v)
         u = r.get("undetectable_reason")
         if isinstance(u, str) and u:
             d["undetectable"].append(u)
@@ -185,6 +193,10 @@ def build_rows(run_id: str) -> list[dict]:
                 "DNSSEC": tri(r.get("dnssec_signed")),
                 "MX": s(r.get("mx_hosts")),
                 "推察": ", ".join(inf.get("vendors", [])) or "—",
+                # **受信と送信で別ベンダーのことがある。** 1つに丸めない
+                "実基盤": s(inf.get("layers", {}).get("platform")),
+                "受信の前段": s(inf.get("layers", {}).get("inbound_gateway")),
+                "送信の前段": s(inf.get("layers", {}).get("outbound_gateway")),
                 # **「DNS からは分からない」を明示する。** 空欄にすると
                 # 「何も使っていない」に見える
                 # **理由を日本語にする。** `api_mode_product` のままだと

@@ -177,6 +177,9 @@ class NewRule(BaseModel):
     region: str | None = None
     note: str | None = None
     category: str | None = None
+    #: 経路のどこにいるか。**前段の規則には必須**（辞書の読み込みが拒む）。
+    #: 画面から足すときも聞かないと、書き忘れが 400 で返ってくるだけになる
+    layer: str | None = None
 
 
 def _resolve_editable(name: str) -> Path:
@@ -214,6 +217,8 @@ def render_rule(rule: NewRule) -> str:
         lines.append(f"    category: {rule.category}")
     if rule.region:
         lines.append(f"    region: {rule.region}")
+    if rule.layer:
+        lines.append(f"    layer: {rule.layer}")
     lines.append("    match:")
     lines.append(f"      record: {rule.record}")
     lines.append(f"      pattern: {_scalar(rule.pattern)}")

@@ -22,6 +22,7 @@ from ..contracts import (
     ConfidenceLevel,
     EvidenceRecordType,
     InferenceCategory,
+    InferenceLayer,
     UndetectableReason,
 )
 from ..paths import config_path
@@ -41,6 +42,14 @@ _KNOWN_RECORDS = {r.value for r in EvidenceRecordType}
 _KNOWN_CATEGORIES = {c.value for c in InferenceCategory} | {VERIFICATION_CATEGORY}
 _KNOWN_CONFIDENCE = {c.value for c in ConfidenceLevel}
 _KNOWN_UNDETECTABLE = {u.value for u in UndetectableReason}
+_KNOWN_LAYERS = {ly.value for ly in InferenceLayer}
+
+#: カテゴリごとの既定の層。**`security_gateway` には既定を置かない。**
+#: 受信と送信のどちらを握るかは製品ごとに違い、既定を置くと
+#: 「書き忘れ」が黙って受信前段に化ける（実際 HENNGE でそれが起きた）
+DEFAULT_LAYERS = {InferenceCategory.MAIL_PLATFORM: InferenceLayer.PLATFORM}
+#: 層を必ず宣言しなければならないカテゴリ
+LAYER_REQUIRED = {InferenceCategory.SECURITY_GATEWAY}
 
 
 class FingerprintError(ValueError):
@@ -74,6 +83,10 @@ class Rule:
     #: そこではない」ことを示す痕跡がある。ベンダーは分かるので未知ホストに
     #: 落としたくないが、利用数に数えてはいけない（`UndetectableReason`）
     undetectable_reason: str | None = None
+    #: 経路のどこにいるか（`InferenceLayer`）。**前段は1つではない。**
+    #: 受信（MX を握る）と送信（MX を握らない）を分けないと、
+    #: 「受信 Symantec ／ 送信 HENNGE」という実態が消える
+    layer: str | None = None
     #: 読み込み元ファイルの `version`。inference に記録して再現性を確保する
     fingerprint_version: str | None = None
 
@@ -163,6 +176,23 @@ def _parse_rule(raw: dict, *, default_category: str, version: str, origin: str) 
     if not vendor:
         raise FingerprintError(f"{origin}: 規則 {rule_id} に vendor が無い")
 
+    layer = raw.get("layer")
+    if layer is not None:
+        layer = str(layer).strip()
+        if layer not in _KNOWN_LAYERS:
+            raise FingerprintError(
+                f"{origin}: 規則 {rule_id} の layer が未知の値 {layer!r}。"
+                f"既知は {sorted(_KNOWN_LAYERS)}"
+            )
+    elif category in LAYER_REQUIRED:
+        raise FingerprintError(
+            f"{origin}: 規則 {rule_id}（{category}）に layer が無い。"
+            "受信の前段（MX を握る）か送信の前段（握らない）かを書くこと。"
+            "**既定は置かない** ── 書き忘れが黙って受信前段に化ける"
+        )
+    else:
+        layer = DEFAULT_LAYERS.get(category)
+
     undetectable = raw.get("undetectable_reason")
     if undetectable is not None:
         undetectable = str(undetectable).strip()
@@ -185,6 +215,7 @@ def _parse_rule(raw: dict, *, default_category: str, version: str, origin: str) 
         source=(str(raw["source"]).strip() if raw.get("source") else None),
         corroborated_by=_corroboration(raw.get("corroborated_by")),
         undetectable_reason=undetectable,
+        layer=layer,
         fingerprint_version=version,
     )
 

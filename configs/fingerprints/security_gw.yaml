@@ -18,6 +18,7 @@ rules:
       # `mx0a-` 固定・`.gslb` 無しを前提にすると取りこぼす（実データで発見）
       pattern: '^mx0?[ab]-[0-9a-f]{8}(\.gslb)?\.pphosted\.com\.?$'
     confidence: high
+    layer: inbound_gateway
     source: dmarc.mx
 
   - id: pp-mx-03
@@ -29,6 +30,7 @@ rules:
       record: MX
       pattern: '\.pphosted\.com\.?$'
     confidence: medium
+    layer: inbound_gateway
     note: 製品系列は特定できていない。pp-mx-01 / pp-mx-02 に一致すればそちらが product を決める
 
   - id: pp-mx-02
@@ -38,6 +40,7 @@ rules:
       record: MX
       pattern: '\.ppe-hosted\.com\.?$'
     confidence: high
+    layer: inbound_gateway
 
   - id: mimecast-mx-01
     vendor: Mimecast
@@ -46,6 +49,7 @@ rules:
       record: MX
       pattern: '\.mimecast\.com\.?$|\.mimecast\.co\.za\.?$'
     confidence: high
+    layer: inbound_gateway
 
   - id: cisco-mx-01
     vendor: Cisco
@@ -54,6 +58,7 @@ rules:
       record: MX
       pattern: '\.iphmx\.com\.?$'
     confidence: high
+    layer: inbound_gateway
 
   - id: barracuda-mx-01
     vendor: Barracuda
@@ -62,6 +67,7 @@ rules:
       record: MX
       pattern: '\.barracudanetworks\.com\.?$|\.ess\.barracudanetworks\.com\.?$'
     confidence: high
+    layer: inbound_gateway
 
   - id: trendmicro-mx-01
     vendor: Trend Micro
@@ -70,6 +76,7 @@ rules:
       record: MX
       pattern: '\.trendmicro\.com\.?$|\.tmes\.trendmicro\.com\.?$'
     confidence: high
+    layer: inbound_gateway
 
   - id: mfilter-spf-01
     vendor: デジタルアーツ
@@ -79,6 +86,7 @@ rules:
       record: SPF_INCLUDE
       pattern: '^(_spf1\.)?spf\.mail\.system\.digitalartscloud\.com$'
     confidence: high
+    layer: outbound_gateway
     source: daj.jp/bs/serverlist/
 
   - id: guardianwall-spf-01
@@ -89,6 +97,7 @@ rules:
       record: SPF_INCLUDE
       pattern: '^_spf\.guardianwall\.jp$'
     confidence: high
+    layer: outbound_gateway
 
   - id: iij-mx-01
     vendor: IIJ
@@ -98,6 +107,7 @@ rules:
       record: MX
       pattern: '\.securemx\.jp\.?$'
     confidence: high
+    layer: inbound_gateway
 
   - id: iij-dkim-01
     vendor: IIJ
@@ -111,6 +121,7 @@ rules:
       record: DKIM_CNAME
       pattern: '(^|\.)d(x|k)g\.dox\.jp\.?$'
     confidence: high
+    layer: outbound_gateway
     note: 署名ドメインはゲートウェイのもの。背後の実基盤は SPF include から別途推定する
 
   - id: hennge-mx-01
@@ -121,6 +132,7 @@ rules:
       record: MX
       pattern: '\.hdemail\.jp\.?$'
     confidence: high
+    layer: inbound_gateway
 
   - id: hennge-spf-01
     vendor: HENNGE
@@ -136,6 +148,7 @@ rules:
       record: SPF_INCLUDE
       pattern: '^spf\.mta\.hdems\.com$'
     confidence: high
+    layer: outbound_gateway
     note: 送信の前段。**受信 MX は別ベンダーのことがある**（実測でシマンテックとの併用あり）
 
   - id: qualitia-mx-01
@@ -146,6 +159,7 @@ rules:
       record: MX
       pattern: '\.activegate-ss\.jp\.?$'
     confidence: high
+    layer: inbound_gateway
 
   - id: qualitia-spf-01
     vendor: クオリティア
@@ -155,6 +169,7 @@ rules:
       record: SPF_INCLUDE
       pattern: '^_spf\.activegate-ss\.jp$'
     confidence: high
+    layer: outbound_gateway
     note: 送信の前段としての痕跡。MX を握らない構成でも立つ
 
   # -------------------------------------------------------------------------
@@ -168,6 +183,7 @@ rules:
       record: MX
       pattern: '\.email\.fireeyecloud\.com\.?$'
     confidence: high
+    layer: inbound_gateway
     note: 旧 FireEye Email Threat Prevention。ホスト名は FireEye 時代のまま
 
   - id: broadcom-mx-01
@@ -177,6 +193,7 @@ rules:
       record: MX
       pattern: '\.messagelabs\.com\.?$'
     confidence: high
+    layer: inbound_gateway
     note: 旧 MessageLabs。Symantec 買収を経て現在は Broadcom
 
   - id: fortinet-mx-01
@@ -186,6 +203,7 @@ rules:
       record: MX
       pattern: '\.fortimail\.com\.?$'
     confidence: high
+    layer: inbound_gateway
     note: fortimail.com の NS は fortinet.com（2026-09-29 実測）
 
   - id: mfilter-mx-01
@@ -198,6 +216,7 @@ rules:
       record: MX
       pattern: '\.system\.digitalartscloud\.com\.?$'
     confidence: high
+    layer: inbound_gateway
 
   - id: tsukaeru-mx-01
     vendor: 使えるねっと
@@ -206,6 +225,7 @@ rules:
       record: MX
       pattern: '\.nospamcloud\.com\.?$'
     confidence: medium
+    layer: inbound_gateway
     note: nospamcloud.com の NS は ns1/ns2.tsukaeru.ne.jp（2026-09-29 実測）。製品名は特定していない
 
   - id: tokai-mx-01
@@ -219,6 +239,7 @@ rules:
       record: MX
       pattern: '\.oneoffice\.jp\.?$'
     confidence: medium
+    layer: inbound_gateway
     note: 実基盤としても使われる。SPF / DKIM から背後を別途推定すること
 
   - id: nec-mx-01
@@ -229,6 +250,7 @@ rules:
       record: MX
       pattern: '\.mailsecurity-nec\.jp\.?$'
     confidence: medium
+    layer: inbound_gateway
 
 # DNS に痕跡を残さない製品（DESIGN.md P6「API連携型製品という構造的盲点」）
 # 「検出されなかった＝使っていない」ではないことを出力とレポートに明示する。

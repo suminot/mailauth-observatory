@@ -59,9 +59,16 @@ class MissingInputError(RuntimeError):
     pass
 
 
-def inference_id(domain_id: str, run_id: str, category: str, vendor: str) -> str:
+def inference_id(
+    domain_id: str, run_id: str, category: str, vendor: str, layer: str | None = None
+) -> str:
+    """推定1件の id。
+
+    **層まで入れる。** 「IIJ が受信前段」と「IIJ が送信前段」は別の事実で、
+    同じ id になると片方が消える。
+    """
     digest = hashlib.sha256(
-        f"{domain_id}|{run_id}|{category}|{vendor}".encode()
+        f"{domain_id}|{run_id}|{category}|{layer or ''}|{vendor}".encode()
     ).hexdigest()
     return f"i:{digest[:16]}"
 
@@ -215,6 +222,7 @@ def run(
         by_confidence: dict[str, int] = defaultdict(int)
         by_park: dict[str, int] = defaultdict(int)
         by_undetectable: dict[str, int] = defaultdict(int)
+        by_layer: dict[str, int] = defaultdict(int)
         matched_hosts: set[str] = set()
         no_inference_domains: list[str] = []
         notes_sample: list[str] = []
@@ -262,6 +270,10 @@ def run(
                 by_confidence[draft.confidence] += 1
                 if draft.undetectable_reason:
                     by_undetectable[str(draft.undetectable_reason)] += 1
+                if draft.layer:
+                    by_layer[str(draft.layer)] += 1
+                    if draft.is_layer_primary is False:
+                        counters["layer_runner_up"] += 1
                 if draft.is_stale:
                     counters["stale_verification"] += 1
                 elif draft.stale_streak_months:
@@ -271,7 +283,11 @@ def run(
                 inferences.append(
                     Inference(
                         inference_id=inference_id(
-                            domain_id, run_id, draft.category, draft.vendor
+                            domain_id,
+                            run_id,
+                            draft.category,
+                            draft.vendor,
+                            draft.layer,
                         ),
                         domain_id=domain_id,
                         entity_id=entity_id,
@@ -288,6 +304,8 @@ def run(
                         fingerprint_version=rules.version,
                         note=" / ".join(notes) or None,
                         undetectable_reason=draft.undetectable_reason,
+                        layer=draft.layer,
+                        is_layer_primary=draft.is_layer_primary,
                         # パーク分類はドメイン単位の属性なので先頭行にだけ載せる。
                         # 全行に複製すると集計でドメインを二重に数える
                         park_class=parked.park_class if index == 0 else None,
@@ -316,6 +334,10 @@ def run(
             # **「検出できなかった」を1つに丸めない。** 理由が違えば
             # 読み方が違う（DESIGN-platform.md §5）
             by_undetectable_reason=dict(sorted(by_undetectable.items())),
+            # 実基盤 / 受信前段 / 送信前段（DESIGN-platform.md §1.2）。
+            # **代表でない行も入っている。** 数えるときは
+            # `is_layer_primary` で絞る
+            by_layer=dict(sorted(by_layer.items())),
             domains_with_no_inference=len(no_inference_domains),
             no_inference_rate=round(no_inference_rate, 4),
             # **辞書を育てる主要な経路。** ここを見て手で辞書に追記する
@@ -398,7 +420,9 @@ def run(
     return manifest.to_dict()
 
 
-def vendor_share(inferences_frame, category: str) -> list[dict[str, Any]]:
+def vendor_share(
+    inferences_frame, category: str, *, layer: str | None = None
+) -> list[dict[str, Any]]:
     """ベンダー別の件数。コンソールと P7 の下ごしらえ。
 
     **`undetectable_reason` が入っている行は数えない。** あの列は
@@ -408,6 +432,10 @@ def vendor_share(inferences_frame, category: str) -> list[dict[str, Any]]:
     Microsoft の仮 MX `*.msv1.invalid` のように、**ベンダーは分かるのに
     使っているとは言えない**痕跡があり、名前で弾く方式だとそれが
     「Microsoft を使っている」に化ける。理由の列で弾く。
+
+    **層の代表でない行も数えない。** 同じ層に2つ立ったとき両方数えると
+    合計が100%を超える（DESIGN-platform.md §6.2）。`layer` を渡すと
+    その層だけを数える。
     """
     counts: dict[str, int] = defaultdict(int)
     for _, row in inferences_frame.iterrows():
@@ -415,6 +443,10 @@ def vendor_share(inferences_frame, category: str) -> list[dict[str, Any]]:
             continue
         reason = row.get("undetectable_reason")
         if isinstance(reason, str) and reason:
+            continue
+        if row.get("is_layer_primary") is False:
+            continue
+        if layer is not None and str(row.get("layer") or "") != str(layer):
             continue
         vendor = str(row["vendor"])
         if vendor == NOT_DETECTED_VENDOR:

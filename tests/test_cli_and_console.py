@@ -458,6 +458,7 @@ def test_adding_a_rule_appends_to_the_dictionary(client, sandbox_configs):
             "pattern": r"\.nri-secure\.example\.?$",
             "region": "JP",
             "confidence": "high",
+            "layer": "inbound_gateway",
         },
     )
     assert resp.status_code == 200, resp.text
@@ -472,7 +473,36 @@ def test_adding_a_rule_appends_to_the_dictionary(client, sandbox_configs):
 
     data = yaml.safe_load(after)
     assert data["rules"][-1]["id"] == "nri-mx-01"
+    assert data["rules"][-1]["layer"] == "inbound_gateway"
     assert len(data["undetectable_by_dns"]) == 6
+
+
+def test_a_gateway_rule_without_a_layer_is_refused(client, sandbox_configs):
+    """**受信と送信のどちらかを書かせる。**
+
+    前段は1つではない（受信 Symantec ／ 送信 HENNGE の実例がある）。
+    既定を置くと書き忘れが黙って受信前段に化けるので、辞書の読み込みが
+    拒む。画面から足すときも**同じところで止まる**こと ── 追記された
+    まま壊れた辞書が残るのが一番まずい。
+    """
+    target = sandbox_configs / "configs" / "fingerprints" / "security_gw.yaml"
+    before = target.read_text(encoding="utf-8")
+
+    resp = client.post(
+        "/api/dict/rules",
+        json={
+            "file": "configs/fingerprints/security_gw.yaml",
+            "id": "nolayer-mx-01",
+            "vendor": "層を書き忘れた製品",
+            "record": "MX",
+            "pattern": r"\.nolayer\.example\.?$",
+            "confidence": "high",
+        },
+    )
+    assert resp.status_code == 400, resp.text
+    assert "layer" in resp.json()["detail"]
+    # **書きかけが残らないこと。** 壊れた辞書を置いていったら意味がない
+    assert target.read_text(encoding="utf-8") == before
 
 
 def test_adding_a_rule_rejects_a_broken_pattern(client, sandbox_configs):

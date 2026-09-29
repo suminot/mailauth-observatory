@@ -23,7 +23,12 @@ from ..contracts import (
     UndetectableReason,
 )
 from ..p5_parse.orgdomain import resolve_psl
-from .fingerprints import VERIFICATION_CATEGORY, Rule, RuleSet
+from .fingerprints import (
+    DEFAULT_LAYERS,
+    VERIFICATION_CATEGORY,
+    Rule,
+    RuleSet,
+)
 
 #: 所有権確認 TXT だけが根拠のとき、その製品が「現行のメール基盤」である
 #: 確証はない。何か月連続で裏付けが無ければ stale に降格するか（DESIGN.md P6）
@@ -147,6 +152,10 @@ class InferenceDraft:
     stale_streak_months: int | None = None
     notes: list[str] = field(default_factory=list)
     undetectable_reason: str | None = None
+    #: 経路のどこか（実基盤 / 受信前段 / 送信前段）
+    layer: str | None = None
+    #: その層の代表か。層を持たない推定では None
+    is_layer_primary: bool | None = None
 
     @property
     def rule_ids(self) -> list[str]:
@@ -312,19 +321,27 @@ def build_drafts(
     resolved = categories if categories is not None else vendor_categories(rule_set)
     streaks = prior_streaks or {}
 
-    grouped: dict[tuple[str, str], list[Hit]] = {}
+    # **層も鍵に入れる。** 「IIJ が受信前段」と「IIJ が送信前段」は
+    # 別の事実で、1行に潰すと受信と送信の違いが消える
+    grouped: dict[tuple[str, str | None, str], list[Hit]] = {}
     guessed: set[tuple[str, str]] = set()
     for hit in find_hits(fact, rule_set):
         category = hit.rule.category
+        layer = hit.rule.layer
         if category == VERIFICATION_CATEGORY:
             category = resolved.get(hit.rule.vendor)
             if category is None:
                 category = UNRESOLVED_VERIFICATION_CATEGORY
                 guessed.add((category, hit.rule.vendor))
-        grouped.setdefault((category, hit.rule.vendor), []).append(hit)
+            # 所有権確認 TXT の規則は層を持たない。解決したカテゴリの
+            # 既定に従う（gateway は既定を持たないので None のまま）
+            layer = DEFAULT_LAYERS.get(category)
+        grouped.setdefault((category, layer, hit.rule.vendor), []).append(hit)
 
     drafts: list[InferenceDraft] = []
-    for (category, vendor), hits in sorted(grouped.items()):
+    for (category, layer, vendor), hits in sorted(
+        grouped.items(), key=lambda kv: (kv[0][0], kv[0][1] or "", kv[0][2])
+    ):
         confidence, notes = combine_confidence(hits)
         if (category, vendor) in guessed:
             notes.append(
@@ -342,6 +359,7 @@ def build_drafts(
             hits=hits,
             notes=notes,
             undetectable_reason=_rule_undetectable_reason(hits),
+            layer=layer,
         )
         for hit in hits:
             if hit.rule.note:
@@ -350,7 +368,60 @@ def build_drafts(
         _apply_stale(draft, hits, fact, streaks.get((category, vendor), 0))
         drafts.append(draft)
 
+    mark_layer_primary(drafts)
     return drafts
+
+
+def mark_layer_primary(drafts: list[InferenceDraft]) -> None:
+    """層ごとに代表を1つ決める（DESIGN-platform.md §6.2）。
+
+    **同じ層に2つ立ったら、そのまま数えると合計が100%を超える。**
+    証拠の強い方を代表にする。
+
+    **落とした方は捨てない**（原則1）。`is_layer_primary=False` の行として
+    残し、なぜ代表でないのかを note に書く。消してしまうと、後から
+    「本当に2つあったのか、辞書が壊れていたのか」が分からなくなる。
+    """
+    by_layer: dict[str, list[InferenceDraft]] = {}
+    for draft in drafts:
+        if draft.layer:
+            by_layer.setdefault(str(draft.layer), []).append(draft)
+
+    for layer, group in by_layer.items():
+        best = max(group, key=_layer_rank)
+        for draft in group:
+            draft.is_layer_primary = draft is best
+            if draft is not best:
+                draft.notes.append(
+                    f"同じ層（{layer}）に {best.vendor} も立っていて、"
+                    f"そちらの方が証拠が強い。**数えるのはそちら**"
+                )
+            elif len(group) > 1:
+                others = "、".join(d.vendor for d in group if d is not best)
+                draft.notes.append(
+                    f"同じ層（{layer}）に {others} も立っている。"
+                    "証拠の強さでこちらを代表にした"
+                )
+
+
+def _layer_rank(draft: InferenceDraft) -> tuple:
+    """層の代表を決める順。証拠の強さ（§4）→ 確度 → 証拠の数。
+
+    **同点の決着はここでは付けない。** `drafts` は
+    (category, layer, vendor) で並べてあり、`max` は同点なら最初のものを
+    返すので、**同点ならベンダー名の昇順**で決まる ── 辞書を並べ替えても
+    答えは変わらない。
+
+    最初はここに名前を入れた比較を足したが、**上の並びで既に決まって
+    いるので効いていなかった**（消しても検査が通った）。効いていない
+    ものを「揺れ止め」と書いて残すと、次に読む人が守ろうとしてしまう。
+    """
+    strongest = max((h.priority for h in draft.hits), default=0)
+    return (
+        strongest,
+        _CONFIDENCE_ORDER.index(draft.confidence),
+        len(draft.hits),
+    )
 
 
 def _rule_undetectable_reason(hits: list[Hit]) -> str | None:
