@@ -10,13 +10,30 @@ name: 公開サイトのデプロイ
 # ここに来る dist には第1層しか入っていない。
 
 on:
-  # gold が更新されたときだけ。月次ワークフローのコミットが引き金になる
+  # gold が更新されたときだけ。**人の push はこちらで拾う。**
   push:
     branches: [main]
     paths:
       - "gold/**"
       - "site/**"
       - "src/mailauth/p8_publish/**"
+
+  # **月次ワークフローのコミットは、上の push を起こさない。**
+  #
+  # GitHub Actions は既定のトークンで作られた push では他のワークフローを
+  # 起動しない（無限ループ防止）。ここには長らく「月次ワークフローの
+  # コミットが引き金になる」と書いてあったが、**そうならない。**
+  #
+  # 2026-09-28、初めて gold がコミットされた日に実際に起きた ── その
+  # コミットに対する実行は0件で、手で起こすまで公開されなかった。
+  # **八工程が一度も最後まで通っていなかったので、誰も踏んでいなかった。**
+  #
+  # 工程の連鎖は workflow_run で受ける。名前で参照するので、月次側の
+  # `name:` を変えるとここが黙って効かなくなる（検査で捕まえている）。
+  workflow_run:
+    workflows: ["月次計測"]
+    types: [completed]
+
   workflow_dispatch:
 
 concurrency:
@@ -29,6 +46,12 @@ permissions:
 
 jobs:
   deploy:
+    # **失敗した月次実行の結果を公開しない。** workflow_run は成否に
+    # かかわらず飛んでくるので、成功したときだけ通す。他の引き金
+    # （人の push・手動）はそのまま通す
+    if: >-
+      github.event_name != 'workflow_run'
+      || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
