@@ -905,22 +905,37 @@ def test_the_coverage_ring_does_not_use_evaluative_colors():
     assert not used, f".coverage に意味色を使っている: {used}"
 
 
-def test_the_search_shortcut_label_matches_a_real_handler():
-    """**押しても何も起きないショートカットを表示しない。**
+def test_the_site_does_not_offer_a_search_that_cannot_find_anything():
+    """**検索は出さない**（運営者の判断、2026-09-29）。
 
-    Observable Framework は検索欄の脇に Mac 以外で `Alt-K` と出すが、
-    向こうの keydown は `e.metaKey && !e.altKey` という条件で、
-    **Alt を明示的に除外している。** 拾われるのは ⌘K（Mac）と `/` だけで、
-    表示どおりに Alt-K を押しても何も起きない。`chrome.js` で補っている。
+    索引に入るのはページの地の文だけである。人が探すもの ── ベンダー名・
+    企業名・数字 ── は実行時に JSON から描いているので、**一度も索引に
+    入らない。** 実測で `IIJ` も `Microsoft` も `HENNGE` も 0 件だった。
 
-    Framework を上げたときに向こうが直せば二重に効くが、
-    **どちらも同じ動作（検索欄に合わせる）なので実害は無い。**
-    逆にこちらを消すと、また何も起きないラベルに戻る。
+    しかも日本語版で打つと英語版のページが混ざって出ていた。一覧は言語で
+    絞っているのに、検索だけ素通りしていた。
+
+    ページは8つで左の一覧に常に全部出ている。**探す必要が無い。**
+    何も返ってこない入口は読み手の手を止めるだけで、#72 で意味の無い
+    チェックボックスを外したのと同じ理由で置かない。
+
+    以前は Alt-K のショートカットを補う処理を入れていた（Framework の
+    ハンドラが Alt を除外していて、表示どおりに押しても何も起きなかった）。
+    **検索ごと消したので、補う対象も無い。**
     """
+    import re as _re
+
+    config = (repo_root() / "site" / "observablehq.config.js").read_text(
+        encoding="utf-8"
+    )
+    assert _re.search(r"^\s*search:\s*false\s*,", config, _re.M), (
+        "検索を出さない設定になっていない"
+    )
+
     chrome = (repo_root() / "site" / "src" / "chrome.js").read_text(encoding="utf-8")
-    assert "altKey" in chrome, "Alt キーを見ていない"
-    assert "KeyK" in chrome, "K を見ていない"
-    assert "focus()" in chrome, "検索欄に合わせていない"
+    assert "fixSearchShortcut" not in chrome, (
+        "検索が無いのにショートカットを補う処理が残っている"
+    )
 
 
 def test_the_site_shows_one_navigation_not_two():
@@ -1158,25 +1173,6 @@ def test_the_bottom_controls_are_not_buried_under_the_search_overlay():
     assert blocks, ".chrome-controls の定義が見つからない"
     assert any("z-index" in b for b in blocks), (
         ".chrome-controls が検索結果枠より前に出ていない（検索中に押せなくなる）"
-    )
-
-
-def test_the_search_shortcut_label_is_one_that_works():
-    """iPhone で `⌘K` と表示されたうえ、押しても何も起きなかった。
-
-    Framework は `navigator.platform` が Mac / iPhone なら `⌘K` と出すが、
-    その keydown は `metaKey` しか見ない。**押せば動くものだけを表示する。**
-    """
-    import re as _re
-
-    chrome = (repo_root() / "site" / "src" / "chrome.js").read_text(encoding="utf-8")
-    assert 'setAttribute("data-shortcut", "Alt-K")' in chrome, (
-        "表示を Alt-K に揃えていない"
-    )
-    # **コメントは対象外。** なぜそうしたかの説明まで弾かない
-    code = _re.sub(r"//.*|/\*.*?\*/", "", chrome, flags=_re.S)
-    assert "navigator.platform" not in code, (
-        "環境で処理を分けている。表示と実装が食い違う元になる"
     )
 
 

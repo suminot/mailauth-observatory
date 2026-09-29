@@ -13,7 +13,7 @@
 //
 //   - 左下の切り替えが**指で押せる**（画面外・他の要素の下敷きでない）
 //   - 押すと配色が変わり、言語は対応するページに遷移する
-//   - Alt-K で検索欄に合う
+//   - 検索欄を出していない（索引に入らないものを探させない）
 //   - 横にはみ出していない
 //   - コンソールにエラーが出ていない
 //
@@ -314,14 +314,15 @@ async function main() {
     await wide.goto(`${base}/sample`, { waitUntil: "networkidle" });
     await wide.waitForTimeout(600);
 
-    // Alt-K で検索欄に合う（Framework の作法。**塞いでいないこと**の確認）
-    await wide.keyboard.press("Alt+k");
-    await wide.waitForTimeout(200);
-    const focused = await wide.evaluate(() => {
-      const el = document.activeElement;
-      return { tag: el?.tagName, type: el?.getAttribute?.("type") };
-    });
-    check("Alt-K で検索欄に合う", focused.tag === "INPUT", `いまの焦点: ${focused.tag}`);
+    // -- 検索を出さない -----------------------------------------------------
+    // **索引に入るのはページの地の文だけ。** 人が探すもの（ベンダー名・
+    // 企業名・数字）は実行時に JSON から描いているので一度も入らない。
+    // 実測で `IIJ` も `Microsoft` も 0 件だった。日本語版に英語版のページが
+    // 混ざって出てもいた。**何も返ってこない入口は置かない**（#72 と同じ）
+    const searchBox = await wide.evaluate(
+      () => document.querySelectorAll("#observablehq-search").length
+    );
+    check("検索欄を出していない", searchBox === 0, `${searchBox} 個ある`);
 
     // 表に押せるだけで何も起きないものを置かない。
     // **`Inputs.table` は既定で選択用のチェックボックスを出す。** 選択を
