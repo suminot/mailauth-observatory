@@ -10,7 +10,7 @@
 「どの列があるか」「日付がどう入るか」は本物と同じでなければ、
 サンプルページで動いたものが本番で動かない（逆も起きる）。
 
-そこで契約の型（`StatsOverall` / `StatsBySector`）から組み立て、
+そこで契約の型（`StatsOverall` / `StatsBySector` / `StatsPlatform`）から組み立て、
 **P8 自身の書き出し関数**に渡す。列の増減も日付の形も、本番と同じ経路を通る。
 
 ## 使い方
@@ -32,7 +32,11 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "src"))
 
 from mailauth.config import load_yaml  # noqa: E402
-from mailauth.contracts import StatsBySector, StatsOverall  # noqa: E402
+from mailauth.contracts import (  # noqa: E402
+    StatsBySector,
+    StatsOverall,
+    StatsPlatform,
+)
 from mailauth.p8_publish.runner import _write_site_data, attribution_for  # noqa: E402
 
 OUT = REPO / "site" / "src" / "sample"
@@ -199,6 +203,62 @@ def _sectors(month: str, i: int) -> list[StatsBySector]:
     return out
 
 
+#: サンプルの基盤。**実測ではない。** 層が3つあることと、受信と送信で
+#: 別ベンダーが立ちうることが画面で分かればよい
+PLATFORMS = [
+    # (層, ベンダー, 企業数, ドメイン数, うち受信が向いている企業数, OEM元)
+    ("platform", "Microsoft", 612, 918, 612, None),
+    ("platform", "Google", 288, 402, 288, None),
+    ("platform", "NTTコミュニケーションズ", 96, 121, 96, None),
+    ("platform", "大塚商会", 51, 60, 51, None),
+    ("platform", "その他（秘匿）", 44, 52, 44, None),
+    ("inbound_gateway", "Proofpoint", 121, 168, 121, None),
+    ("inbound_gateway", "IIJ", 88, 110, 88, None),
+    ("inbound_gateway", "Trellix", 52, 66, 52, None),
+    ("inbound_gateway", "クオリティア", 31, 38, 31, "Active! gate SS"),
+    ("inbound_gateway", "その他（秘匿）", 27, 31, 27, None),
+    # **送信の前段は MX を握らないので、受信は 0 になる。**
+    # ここが 0 でも「使っていない」ではない
+    ("outbound_gateway", "HENNGE", 34, 41, 0, None),
+    ("outbound_gateway", "クオリティア", 22, 27, 0, "Active! gate SS"),
+    ("outbound_gateway", "SBテクノロジー", 9, 11, 0, "Active! gate SS"),
+    ("outbound_gateway", "その他（秘匿）", 12, 14, 0, None),
+]
+
+
+def _platforms(month: str, i: int) -> list[StatsPlatform]:
+    """基盤・前段。月ごとに少しだけ動かす。"""
+    observed_domains = 2_284 + i * 18
+    observed_entities = 1_902 + i * 11
+    by_layer_d: dict[str, int] = {}
+    by_layer_e: dict[str, int] = {}
+    for layer, _v, ent, dom, _rx, _eng in PLATFORMS:
+        by_layer_d[layer] = by_layer_d.get(layer, 0) + dom
+        by_layer_e[layer] = by_layer_e.get(layer, 0) + ent
+
+    out: list[StatsPlatform] = []
+    for layer, vendor, ent, dom, rx, engine in PLATFORMS:
+        out.append(
+            StatsPlatform(
+                measured_month=dt.date.fromisoformat(f"{month}-01"),
+                population_id="jp-all-listed",
+                layer=layer,
+                vendor=vendor,
+                engine=engine,
+                entities_any=ent + i,
+                domains_any=dom + i,
+                entities_receiving=rx + (i if rx else 0),
+                domains_receiving=rx + (i if rx else 0),
+                observed_domains=observed_domains,
+                identified_domains=by_layer_d[layer],
+                observed_entities=observed_entities,
+                identified_entities=by_layer_e[layer],
+                suppressed=vendor == "その他（秘匿）",
+            )
+        )
+    return out
+
+
 def main() -> int:
     overall = [_overall(m, i).model_dump(mode="json") for i, m in enumerate(MONTHS)]
     sectors = [
@@ -210,10 +270,17 @@ def main() -> int:
     # サンプルに同じものを置くと取り違えのもとになる
     cfg = {**cfg, "tier1": {**(cfg.get("tier1") or {}), "formats": ["json"]}}
 
+    platforms = [
+        p.model_dump(mode="json")
+        for i, m in enumerate(MONTHS)
+        for p in _platforms(m, i)
+    ]
+
     written = _write_site_data(
         OUT,
         overall=overall,
         sectors=sectors,
+        platforms=platforms,
         months=list(MONTHS),
         cfg=cfg,
         attribution=attribution_for({"jp-all-listed"}, cfg),

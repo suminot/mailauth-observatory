@@ -21,6 +21,8 @@ from ..contracts import (
     STATS_BY_SECTOR_SORT_KEYS,
     STATS_OVERALL_ARROW_SCHEMA,
     STATS_OVERALL_SORT_KEYS,
+    STATS_PLATFORM_ARROW_SCHEMA,
+    STATS_PLATFORM_SORT_KEYS,
     SUPPRESSED_SECTOR_CODE,
     SUPPRESSED_SECTOR_LABEL,
     EntityStatus,
@@ -31,12 +33,14 @@ from ..io import read_parquet, write_parquet
 from ..manifest import RunManifest
 from ..paths import gold_dir, month_date, phase_dir, phase_output, previous_run_id
 from . import delta as delta_mod
+from . import platform as platform_mod
 from . import suppress
 from .metrics import DomainRow, aggregate, park_classes
 
 PHASE = "p7_aggregate"
 OVERALL_FILENAME = "stats_overall.parquet"
 BY_SECTOR_FILENAME = "stats_by_sector.parquet"
+PLATFORM_FILENAME = "stats_platform.parquet"
 AGGREGATOR_VERSION = "1.0.0"
 
 #: 現況の分母に入れる企業の状態。delisted（上場廃止）は入れない
@@ -247,6 +251,7 @@ def run(
 
         overall_rows = []
         sector_rows: list[StatsBySector] = []
+        platform_rows = []
         suppressed_total = 0
         deltas: dict[str, dict] = {}
 
@@ -281,6 +286,19 @@ def run(
             deltas[population_id] = json.loads(d.to_json())
             overall_rows.append(stats)
 
+            # **メール基盤・前段。** 分母は上の集計と同じものを渡す
+            platform_rows.extend(
+                platform_mod.aggregate_platform(
+                    inferences,
+                    measured_month=month,
+                    population_id=population_id,
+                    members=members,
+                    observed_domains=stats.observed_domains,
+                    observed_entities=stats.entities_with_domains,
+                    threshold=cell_threshold,
+                )
+            )
+
             sector_rows.extend(
                 _sectors(
                     population_id=population_id,
@@ -299,6 +317,8 @@ def run(
             populations=sorted(population_entities),
             overall_rows=len(overall_rows),
             sector_rows=len(sector_rows),
+            platform_rows=len(platform_rows),
+            **platform_mod.summary(platform_rows),
             suppressed_sectors=suppressed_total,
             min_cell_size=cell_threshold,
             delta_prev_month=deltas,
@@ -354,9 +374,22 @@ def run(
                 sort_keys=STATS_BY_SECTOR_SORT_KEYS,
                 metadata=meta,
             )
+            n3 = write_parquet(
+                _merge_other_populations(
+                    _rows_for_write(platform_rows),
+                    target / PLATFORM_FILENAME,
+                    manifest,
+                    what="stats_platform",
+                ),
+                target / PLATFORM_FILENAME,
+                STATS_PLATFORM_ARROW_SCHEMA,
+                sort_keys=STATS_PLATFORM_SORT_KEYS,
+                metadata=meta,
+            )
             # gold は out_dir の外（リポジトリ直下の gold/）に置くので絶対パスで記録する
             manifest.add_output(str(target / OVERALL_FILENAME), records=n1)
             manifest.add_output(str(target / BY_SECTOR_FILENAME), records=n2)
+            manifest.add_output(str(target / PLATFORM_FILENAME), records=n3)
 
     return manifest.to_dict()
 

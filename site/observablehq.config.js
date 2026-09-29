@@ -48,6 +48,7 @@ export default {
     // 一覧に項目として置く
     { name: "ダッシュボード", path: "/" },
     { name: "業種別", path: "/sectors" },
+    { name: "メール基盤", path: "/platforms" },
     { name: "方法論", path: "/methodology" },
     { name: "データ", path: "/data" },
     { name: "免責事項・利用規約", path: "/terms" },
@@ -57,6 +58,7 @@ export default {
     { name: "サンプル", path: "/sample" },
     { name: "Dashboard", path: "/en/" },
     { name: "By sector", path: "/en/sectors" },
+    { name: "Mail platforms", path: "/en/platforms" },
     { name: "Methodology", path: "/en/methodology" },
     { name: "Data", path: "/en/data" },
     { name: "Terms and disclaimer", path: "/en/terms" },

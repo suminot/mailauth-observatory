@@ -24,7 +24,7 @@ from .. import access, corrections, exclusions
 from ..config import load_yaml
 from ..io import read_parquet
 from ..manifest import RunManifest
-from ..p7_aggregate import BY_SECTOR_FILENAME, OVERALL_FILENAME
+from ..p7_aggregate import BY_SECTOR_FILENAME, OVERALL_FILENAME, PLATFORM_FILENAME
 from ..paths import config_path, gold_dir, gold_root, phase_dir
 from . import tiers, vocabulary
 
@@ -109,10 +109,15 @@ def attribution_for(populations: set[str], cfg: dict) -> list[str]:
     return out
 
 
-def collect_months(months: list[str]) -> tuple[list[dict], list[dict]]:
-    """全月分の gold を縦に積む。時系列グラフの元になる。"""
+def collect_months(months: list[str]) -> tuple[list[dict], list[dict], list[dict]]:
+    """全月分の gold を縦に積む。時系列グラフの元になる。
+
+    **基盤の表は途中の月から増えた。** 無い月は無いまま返す ──
+    空を 0 と読ませない（原則5）。
+    """
     overall: list[dict] = []
     sectors: list[dict] = []
+    platforms: list[dict] = []
     for month in months:
         o = read_parquet(gold_dir(month) / OVERALL_FILENAME)
         if o is not None:
@@ -120,7 +125,10 @@ def collect_months(months: list[str]) -> tuple[list[dict], list[dict]]:
         s = read_parquet(gold_dir(month) / BY_SECTOR_FILENAME)
         if s is not None:
             sectors.extend(frame_to_records(s))
-    return overall, sectors
+        p = read_parquet(gold_dir(month) / PLATFORM_FILENAME)
+        if p is not None:
+            platforms.extend(frame_to_records(p))
+    return overall, sectors, platforms
 
 
 def lint_pages(site_dir: Path) -> tuple[list[str], list[str]]:
@@ -187,11 +195,15 @@ def run(
                 ),
             )
 
-        overall, sectors = collect_months(months)
-        manifest.counts.input = len(overall) + len(sectors)
+        overall, sectors, platforms = collect_months(months)
+        manifest.counts.input = len(overall) + len(sectors) + len(platforms)
 
         # -- 門1: 第1層に個社特定情報が混ざっていないか ----------------------
-        for name, records in (("stats_overall", overall), ("stats_by_sector", sectors)):
+        for name, records in (
+            ("stats_overall", overall),
+            ("stats_by_sector", sectors),
+            ("stats_platform", platforms),
+        ):
             if not records:
                 continue
             bad = tiers.tier1_violations(list(records[0]))
@@ -345,6 +357,7 @@ def run(
                 data_dir,
                 overall=overall,
                 sectors=sectors,
+                platforms=platforms,
                 months=months,
                 cfg=cfg,
                 attribution=manifest.attribution,
@@ -400,6 +413,7 @@ def _write_site_data(
     *,
     overall: list[dict],
     sectors: list[dict],
+    platforms: list[dict],
     months: list[str],
     cfg: dict,
     attribution: list[str],
@@ -414,13 +428,21 @@ def _write_site_data(
     written: list[tuple[Path, int]] = []
 
     if "json" in formats:
-        for name, records in (("stats_overall", overall), ("stats_by_sector", sectors)):
+        for name, records in (
+            ("stats_overall", overall),
+            ("stats_by_sector", sectors),
+            ("stats_platform", platforms),
+        ):
             path = data_dir / f"{name}.json"
             _write_json(path, records)
             written.append((path, len(records)))
 
     if "csv" in formats:
-        for name, records in (("stats_overall", overall), ("stats_by_sector", sectors)):
+        for name, records in (
+            ("stats_overall", overall),
+            ("stats_by_sector", sectors),
+            ("stats_platform", platforms),
+        ):
             path = data_dir / f"{name}.csv"
             _write_csv(path, records)
             written.append((path, len(records)))
