@@ -360,6 +360,29 @@ jobs:
           mailauth run-report --run "${{ steps.run.outputs.id }}" \
             --out "runs/${{ steps.run.outputs.id }}.md"
 
+      # 第2層（個社名付き明細）を、**公開しない形で**出す。
+      #
+      # `p8-publish` の第2層は事前通知から最低30日とアクセス制御が揃う
+      # まで出せない。こちらは公開経路ではなく、**成果物として GitHub の
+      # 認証の内側に置く** ── リポジトリの権限を持つ人しか取れない。
+      #
+      # `site/` と `gold/` には書かない（コード側が拒む）。**公開サイトには
+      # 一切出ない。**
+      - name: 個社別明細を作る（社外秘）
+        if: always()
+        continue-on-error: true
+        run: mailauth drilldown --run "${{ steps.run.outputs.id }}"
+
+      - name: 個社別明細を成果物にする（社外秘）
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: tier2-drilldown-${{ steps.run.outputs.id }}
+          path: data/runs/${{ steps.run.outputs.id }}/tier2-drilldown.html
+          if-no-files-found: warn
+          retention-days: 30
+
       # **公開しない実行でも、数字が読めること。**
       #
       # 2026-09-25 に「全件だが公開しない」形で2回回したが、**どちらも数字が

@@ -1048,3 +1048,41 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+@app.command("drilldown")
+def drilldown_cmd(
+    run: RunOption = "",
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", help="書き出し先。既定は data/runs/<run_id>/tier2-drilldown.html"),
+    ] = None,
+) -> None:
+    """第2層（個社名付き明細）を1枚の HTML に出す。**公開経路ではない。**
+
+    `p8-publish` の第2層は、事前通知から最低30日の訂正期間と**アクセス
+    制御**が揃うまで出せない。ここはその公開経路とは別で、**運営者が
+    手元で見るため**のものである。
+
+    書き出し先は Actions の成果物か手元のファイルに限る。成果物は
+    GitHub の認証の内側にあり、リポジトリの権限を持つ人しか取れない。
+    **`site/` と `gold/` に書こうとしたら拒む** ── あの2つは公開経路
+    そのもので、置いた瞬間にアクセス制御の内側ではなくなる。
+    """
+    from .drilldown import PublicPathRefused, write_report
+    from .paths import run_dir
+
+    run_id = validate_run_id(run or default_run_id())
+    target = out or (run_dir(run_id) / "tier2-drilldown.html")
+    try:
+        path, n = write_report(run_id, target)
+    except PublicPathRefused as e:
+        typer.secho(f"書き出しを拒んだ: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(2) from e
+    except FileNotFoundError as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from e
+    typer.echo(f"→ {path}（{n} 行）")
+    typer.secho(
+        "  ⚠ 第2層（個社名付き明細）。社外に出さないこと", fg=typer.colors.YELLOW
+    )
