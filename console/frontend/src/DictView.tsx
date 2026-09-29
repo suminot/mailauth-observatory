@@ -17,6 +17,14 @@ import {
 
 const CONFIDENCE = ["high", "medium", "low"];
 
+/** 経路のどこにいるか。**前段は1つではない**（受信と送信で別ベンダーになる）。 */
+const LAYERS = [
+  { value: "", label: "（辞書の既定）" },
+  { value: "inbound_gateway", label: "受信の前段（MX を握る）" },
+  { value: "outbound_gateway", label: "送信の前段（MX を握らない）" },
+  { value: "platform", label: "実基盤" },
+];
+
 interface Draft {
   host: UnknownHost;
   file: string;
@@ -27,6 +35,7 @@ interface Draft {
   pattern: string;
   region: string;
   confidence: string;
+  layer: string;
   note: string;
 }
 
@@ -95,6 +104,9 @@ export function DictView({ runId }: { runId: string | null }) {
       pattern: suggestPattern(host.registered_domain),
       region: "JP",
       confidence: "high",
+      // 前段の辞書が既定なので、受信前段を初期値にする。
+      // **書き忘れると辞書の読み込みが拒む**ので空にはしない
+      layer: "inbound_gateway",
       note: `実測から発見（${host.examples[0] ?? host.registered_domain}、${host.count}件）`,
     });
   }
@@ -112,6 +124,7 @@ export function DictView({ runId }: { runId: string | null }) {
         product: draft.product || null,
         confidence: draft.confidence,
         region: draft.region || null,
+        layer: draft.layer || null,
         note: draft.note || null,
       });
       setDraft(null);
@@ -270,6 +283,19 @@ export function DictView({ runId }: { runId: string | null }) {
                 {CONFIDENCE.map((c) => (
                   <option key={c} value={c}>
                     {c}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              層
+              <select
+                value={draft.layer}
+                onChange={(e) => setDraft({ ...draft, layer: e.target.value })}
+              >
+                {LAYERS.map((l) => (
+                  <option key={l.value} value={l.value}>
+                    {l.label}
                   </option>
                 ))}
               </select>

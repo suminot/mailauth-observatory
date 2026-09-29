@@ -16,6 +16,7 @@ from mailauth.contracts import (
     FACT_ARROW_SCHEMA,
     ConfidenceLevel,
     InferenceCategory,
+    InferenceLayer,
     ParkClass,
     UndetectableReason,
 )
@@ -911,3 +912,171 @@ def test_an_unknown_undetectable_reason_is_refused(tmp_path):
     )
     with pytest.raises(FingerprintError, match="undetectable_reason"):
         load_file(path)
+
+
+# ===========================================================================
+# 層 ── 実基盤 / 受信前段 / 送信前段（DESIGN-platform.md §1.2、§6.2）
+#
+# **「前段」は1つではない。** 国内の実測で、受信と送信で別ベンダーを
+# 使っている企業が見つかった（受信 Symantec ／ 送信 HENNGE）。
+# ===========================================================================
+
+
+def test_inbound_and_outbound_are_separate_rows(rules):
+    """受信と送信で別ベンダーのとき、**層ごとに1行ずつ立つ。**"""
+    drafts = build_drafts(
+        _fact(
+            mx_hosts=["cluster1.us.messagelabs.com"],
+            mx_present=True,
+            spf_includes=["spf.mta.hdems.com"],
+            spf_present=True,
+        ),
+        rules,
+    )
+    by_layer = {d.layer: d.vendor for d in drafts if d.layer}
+    assert by_layer[InferenceLayer.INBOUND_GATEWAY] == "Broadcom"
+    assert by_layer[InferenceLayer.OUTBOUND_GATEWAY] == "HENNGE"
+    # **どちらも代表。** 層が違うので競合しない
+    assert all(d.is_layer_primary for d in drafts if d.layer)
+
+
+def test_one_vendor_can_hold_two_layers(rules):
+    """IIJ は MX を握り（受信）、署名もする（送信）。**1行に潰さない。**"""
+    drafts = build_drafts(
+        _fact(
+            mx_hosts=["a.securemx.jp"],
+            mx_present=True,
+            dkim_cname_targets=["selector._domainkey.dkg.dox.jp"],
+        ),
+        rules,
+    )
+    iij = {d.layer for d in drafts if d.vendor == "IIJ"}
+    assert iij == {InferenceLayer.INBOUND_GATEWAY, InferenceLayer.OUTBOUND_GATEWAY}
+
+
+def test_the_platform_layer_is_the_default_for_platforms(rules):
+    """実基盤の規則に層を書かせない。**書かせると必ず書き忘れる。**"""
+    drafts = build_drafts(
+        _fact(mx_hosts=["example-co-jp.mail.protection.outlook.com"], mx_present=True),
+        rules,
+    )
+    ms = next(d for d in drafts if d.vendor == "Microsoft")
+    assert ms.layer == InferenceLayer.PLATFORM
+
+
+def test_a_gateway_rule_must_declare_its_layer(tmp_path):
+    """**前段には既定を置かない。**
+
+    受信と送信のどちらを握るかは製品ごとに違う。既定を置くと書き忘れが
+    黙って受信前段に化ける ── 実際 HENNGE でそれが起きた（MX を握ると
+    思い込んで辞書を書き、送信側の痕跡を34件取りこぼしていた）。
+    """
+    path = tmp_path / "gw.yaml"
+    path.write_text(
+        "version: t\ncategory: security_gateway\nrules:\n"
+        "  - id: x-01\n    vendor: V\n"
+        "    match:\n      record: MX\n      pattern: 'x'\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(FingerprintError, match="layer"):
+        load_file(path)
+
+
+def test_two_vendors_in_one_layer_pick_one_and_keep_the_other(rules):
+    """**同じ層に2つ立ったら、そのまま数えると合計が100%を超える。**
+
+    証拠の強い方を代表にする。**落とした方は捨てない**（原則1）──
+    消すと後から「本当に2つあったのか、辞書が壊れていたのか」が
+    分からなくなる。
+    """
+    drafts = build_drafts(
+        _fact(
+            # MX は Mimecast（強い証拠）、SPF は m-FILTER … ではなく
+            # 同じ受信層に立つ2つを作るため、MX を2つ持たせる
+            mx_hosts=["a.mimecast.com", "b.iphmx.com"],
+            mx_present=True,
+        ),
+        rules,
+    )
+    inbound = [d for d in drafts if d.layer == InferenceLayer.INBOUND_GATEWAY]
+    assert len(inbound) == 2, [d.vendor for d in inbound]
+    assert sum(1 for d in inbound if d.is_layer_primary) == 1
+    loser = next(d for d in inbound if not d.is_layer_primary)
+    assert "数えるのはそちら" in " / ".join(loser.notes)
+
+
+def test_the_layer_representative_does_not_depend_on_dictionary_order(rules):
+    """**同点で代表が入れ替わると、差分が嘘をつく。**
+
+    証拠の強さも確度も同じなら、名前で決める（決定的）。
+
+    ここに辿り着くまでに2回外した。**同じ入力で繰り返しても意味がない**
+    （`max` は入力順が同じなら同じ答えを返す）。**MX の並び順を変えても
+    意味がない**（照合は辞書の順に回るので、fact の並びは効かない）。
+    効くのは**辞書の並び順**で、規則を並べ替えただけで数える相手が
+    変わってはならない。
+    """
+    from dataclasses import replace
+
+    def pick(rule_set):
+        drafts = build_drafts(
+            _fact(mx_hosts=["a.mimecast.com", "b.iphmx.com"], mx_present=True),
+            rule_set,
+        )
+        return next(
+            d.vendor
+            for d in drafts
+            if d.layer == InferenceLayer.INBOUND_GATEWAY and d.is_layer_primary
+        )
+
+    reversed_rules = replace(RuleSet(), rules=list(reversed(rules.rules)))
+    reversed_rules.undetectable = rules.undetectable
+    assert pick(rules) == pick(reversed_rules)
+
+
+def test_only_the_representative_is_counted(rules):
+    """層の代表でない行を数えると、合計が100%を超える。"""
+    import pandas as pd
+
+    frame = pd.DataFrame(
+        [
+            {
+                "category": InferenceCategory.SECURITY_GATEWAY,
+                "vendor": "Mimecast",
+                "undetectable_reason": None,
+                "layer": InferenceLayer.INBOUND_GATEWAY,
+                "is_layer_primary": True,
+            },
+            {
+                "category": InferenceCategory.SECURITY_GATEWAY,
+                "vendor": "Cisco",
+                "undetectable_reason": None,
+                "layer": InferenceLayer.INBOUND_GATEWAY,
+                "is_layer_primary": False,
+            },
+            {
+                "category": InferenceCategory.SECURITY_GATEWAY,
+                "vendor": "HENNGE",
+                "undetectable_reason": None,
+                "layer": InferenceLayer.OUTBOUND_GATEWAY,
+                "is_layer_primary": True,
+            },
+        ]
+    )
+    assert vendor_share(frame, InferenceCategory.SECURITY_GATEWAY) == [
+        {"vendor": "HENNGE", "count": 1},
+        {"vendor": "Mimecast", "count": 1},
+    ]
+    # 層で絞れること。**受信と送信を1つの表に混ぜない**
+    assert vendor_share(
+        frame, InferenceCategory.SECURITY_GATEWAY, layer=InferenceLayer.OUTBOUND_GATEWAY
+    ) == [{"vendor": "HENNGE", "count": 1}]
+
+
+def test_the_id_keeps_the_two_layers_apart(rules):
+    """1ベンダーが2層に立つとき、**id が同じだと片方が消える。**"""
+    from mailauth.p6_infer.runner import inference_id
+
+    a = inference_id("d:1", RUN, InferenceCategory.SECURITY_GATEWAY, "IIJ", "inbound_gateway")
+    b = inference_id("d:1", RUN, InferenceCategory.SECURITY_GATEWAY, "IIJ", "outbound_gateway")
+    assert a != b

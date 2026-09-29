@@ -318,6 +318,8 @@ export interface NewRule {
   confidence?: string;
   region?: string | null;
   note?: string | null;
+  /** 経路のどこにいるか。**前段の規則には必須。** 無いと辞書の読み込みが拒む */
+  layer?: string | null;
 }
 
 async function get<T>(path: string): Promise<T> {

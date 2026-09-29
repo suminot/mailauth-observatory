@@ -122,6 +122,26 @@ class ConfidenceLevel(StrEnum):
     LOW = "low"
 
 
+class InferenceLayer(StrEnum):
+    """メールの経路のどこにいるか（DESIGN-platform.md §1.2）。
+
+    **「前段」は1つではない。** 国内の実測で、受信と送信で別ベンダーを
+    使っている企業が見つかった（受信 Symantec ／ 送信 HENNGE）。
+    `security_gateway` という1つのカテゴリに混ぜると、この実態が消える。
+
+      実基盤      メールボックスがある場所
+      受信の前段  MX を握る
+      送信の前段  MX を握らない。送信だけ通す（誤送信対策など）
+
+    **同じ層に2つ立ったら、合計が100%を超える。** 層ごとに代表を1つ選び
+    （`is_layer_primary`）、選ばれなかった行も**捨てずに残す**（原則1）。
+    """
+
+    PLATFORM = "platform"
+    INBOUND_GATEWAY = "inbound_gateway"
+    OUTBOUND_GATEWAY = "outbound_gateway"
+
+
 class UndetectableReason(StrEnum):
     """**「検出できなかった」の理由。**
 
@@ -662,6 +682,14 @@ class Inference(_Model):
     #: ではないことを明示する（DESIGN.md P6）。
     undetectable_reason: str | None = None
 
+    #: 経路のどこにいるか（`InferenceLayer`）。実基盤 / 受信前段 / 送信前段。
+    #: esp と dmarc_vendor は経路の話ではないので None
+    layer: str | None = None
+    #: **その層の代表か。** 同じ層に複数立ったとき、証拠の強い方に True が
+    #: 付く。数えるときはこれが True の行だけを数える（合計が100%を超えない）。
+    #: 選ばれなかった行も**捨てない**（原則1）。層を持たない行は None
+    is_layer_primary: bool | None = None
+
 
 INFERENCE_ARROW_SCHEMA = pa.schema(
     [
@@ -684,13 +712,18 @@ INFERENCE_ARROW_SCHEMA = pa.schema(
         ("park_has_null_mx", pa.bool_()),
         ("park_has_wildcard_dkim_revoked", pa.bool_()),
         ("undetectable_reason", pa.string()),
+        ("layer", pa.string()),
+        ("is_layer_primary", pa.bool_()),
     ]
 )
 
 #: rule_ids は list 列なのでソートキーにできない。
-#: (domain_id, category, vendor) が主キー相当で、inference_id はその
-#: ハッシュなので最後の同値解消に足りる
-INFERENCE_SORT_KEYS = ["domain_id", "category", "vendor", "inference_id"]
+#: (domain_id, category, layer, vendor) が主キー相当で、inference_id はその
+#: ハッシュなので最後の同値解消に足りる。
+#:
+#: **layer が鍵に入る。** 「IIJ が受信前段」と「IIJ が送信前段」は
+#: 別の事実で、1行に潰すと受信と送信の違いが消える
+INFERENCE_SORT_KEYS = ["domain_id", "category", "layer", "vendor", "inference_id"]
 
 
 # --------------------------------------------------------------------------
