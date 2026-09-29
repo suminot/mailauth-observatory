@@ -291,3 +291,81 @@ def test_the_record_is_not_inside_the_fingerprint_dictionary_directory():
     assert not any("unidentified" in name for name in loaded), (
         f"規則でないファイルが辞書として読まれている: {sorted(loaded)}"
     )
+
+
+# ===========================================================================
+# 未知 MX の一覧は切ってよいが、切った分の件数は失わない
+#
+# 2026-09 の国内計測で上限20件にぶつかり、**一覧に載った20件だけで628
+# ドメイン、その先がどれだけあるかが分からない**状態になった。辞書を
+# 厚くする作業の土台が、上限で切られた一覧になっていた。
+
+
+def _facts(n_hosts: int, per_host: int = 1) -> list[dict]:
+    return [
+        {"mx_hosts": [f"mx{i}.vendor{i}.example"]}
+        for i in range(n_hosts)
+        for _ in range(per_host)
+    ]
+
+
+def test_切り捨てた分の件数が残る():
+    """**一覧は切ってよいが、全体量は切らない**（原則4）。"""
+    from mailauth.p6_infer.runner import UNKNOWN_MX_TOP_N, unknown_mx_hosts, unknown_mx_total
+
+    facts = _facts(UNKNOWN_MX_TOP_N + 7)
+    listed = unknown_mx_hosts(facts, set())
+    total = unknown_mx_total(facts, set())
+
+    assert len(listed) == UNKNOWN_MX_TOP_N, "一覧は上限で切れていること"
+    assert total["distinct_registered_domains"] == UNKNOWN_MX_TOP_N + 7
+    assert total["omitted_registered_domains"] == 7, "切り捨てた種類数が残っていない"
+    assert total["domains"] == UNKNOWN_MX_TOP_N + 7
+    # **足すと全体に戻ること**
+    assert total["listed"] + total["omitted_registered_domains"] == (
+        total["distinct_registered_domains"]
+    )
+
+
+def test_全部載っているときはそう言う():
+    """**「まだ先がある」と誤読させない。**"""
+    from mailauth.p6_infer.runner import unknown_mx_total
+
+    total = unknown_mx_total(_facts(3), set())
+    assert total["omitted_registered_domains"] == 0
+    assert total["omitted_domains"] == 0
+
+
+def test_上限の数を二か所に書かない():
+    """**P6 側を上げたときに worklist 側が古いまま残る。**"""
+    from mailauth import worklist
+    from mailauth.p6_infer.runner import UNKNOWN_MX_TOP_N
+
+    assert worklist.TOP_N == UNKNOWN_MX_TOP_N
+
+
+def test_切り捨てを一覧の長さから推し量らない(monkeypatch, tmp_path):
+    """**上限ちょうどで終わったのか、まだ先があるのかは長さでは分からない。**"""
+    import json
+
+    from mailauth import worklist
+    from mailauth.p6_infer.runner import UNKNOWN_MX_TOP_N
+
+    monkeypatch.setenv("MAILAUTH_DATA_ROOT", str(tmp_path / "data"))
+    d = tmp_path / "data" / "runs" / "2026-09" / "p6_infer"
+    d.mkdir(parents=True)
+    hosts = [{"registered_domain": f"v{i}.example", "count": 1} for i in range(UNKNOWN_MX_TOP_N)]
+    (d / "_manifest.json").write_text(
+        json.dumps(
+            {
+                "breakdown": {
+                    "unknown_mx_hosts": hosts,
+                    # ちょうど上限だが、**先は無い**
+                    "unknown_mx_total": {"omitted_registered_domains": 0},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    _, truncated = worklist._unknown_from("2026-09")
+    assert truncated is False, "長さで推し量って「まだ先がある」と言っている"

@@ -38,14 +38,16 @@ from typing import Any
 import yaml
 
 from .manifest import read_manifest
+from .p6_infer import runner as _p6
 from .paths import config_path, list_run_ids, phase_dir
 
 #: 調査済み・同定不能の記録。**未着手と混ぜない**
 UNIDENTIFIED_PATH = "configs/worklist/unidentified_hosts.yaml"
 
-#: P6 が未知ホストを何件まで出すか（`p6_infer.runner.UNKNOWN_MX_TOP_N`）。
-#: 一覧が上限に達していたら、そこに無いことは同定の証拠にならない
-TOP_N = 20
+#: P6 が未知ホストを何件まで出すか。**P6 から取る**（`_p6.UNKNOWN_MX_TOP_N`）。
+#: ここに `20` と書き写してあったが、P6 側を 100 に上げたときに片方だけ
+#: 古いままになる。**同じ数を2か所に書かない。**
+TOP_N = _p6.UNKNOWN_MX_TOP_N
 
 #: 同定できなかった理由。**「分からない」を分類しておく。**
 #: 自社運用と情報が無いのは別の話で、前者は今後も同定できない
@@ -201,9 +203,16 @@ def _unknown_from(run_id: str) -> tuple[list[dict], bool]:
     manifest = read_manifest(phase_dir(run_id, "p6_infer"))
     if manifest is None:
         return [], False
-    hosts = (manifest.get("breakdown") or {}).get("unknown_mx_hosts") or []
+    breakdown = manifest.get("breakdown") or {}
+    hosts = breakdown.get("unknown_mx_hosts") or []
     if not isinstance(hosts, list):
         return [], False
+    # **切り捨てたかどうかは、長さから推し量らずに P6 に聞く。**
+    # 上限ちょうどで終わったのか、まだ先があるのかは長さでは分からない
+    total = breakdown.get("unknown_mx_total")
+    if isinstance(total, dict) and "omitted_registered_domains" in total:
+        return hosts, bool(total["omitted_registered_domains"])
+    # 古い月の manifest には全体量が無い。長さで推し量るしかない
     return hosts, len(hosts) >= TOP_N
 
 
