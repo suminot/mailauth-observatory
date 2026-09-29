@@ -2,7 +2,7 @@
 #
 # 業務メールの基盤とは別に、配信専用ドメインで使われることが多い。
 # mail_platform と併存しうるので、単一ベンダーに丸めないこと。
-version: 2026-08-01
+version: 2026-09-29
 category: esp
 
 rules:
@@ -87,3 +87,38 @@ rules:
       pattern: '^spf\.haihaimail\.jp$'
     confidence: medium
     note: 実測で確認したら confidence を high に上げる
+
+  # -------------------------------------------------------------------------
+  # **この2つは別の会社である。**
+  #
+  # 調査は「シナジーマーケティングは `crmstyle.com`（Synergy!LEAD）と
+  # `smp.ne.jp`（Synergy!）の2系統で、合わせて43件。別ベンダーとして
+  # 数えると過大になる」と報告していた。**確かめたら違った。**
+  #
+  # 2026-09-29 の実測:
+  #   crmstyle.com  NS: awsdns。SPF は AWS の IP 群
+  #   smp.ne.jp     NS: ns.pi-pe.co.jp（パイプドビッツ）。SPF は別の IP 群で
+  #                 `include:spf01.smp.ne.jp` を持つ
+  #
+  # `smp.ne.jp` は SPIRAL（パイプドビッツ）である（`support.smp.ne.jp` が
+  # SPIRAL のサポートサイト）。**1社に丸めていたら、他社の顧客を
+  # シナジーの顧客として数えるところだった。**
+  # -------------------------------------------------------------------------
+
+  - id: synergy-spf-01
+    vendor: シナジーマーケティング
+    product: Synergy! / Synergy!LEAD
+    region: JP
+    match:
+      record: SPF_INCLUDE
+      pattern: '^(.+\.)?crmstyle\.com$'
+    confidence: medium
+
+  - id: pipedbits-spf-01
+    vendor: パイプドビッツ
+    product: SPIRAL
+    region: JP
+    match:
+      record: SPF_INCLUDE
+      pattern: '^(spf\d*\.)?smp\.ne\.jp$'
+    confidence: medium

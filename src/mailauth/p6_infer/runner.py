@@ -306,6 +306,7 @@ def run(
                         undetectable_reason=draft.undetectable_reason,
                         layer=draft.layer,
                         is_layer_primary=draft.is_layer_primary,
+                        engine=draft.engine,
                         # パーク分類はドメイン単位の属性なので先頭行にだけ載せる。
                         # 全行に複製すると集計でドメインを二重に数える
                         park_class=parked.park_class if index == 0 else None,
@@ -455,4 +456,39 @@ def vendor_share(
     return [
         {"vendor": vendor, "count": count}
         for vendor, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    ]
+
+
+def engine_share(inferences_frame, category: str) -> list[dict[str, Any]]:
+    """**製品別**の件数。`vendor_share` はベンダー別で、こちらは仕組み別。
+
+    別の会社が同じ仕組みを売っていることがある。Active! gate SS は
+    クオリティアの製品だが、MXモバイリングが Active! world として、
+    SBテクノロジーが Mail Safe として売っている（2026-09-29 実測。
+    `active-w.net` の SPF は `include:_spf.activegate-ss.jp` を持ち、
+    `_spf.sbt-mailgate.jp` は本家と同じ2つの IP ブロックだけを持つ）。
+
+    **ベンダー別だけだと、1つの製品が3つに割れて小さく見える。**
+    逆に3社を1つのベンダーに丸めると、「どこと契約しているか」が消える。
+    両方を別の数字として出す。
+
+    `engine` を持たない行は数えない ── **OEM だと分かっているものだけ**を
+    数える表で、全ベンダーの一覧ではない。
+    """
+    counts: dict[str, int] = defaultdict(int)
+    for _, row in inferences_frame.iterrows():
+        if str(row["category"]) != category:
+            continue
+        reason = row.get("undetectable_reason")
+        if isinstance(reason, str) and reason:
+            continue
+        if row.get("is_layer_primary") is False:
+            continue
+        engine = row.get("engine")
+        if not isinstance(engine, str) or not engine:
+            continue
+        counts[engine] += 1
+    return [
+        {"engine": engine, "count": count}
+        for engine, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
     ]

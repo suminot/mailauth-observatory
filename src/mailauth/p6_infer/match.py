@@ -152,6 +152,8 @@ class InferenceDraft:
     stale_streak_months: int | None = None
     notes: list[str] = field(default_factory=list)
     undetectable_reason: str | None = None
+    #: OEM 元の製品。ベンダーが違っても同じ仕組みのことがある
+    engine: str | None = None
     #: 経路のどこか（実基盤 / 受信前段 / 送信前段）
     layer: str | None = None
     #: その層の代表か。層を持たない推定では None
@@ -359,6 +361,7 @@ def build_drafts(
             hits=hits,
             notes=notes,
             undetectable_reason=_rule_undetectable_reason(hits),
+            engine=_pick_engine(hits),
             layer=layer,
         )
         for hit in hits:
@@ -422,6 +425,18 @@ def _layer_rank(draft: InferenceDraft) -> tuple:
         _CONFIDENCE_ORDER.index(draft.confidence),
         len(draft.hits),
     )
+
+
+def _pick_engine(hits: list[Hit]) -> str | None:
+    """OEM 元の製品。**1つに決まらなければ付けない。**
+
+    同じベンダー・同じ層に、別の仕組みを指す規則が同時に当たることは
+    あるはずがないが、起きたときに片方を勝手に選ぶと嘘になる。
+    """
+    engines = {h.rule.engine for h in hits if h.rule.engine}
+    if len(engines) == 1:
+        return next(iter(engines))
+    return None
 
 
 def _rule_undetectable_reason(hits: list[Hit]) -> str | None:

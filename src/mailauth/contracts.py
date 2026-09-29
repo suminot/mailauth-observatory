@@ -685,6 +685,10 @@ class Inference(_Model):
     #: 経路のどこにいるか（`InferenceLayer`）。実基盤 / 受信前段 / 送信前段。
     #: esp と dmarc_vendor は経路の話ではないので None
     layer: str | None = None
+    #: **OEM 元の製品。** 別の会社が同じ仕組みを売っていることがある。
+    #: ベンダー別に数えると1つの製品が3つに割れて小さく見え、
+    #: 製品別に数えたいときの手掛かりが無くなる（DESIGN-platform.md §6.3）
+    engine: str | None = None
     #: **その層の代表か。** 同じ層に複数立ったとき、証拠の強い方に True が
     #: 付く。数えるときはこれが True の行だけを数える（合計が100%を超えない）。
     #: 選ばれなかった行も**捨てない**（原則1）。層を持たない行は None
@@ -714,6 +718,7 @@ INFERENCE_ARROW_SCHEMA = pa.schema(
         ("undetectable_reason", pa.string()),
         ("layer", pa.string()),
         ("is_layer_primary", pa.bool_()),
+        ("engine", pa.string()),
     ]
 )
 
