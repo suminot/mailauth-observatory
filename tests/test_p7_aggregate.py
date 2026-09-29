@@ -94,6 +94,8 @@ def _row(**kwargs) -> DomainRow:
         "spf_present": False,
         "dmarc_present": False,
         "effective_7489": None,
+        "sp_effective_7489": None,
+        "sp_weaker": False,
         "dmarc_p": None,
         "policy_label": None,
         "dkim_status": None,
@@ -176,6 +178,66 @@ def test_nominal_and_enforced_reject_are_separated():
     assert stats.nominal_reject_domains == 3
     assert stats.enforced_reject_domains == 1
     assert stats.blind_reject_domains == 1
+
+
+def test_subdomain_policy_is_counted_apart_from_the_domain_itself():
+    """`p=reject; sp=none` を「reject 達成」だけで数えない。
+
+    **apex だけ見ると達成側に入る**が、その会社の実際のメールドメインが
+    サブドメインなら、そちらは無防備である（BACKLOG 14）。
+    """
+    stats = _agg(
+        [
+            # 自分も配下も reject（sp= 無しの継承）
+            _row(
+                domain_id="d:1",
+                dmarc_p="reject",
+                effective_7489="reject",
+                sp_effective_7489="reject",
+                sp_weaker=False,
+                policy_label=PolicyLabel.ENFORCED_REJECT,
+            ),
+            # 自分は reject、配下は none
+            _row(
+                domain_id="d:2",
+                dmarc_p="reject",
+                effective_7489="reject",
+                sp_effective_7489="none",
+                sp_weaker=True,
+                policy_label=PolicyLabel.ENFORCED_REJECT,
+            ),
+            # どちらも none
+            _row(
+                domain_id="d:3",
+                dmarc_p="none",
+                effective_7489="none",
+                sp_effective_7489="none",
+                sp_weaker=False,
+            ),
+        ]
+    )
+    # 既存の指標は apex 自身の p= のまま。**定義を黙って変えない**
+    assert stats.dmarc_enforced_domains == 2
+    # 配下に効いているのは1件だけ
+    assert stats.subdomain_enforced_domains == 1
+    assert stats.subdomain_weaker_domains == 1
+
+
+def test_unobserved_domains_do_not_reach_the_subdomain_metrics():
+    """観測できなかったものを分母にも分子にも入れない（原則5）。"""
+    stats = _agg(
+        [
+            _row(
+                domain_id="d:1",
+                observed=False,
+                effective_7489="reject",
+                sp_effective_7489="reject",
+                sp_weaker=True,
+            )
+        ]
+    )
+    assert stats.subdomain_enforced_domains == 0
+    assert stats.subdomain_weaker_domains == 0
 
 
 def test_enforced_quarantine_is_not_counted_as_enforced_reject():

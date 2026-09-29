@@ -182,6 +182,38 @@ display(
 );
 ```
 
+## The domain, and what sits under it
+
+A DMARC `p=` tag applies to the domain itself. **What applies to its
+subdomains is `sp=`, and when that is absent they inherit `p=`.**
+
+A record reading `p=reject; sp=none` applies `reject` to the domain itself and
+**`none` to everything under it.** A company's real mail commonly sits on a
+subdomain.
+
+```js
+display(
+  table(
+    [
+      { Category: "Applies to the domain itself (p=)", Domains: current?.dmarc_enforced_domains },
+      { Category: "Applies to subdomains too (sp= or inherited)", Domains: current?.subdomain_enforced_domains },
+      { Category: "Weakened for subdomains via sp=", Domains: current?.subdomain_weaker_domains },
+    ],
+    { sort: null }
+  )
+);
+```
+
+<div class="limits">
+
+- **This site measures registered domains.** Subdomains are not yet measured
+  themselves, so what appears here is only what `sp=` says. **What the
+  subdomains actually do has not been measured**
+- A subdomain carrying its own `_dmarc` record does not inherit `sp=`. Where
+  that is the case, these figures do not describe it
+
+</div>
+
 ## Over time
 
 ```js

@@ -50,6 +50,8 @@ class DomainRow:
     spf_present: bool
     dmarc_present: bool
     effective_7489: str | None
+    sp_effective_7489: str | None
+    sp_weaker: bool
     dmarc_p: str | None
     policy_label: str | None
     dkim_status: str | None
@@ -71,6 +73,8 @@ class DomainRow:
             spf_present=_truthy(fact.get("spf_present")),
             dmarc_present=_truthy(fact.get("dmarc_present")),
             effective_7489=_text(fact.get("effective_7489")),
+            sp_effective_7489=_text(fact.get("sp_effective_7489")),
+            sp_weaker=_truthy(fact.get("sp_weaker")),
             dmarc_p=_text(fact.get("dmarc_p")),
             policy_label=_text(fact.get("policy_label")),
             dkim_status=_text(fact.get("dkim_status")),
@@ -86,6 +90,16 @@ class DomainRow:
     @property
     def dmarc_enforced(self) -> bool:
         return self.effective_7489 in ENFORCING
+
+    @property
+    def subdomain_enforced(self) -> bool:
+        """**配下のサブドメインに効く強度。** `sp=` が無ければ `p=` を継承する。
+
+        `dmarc_enforced` と別に持つ。`p=reject; sp=none` の会社を
+        「reject 達成」と数えると、実際のメールドメインがサブドメインの
+        場合に無防備なものを達成側に入れてしまう。
+        """
+        return self.sp_effective_7489 in ENFORCING
 
     @property
     def stage(self) -> int:
@@ -175,6 +189,9 @@ def aggregate(
         blind_reject_domains=sum(
             1 for r in observed if r.policy_label == PolicyLabel.BLIND_REJECT
         ),
+        # 自分と配下を分ける。差が出るのは sp= を明示して下げている場合だけ
+        subdomain_enforced_domains=sum(1 for r in observed if r.subdomain_enforced),
+        subdomain_weaker_domains=sum(1 for r in observed if r.sp_weaker),
         dkim_detected_domains=sum(
             1 for r in observed if r.dkim_status == DkimStatus.DETECTED
         ),

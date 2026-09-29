@@ -508,6 +508,11 @@ class Fact(_Model):
 
     effective_7489: str | None = None
     effective_9989: str | None = None
+    #: 配下のサブドメインに効く強度（`sp=` 無しなら `p=` を継承）
+    sp_effective_7489: str | None = None
+    sp_effective_9989: str | None = None
+    #: 自分より配下が弱い。**apex だけ見ると達成側に数えてしまう向きの誤り**
+    sp_weaker: bool | None = None
     policy_label: str | None = None
     blind_enforcement: bool | None = None
 
@@ -599,6 +604,9 @@ FACT_ARROW_SCHEMA = pa.schema(
         ("dmarc_multiple_records", pa.bool_()),
         ("effective_7489", pa.string()),
         ("effective_9989", pa.string()),
+        ("sp_effective_7489", pa.string()),
+        ("sp_effective_9989", pa.string()),
+        ("sp_weaker", pa.bool_()),
         ("policy_label", pa.string()),
         ("blind_enforcement", pa.bool_()),
         ("org_domain_psl", pa.string()),
@@ -765,6 +773,11 @@ class StatsOverall(_Model):
     enforced_reject_domains: int = 0
     blind_reject_domains: int = 0
 
+    # **自分と配下を分ける。** `sp=` は配下のサブドメインに効く強度で、
+    # 無ければ `p=` を継承する。`p=reject; sp=none` は自分だけ守られた状態
+    subdomain_enforced_domains: int = 0
+    subdomain_weaker_domains: int = 0
+
     dkim_detected_domains: int = 0
     dkim_not_found_domains: int = 0
     mta_sts_domains: int = 0
@@ -827,6 +840,8 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("nominal_reject_domains", pa.int32()),
     ("enforced_reject_domains", pa.int32()),
     ("blind_reject_domains", pa.int32()),
+    ("subdomain_enforced_domains", pa.int32()),
+    ("subdomain_weaker_domains", pa.int32()),
     ("dkim_detected_domains", pa.int32()),
     ("dkim_not_found_domains", pa.int32()),
     ("mta_sts_domains", pa.int32()),

@@ -188,6 +188,8 @@ The main columns used in the tables above.
 | `nominal_reject_domains` | the record says `p=reject` |
 | `enforced_reject_domains` | no `pct`, `t=n`, `rua` present |
 | `blind_reject_domains` | enforcing, but no `rua` |
+| `subdomain_enforced_domains` | **the strength that applies to subdomains** is `quarantine` or stronger. Absent `sp=`, they inherit `p=` |
+| `subdomain_weaker_domains` | `sp=` is weaker than `p=`. **A different strength applies to the domain itself and to what sits under it** |
 | `dkim_detected_domains` | found among known selectors |
 | `dkim_not_found_domains` | not found among known selectors. **This is not the same as unset** |
 | `mta_sts_domains` | publishes MTA-STS |

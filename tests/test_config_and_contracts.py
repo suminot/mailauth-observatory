@@ -243,3 +243,35 @@ def test_sparql_queries_exist_for_sprint_1_5():
 def test_yaml_configs_all_parse():
     for path in (repo_root() / "configs").rglob("*.yaml"):
         yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def test_tests_never_pick_up_a_developers_dotenv(tmp_path, monkeypatch):
+    """**開発機の `.env` が検査の結果を変えないこと。**
+
+    `credential()` は毎回 `.env` を読み直す。環境変数を消すだけでは、鍵が
+    ファイルから戻ってきて「鍵が無いときの振る舞い」の検査が守れていない側で
+    緑になる。CI には `.env` が無いので、手元だけが落ちる形にもなる。
+    """
+    from mailauth import config as config_mod
+
+    env_file = tmp_path / ".env"
+    env_file.write_text("MAILAUTH_CONTACT_EMAIL=leaked@example.com\n", encoding="utf-8")
+    monkeypatch.setattr(config_mod, "repo_root", lambda: tmp_path)
+    monkeypatch.delenv("MAILAUTH_CONTACT_EMAIL", raising=False)
+
+    # 既定（conftest が塞いでいる状態）では読まない
+    assert config_mod.credential("MAILAUTH_CONTACT_EMAIL") is None
+
+    # **塞ぎを外すと本当に漏れる。** 検査が実装を見ていることの確認
+    monkeypatch.delenv("MAILAUTH_NO_DOTENV", raising=False)
+    monkeypatch.delenv("MAILAUTH_CONTACT_EMAIL", raising=False)
+    assert config_mod.credential("MAILAUTH_CONTACT_EMAIL") == "leaked@example.com"
+
+
+def test_an_explicit_dotenv_path_is_still_read(tmp_path):
+    """塞ぐのは既定の `.env` だけ。読み込み処理そのものは検査できる。"""
+    from mailauth.config import load_dotenv
+
+    env_file = tmp_path / "custom.env"
+    env_file.write_text("MAILAUTH_SOMETHING=1\n", encoding="utf-8")
+    assert load_dotenv(env_file) == {"MAILAUTH_SOMETHING": "1"}
