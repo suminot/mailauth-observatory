@@ -1171,6 +1171,11 @@ breakdown:
 ### 目的
 fact からメール基盤とセキュリティ製品を推定する。**必ず confidence と evidence を伴う**。
 
+> **「どの企業が何を使っているか」を数える側の設計は [DESIGN-platform.md](DESIGN-platform.md) にある。**
+> M365 / Google Workspace の利用数をどう定義して数えるか、いまの辞書が何を
+> 取りこぼしているか、DNS では原理的に見えないものは何か。**まだ確定仕様では
+> ない**（未確定・推察の一覧が同文書 §9 にある）。
+
 ### 入力
 `p5_parse/facts.parquet` + `configs/fingerprints/*.yaml`
 

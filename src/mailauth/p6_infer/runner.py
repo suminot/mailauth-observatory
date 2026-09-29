@@ -39,8 +39,16 @@ PHASE = "p6_infer"
 OUTPUT_FILENAME = "inferences.parquet"
 INFERENCE_VERSION = "1.0.0"
 
-#: manifest に載せる未知 MX ホストの件数。ここから辞書を育てる
-UNKNOWN_MX_TOP_N = 20
+#: manifest に載せる未知 MX ホストの件数。ここから辞書を育てる。
+#:
+#: **20 では足りなかった。** 2026-09 の国内計測で上限にぶつかり、
+#: 一覧に載った20件だけで628ドメイン、その先がどれだけあるかが
+#: 分からない状態になった ── 辞書を厚くする作業の土台が、上限で
+#: 切られた一覧になっていた。
+#:
+#: **一覧は切ってよいが、切った分の件数は失わない**（原則4）。
+#: 切り捨てた種類数とドメイン数を `unknown_mx_total` に残す。
+UNKNOWN_MX_TOP_N = 100
 #: 受け入れ基準（DESIGN.md P6）。推定が1件も付かないドメインの許容割合
 MAX_NO_INFERENCE_RATE = 0.20
 #: stale の連続月数を引き継ぐために遡る月数
@@ -129,6 +137,31 @@ def unknown_mx_hosts(
         {"registered_domain": key, "count": count, "examples": examples[key]}
         for key, count in ranked[:UNKNOWN_MX_TOP_N]
     ]
+
+
+def unknown_mx_total(facts: list[dict], matched_hosts: set[str]) -> dict[str, int]:
+    """未知 MX の全体量。**一覧を切っても、ここは切らない。**
+
+    上位 N 件だけを載せると「残りがどれだけあるか」が消える。読み手は
+    見えている分を全部だと思い、辞書を厚くする作業の見通しを誤る
+    （2026-09 に実際にそうなった）。
+    """
+    counts: dict[str, int] = defaultdict(int)
+    for fact in facts:
+        for host in fact.get("mx_hosts") or []:
+            normalized = (host or "").strip().rstrip(".").lower()
+            if not normalized or normalized in matched_hosts:
+                continue
+            counts[resolve_psl(normalized) or normalized] += 1
+    ranked = sorted(counts.values(), reverse=True)
+    return {
+        "distinct_registered_domains": len(ranked),
+        "domains": sum(ranked),
+        "listed": min(len(ranked), UNKNOWN_MX_TOP_N),
+        # **一覧から漏れた分。** ここが 0 でなければ、まだ先がある
+        "omitted_registered_domains": max(len(ranked) - UNKNOWN_MX_TOP_N, 0),
+        "omitted_domains": sum(ranked[UNKNOWN_MX_TOP_N:]),
+    }
 
 
 def run(
@@ -267,6 +300,7 @@ def run(
         manifest.counts.success = len(inferences)
 
         unknown = unknown_mx_hosts(facts, matched_hosts)
+        unknown_total = unknown_mx_total(facts, matched_hosts)
         no_inference_rate = (
             len(no_inference_domains) / len(facts) if facts else 0.0
         )
@@ -280,6 +314,8 @@ def run(
             no_inference_rate=round(no_inference_rate, 4),
             # **辞書を育てる主要な経路。** ここを見て手で辞書に追記する
             unknown_mx_hosts=unknown,
+            # **一覧は上位 N 件で切るが、全体量はここに残す**（原則4）
+            unknown_mx_total=unknown_total,
             rules_loaded=len(rules.rules),
             undetectable_products=len(rules.undetectable),
             notes_sample=notes_sample[:20],
@@ -300,8 +336,17 @@ def run(
                 "UNKNOWN_MX_HOSTS",
                 count=len(unknown),
                 message=(
-                    "辞書に無い MX ホストがある。頻度順の上位を手で辞書に追記すると"
-                    "推定率が上がる（DESIGN.md P6 実装メモ）"
+                    f"辞書に無い MX ホストが {unknown_total['distinct_registered_domains']} 種、"
+                    f"{unknown_total['domains']} ドメインぶんある。"
+                    + (
+                        f"**一覧に出しているのは上位 {unknown_total['listed']} 種まで**で、"
+                        f"ほかに {unknown_total['omitted_registered_domains']} 種"
+                        f"（{unknown_total['omitted_domains']} ドメイン）が載っていない。"
+                        if unknown_total["omitted_registered_domains"]
+                        else "**全部を一覧に出している。**"
+                    )
+                    + "頻度順の上位を手で辞書に追記すると推定率が上がる"
+                    "（DESIGN.md P6 実装メモ）"
                 ),
             )
         if counters.get("undetectable_security_gateway"):
