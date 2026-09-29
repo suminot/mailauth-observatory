@@ -35,6 +35,9 @@ class EntityStatus(StrEnum):
 class DiscoveryMethod(StrEnum):
     OFFICIAL_URL = "official_url"
     CT_LOG = "ct_log"
+    #: 証明書の O（組織名）で引いた。**起点ドメインが無い企業のための経路。**
+    #: O は CA が法人を確認して入れる欄なので、推測ではない
+    CT_ORG = "ct_org"
     SPF_REDIRECT = "spf_redirect"
     #: `include:` が自社サブドメインを指している場合のみ。
     #: 他社を指す include は「その基盤を使っている」であって所有ではない
