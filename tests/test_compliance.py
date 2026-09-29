@@ -2185,3 +2185,48 @@ def test_失敗した月次の結果を公開しない():
     assert "github.event_name != 'workflow_run'" in job, (
         "人の push や手動実行まで止まっている"
     )
+
+
+def test_basic_auth_is_enforced_and_never_hardcoded():
+    """公開サイトの Basic 認証（運営者の依頼、2026-09-29）。
+
+    **このリポジトリは公開されている。** 利用者名とパスワードをソースに
+    書くと、認証をかけた意味がそのまま無くなる。
+
+    **設定が無いときは閉じる。** 素通しにすると、設定し忘れた状態が
+    「認証がかかっているつもりのまま公開されている」状態になり、
+    気付く手段が無い。
+    """
+    mw = repo_root() / "functions" / "_middleware.js"
+    assert mw.is_file(), "Basic 認証の middleware が無い"
+    src = mw.read_text(encoding="utf-8")
+
+    assert "env.BASIC_AUTH_USER" in src and "env.BASIC_AUTH_PASS" in src, (
+        "資格情報を環境変数から読んでいない"
+    )
+    assert "if (!user || !pass) return unauthorized();" in src, (
+        "設定が無いときに閉じる分岐が無い。素通しになる"
+    )
+    assert "401" in src and "WWW-Authenticate" in src, "401 を返していない"
+
+    # **値を書かない。** 依頼された値がそのまま入っていないこと
+    body = src.replace("BASIC_AUTH_USER", "").replace("BASIC_AUTH_PASS", "")
+    for literal in ('"mki"', "'mki'", "bWtpOm1raQ=="):
+        assert literal not in body, f"資格情報がソースに書かれている: {literal}"
+
+    deploy = (repo_root() / ".github" / "workflows" / "deploy.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "secrets.BASIC_AUTH_USER" in deploy and "secrets.BASIC_AUTH_PASS" in deploy, (
+        "GitHub secrets から流し込んでいない"
+    )
+    # **出した後に確かめる。** `functions/` が拾われなければ認証は効かないが、
+    # デプロイ自体は成功してしまう
+    assert "認証なしで $code が返った" in deploy, (
+        "デプロイ後に 401 を確かめる段が無い。"
+        "かけたつもりで素通しになっていても気付けない"
+    )
+    assert '-u "$BASIC_USER:$BASIC_PASS"' in deploy, (
+        "正しい資格情報で通ることを確かめていない。"
+        "401 だけ見ていると、誰も入れない状態を成功と読む"
+    )

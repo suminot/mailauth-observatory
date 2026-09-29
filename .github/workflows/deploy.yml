@@ -55,6 +55,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        # **浅い clone だとビルドの表示が出ない。** 既定の深さ1では
+        # `git log` が1件しか見えず、そのコミットに `(#NN)` が無ければ
+        # 番号まで遡れない（月次計測のコミットがまさにそれ）。
+        # observablehq.config.js が遡る件数（50）と揃える
+        with:
+          fetch-depth: 50
 
       - name: secrets の有無を確認
         id: gate
@@ -110,7 +116,32 @@ jobs:
         if: steps.gate.outputs.ready == 'true'
         run: npm --prefix site run build
 
+      # **値はここに書かない。** リポジトリは公開されているので、
+      # 書いた時点で認証をかけた意味が無くなる。GitHub secrets から
+      # Pages の環境変数へ流し込む
+      - name: Basic 認証の資格情報を Pages に入れる
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PROJECT: ${{ secrets.CLOUDFLARE_PAGES_PROJECT }}
+          BASIC_USER: ${{ secrets.BASIC_AUTH_USER }}
+          BASIC_PASS: ${{ secrets.BASIC_AUTH_PASS }}
+        run: |
+          if [ -z "$BASIC_USER" ] || [ -z "$BASIC_PASS" ]; then
+            # **止めない。** 止めると認証の無い旧版が出たまま残る。
+            # 環境変数が無ければ middleware が全部 401 にするので、
+            # 出す側は進めてよい
+            echo "::warning::BASIC_AUTH_USER / BASIC_AUTH_PASS が未設定。サイトは全員に 401 を返す"
+            exit 0
+          fi
+          printf '%s' "$BASIC_USER" | npx --yes wrangler@3 pages secret put \
+            BASIC_AUTH_USER --project-name "$PROJECT"
+          printf '%s' "$BASIC_PASS" | npx --yes wrangler@3 pages secret put \
+            BASIC_AUTH_PASS --project-name "$PROJECT"
+
       - name: Cloudflare Pages にデプロイ
+        id: deploy
         if: steps.gate.outputs.ready == 'true'
         uses: cloudflare/wrangler-action@v3
         with:
@@ -120,3 +151,36 @@ jobs:
             pages deploy site/dist
             --project-name=${{ secrets.CLOUDFLARE_PAGES_PROJECT }}
             --branch=main
+
+      # **かけたつもりで素通しになっていないか、出した後に確かめる。**
+      # `functions/` が拾われなければ認証は効かないが、デプロイは成功する。
+      # 宣言だけでは守られないので、実際に叩いて確認する
+      - name: Basic 認証が効いていることを確かめる
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          URL: ${{ steps.deploy.outputs.deployment-url }}
+          BASIC_USER: ${{ secrets.BASIC_AUTH_USER }}
+          BASIC_PASS: ${{ secrets.BASIC_AUTH_PASS }}
+        run: |
+          if [ -z "$URL" ]; then
+            echo "::error::デプロイ先の URL が取れないため確認できない"
+            exit 1
+          fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$URL/")
+          if [ "$code" != "401" ]; then
+            echo "::error::認証なしで $code が返った。Basic 認証が効いていない"
+            exit 1
+          fi
+          echo "認証なし: 401 ✓"
+
+          if [ -n "$BASIC_USER" ] && [ -n "$BASIC_PASS" ]; then
+            # **通るはずのものが通ることも確かめる。** 401 だけ見ていると、
+            # 誰も入れない状態を「成功」と読んでしまう
+            ok=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
+              -u "$BASIC_USER:$BASIC_PASS" "$URL/")
+            if [ "$ok" != "200" ]; then
+              echo "::error::正しい資格情報で $ok が返った。誰も入れない"
+              exit 1
+            fi
+            echo "正しい資格情報: 200 ✓"
+          fi

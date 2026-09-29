@@ -13,6 +13,7 @@ const meta = FileAttachment("data/meta.json").json();
 ```js
 import { rate, pct } from "./components/format.js";
 import { table } from "./components/table.js";
+import { vendorLabel } from "./components/vendor.js";
 ```
 
 ```js
@@ -69,7 +70,7 @@ function layerTable(layer) {
       .slice()
       .sort((a, b) => b.domains_any - a.domains_any)
       .map((d) => ({
-        ベンダー: d.vendor,
+        ベンダー: vendorLabel(d.vendor, "ja"),
         "OEM元": d.engine ?? "—",
         企業数: d.entities_any,
         ドメイン数: d.domains_any,

@@ -463,15 +463,46 @@ async function main() {
       const items = [
         ...(lists[lists.length - 1]?.querySelectorAll("li.observablehq-link > a") ?? []),
       ].map((a) => a.textContent.trim());
+      // **表の中身は別に見る。** ベンダー名は実在の社名なので、
+      // 「大塚商会」が英語版に出るのは正しい。訳せないし、訳したら
+      // 検索もできない。**こちらが付けたラベルだけが英語であるべき。**
+      const prose = [...(main?.querySelectorAll("h1,h2,h3,p,li") ?? [])]
+        .map((e) => e.textContent)
+        .join(" ");
+      // **`td:first-child` では取れない。** `Inputs.table` は先頭に空の
+      // セルを出すので、見出しから列の位置を引く（最初これで空振りした）
+      const vendorCells = [];
+      for (const tbl of main?.querySelectorAll("table") ?? []) {
+        const heads = [...tbl.querySelectorAll("thead th")].map((h) =>
+          h.textContent.trim()
+        );
+        const col = heads.indexOf("Vendor");
+        if (col < 0) continue;
+        for (const row of tbl.querySelectorAll("tbody tr")) {
+          const cell = row.children[col];
+          if (cell) vendorCells.push(cell.textContent.trim());
+        }
+      }
       return {
         hasLimits: Boolean(main?.querySelector(".limits")),
-        // 本文に日本語（ひらがな・カタカナ）が混ざっていないこと
-        jp: /[ぁ-んァ-ヶ]/.test(main?.textContent ?? ""),
+        proseJp: /[ぁ-んァ-ヶ]/.test(prose),
+        // 秘匿の束ねは実在の会社ではなく集計上の入れ物。ここは訳す
+        suppressed: vendorCells.filter((v) => /秘匿|suppressed/i.test(v)),
         nav: items,
       };
     });
     check("英語版にも限界の断りがある", enPlat.hasLimits, "`.limits` が無い");
-    check("英語版の本文に日本語が混ざっていない", !enPlat.jp, "かなが出ている");
+    check(
+      "英語版の地の文に日本語が混ざっていない",
+      !enPlat.proseJp,
+      "見出しか本文にかなが出ている"
+    );
+    check(
+      "英語版で秘匿の束ねが英語になっている",
+      enPlat.suppressed.length > 0 &&
+        enPlat.suppressed.every((v) => !/[ぁ-んァ-ヶ]/.test(v)),
+      `いまの値: ${enPlat.suppressed.join(" / ") || "（秘匿の行が無い）"}`
+    );
     check(
       "英語版の一覧に Mail platforms がある",
       enPlat.nav.includes("Mail platforms"),
