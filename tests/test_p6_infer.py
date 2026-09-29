@@ -17,6 +17,7 @@ from mailauth.contracts import (
     ConfidenceLevel,
     InferenceCategory,
     ParkClass,
+    UndetectableReason,
 )
 from mailauth.io import read_parquet, write_parquet
 from mailauth.p6_infer import MissingInputError
@@ -36,6 +37,7 @@ from mailauth.p6_infer.match import (
     combine_confidence,
     find_hits,
     is_corroborated,
+    undetectable_draft,
 )
 from mailauth.p6_infer.runner import unknown_mx_hosts, vendor_share
 from mailauth.paths import phase_output
@@ -759,3 +761,153 @@ def test_unidentified_hosts_are_recorded_not_forgotten(rules):
         drafts = build_drafts(_fact(mx_hosts=[host], mx_present=True), rules)
         named = [d for d in drafts if d.vendor != NOT_DETECTED_VENDOR]
         assert not named, f"同定できていない {host} に規則が当たっている"
+
+
+# ===========================================================================
+# 「検出できなかった」の理由を分ける（DESIGN-platform.md §5）
+#
+# **「未検出」を1つに丸めない。** 2026-09 の計測では 2,884 ドメインが
+# 1つの理由で括られていたが、中身は「原理的に見えない」「製品が分からない」
+# 「読めない」「そもそも観測できていない」が混ざっていた。
+# ===========================================================================
+
+
+def test_not_observed_is_not_a_finding(rules):
+    """観測できていないものを「検出できなかった」と言わない（原則5）。"""
+    draft = undetectable_draft(rules, _fact(observed=False))
+    assert draft.undetectable_reason == UndetectableReason.NOT_OBSERVED
+    assert "「無い」ではない" in " / ".join(draft.notes)
+
+
+def test_self_hosted_mx_says_the_product_is_unknown(rules):
+    """自社運用は「製品を使っていない」ではない。**分からないだけ。**"""
+    fact = _fact(
+        mx_hosts=["mx3.kubota.co.jp", "mx4.kubota.co.jp"],
+        mx_present=True,
+        org_domain_psl="kubota.co.jp",
+    )
+    draft = undetectable_draft(rules, fact)
+    assert draft.undetectable_reason == UndetectableReason.SELF_HOSTED_MX
+    assert "製品が分からない" in " / ".join(draft.notes)
+
+
+def test_one_external_mx_is_enough_to_not_be_self_hosted(rules):
+    """**1つでも外に出ていれば自社運用とは言わない。**
+
+    前段を通している構成を「自社運用」と読むと、製品の有無の話がずれる。
+    """
+    fact = _fact(
+        mx_hosts=["mx3.kubota.example", "primary.ap.email.unknown-vendor.example"],
+        mx_present=True,
+        org_domain_psl="kubota.example",
+    )
+    assert (
+        undetectable_draft(rules, fact).undetectable_reason
+        != UndetectableReason.SELF_HOSTED_MX
+    )
+
+
+def test_flattened_spf_is_unreadable_not_absent(rules):
+    """「基盤が無い」ではなく「基盤が読めない」。"""
+    fact = _fact(spf_present=True, spf_is_flattened=True)
+    draft = undetectable_draft(rules, fact)
+    assert draft.undetectable_reason == UndetectableReason.SPF_FLATTENED
+    assert "読めない" in " / ".join(draft.notes)
+
+
+def test_a_flattening_service_is_caught_even_when_the_count_is_low(rules):
+    """**数だけでは捕まらない形がある。**
+
+    PowerSPF のように include は1つ残るが、その先が展開済みという形。
+    P5 の `spf_is_flattened`（ip4/ip6 の数で判定）は立たない。
+    """
+    fact = _fact(
+        spf_present=True,
+        spf_is_flattened=False,
+        spf_includes=["example.powerspf.com"],
+    )
+    assert (
+        undetectable_draft(rules, fact).undetectable_reason
+        == UndetectableReason.SPF_FLATTENED
+    )
+
+
+def test_the_default_reason_is_the_api_mode_blind_spot(rules):
+    """どれにも当たらなければ、API 連携型の可能性が残る。"""
+    fact = _fact(mx_hosts=["a.iphmx.com"], mx_present=True, org_domain_psl="ex.example")
+    draft = undetectable_draft(rules, fact)
+    assert draft.undetectable_reason == UndetectableReason.API_MODE_PRODUCT
+    assert "痕跡を残さない製品の例" in " / ".join(draft.notes)
+
+
+# ---------------------------------------------------------------------------
+# 仮 MX ── ベンダーは分かるが「使っている」とは言えない
+# ---------------------------------------------------------------------------
+
+
+def test_placeholder_mx_is_not_counted_as_using_the_platform(rules):
+    """**`msv1.invalid` は第3の状態。**
+
+    M365 にドメインは登録済みだが、受信はそこではない。
+    `mail_platform` として数えると「①受信している」に化ける。
+    """
+    drafts = build_drafts(
+        _fact(mx_hosts=["ms29696915.msv1.invalid.outlook.com"], mx_present=True), rules
+    )
+    ms = next(d for d in drafts if d.vendor == "Microsoft")
+    assert ms.undetectable_reason == UndetectableReason.TENANT_PLACEHOLDER_MX
+    assert "m365-mx-04" in ms.rule_ids
+
+
+def test_real_evidence_beats_a_placeholder(rules):
+    """仮 MX が残っていても、**現に使っている証拠があれば理由は付けない。**"""
+    drafts = build_drafts(
+        _fact(
+            mx_hosts=["ms29696915.msv1.invalid.outlook.com"],
+            mx_present=True,
+            dkim_cname_targets=["selector1-example._domainkey.example.onmicrosoft.com"],
+        ),
+        rules,
+    )
+    ms = next(d for d in drafts if d.vendor == "Microsoft")
+    assert ms.undetectable_reason is None
+
+
+def test_rows_with_a_reason_are_never_counted_as_using(rules):
+    """**理由が入っている行は利用数に数えない。**
+
+    番兵の名前（`not_detected`）だけを弾く方式では足りない。ベンダーが
+    分かるのに使っているとは言えない痕跡があり、名前で弾くとそれが
+    「Microsoft を使っている」に化ける。
+    """
+    import pandas as pd
+
+    frame = pd.DataFrame(
+        [
+            {
+                "category": InferenceCategory.MAIL_PLATFORM,
+                "vendor": "Microsoft",
+                "undetectable_reason": UndetectableReason.TENANT_PLACEHOLDER_MX,
+            },
+            {
+                "category": InferenceCategory.MAIL_PLATFORM,
+                "vendor": "Google",
+                "undetectable_reason": None,
+            },
+        ]
+    )
+    share = vendor_share(frame, InferenceCategory.MAIL_PLATFORM)
+    assert share == [{"vendor": "Google", "count": 1}]
+
+
+def test_an_unknown_undetectable_reason_is_refused(tmp_path):
+    """辞書の誤記を黙って通さない。永久に意味の無い印が付く。"""
+    path = tmp_path / "bad.yaml"
+    path.write_text(
+        "version: t\ncategory: mail_platform\nrules:\n"
+        "  - id: x-01\n    vendor: V\n    undetectable_reason: たぶん無理\n"
+        "    match:\n      record: MX\n      pattern: 'x'\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(FingerprintError, match="undetectable_reason"):
+        load_file(path)

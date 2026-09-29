@@ -33,7 +33,19 @@ import html
 import json
 from pathlib import Path
 
+from .contracts import UndetectableReason
 from .paths import config_path, gold_root, phase_output
+
+#: 検出できない理由の表示名。**「使っていない」ではないことが一目で
+#: 分かる言い方にする。** 英数字の識別子のままだと、読む人には
+#: 何かのエラーに見える
+UNDETECTABLE_LABELS: dict[str, str] = {
+    UndetectableReason.API_MODE_PRODUCT: "DNS に出ない製品の可能性（API 連携型）",
+    UndetectableReason.SELF_HOSTED_MX: "自社運用のため製品が分からない",
+    UndetectableReason.SPF_FLATTENED: "SPF が平坦化されていて読めない",
+    UndetectableReason.TENANT_PLACEHOLDER_MX: "テナント登録のみ（受信は別）",
+    UndetectableReason.NOT_OBSERVED: "観測できていない",
+}
 
 
 def site_root() -> Path:
@@ -175,7 +187,14 @@ def build_rows(run_id: str) -> list[dict]:
                 "推察": ", ".join(inf.get("vendors", [])) or "—",
                 # **「DNS からは分からない」を明示する。** 空欄にすると
                 # 「何も使っていない」に見える
-                "検出できない理由": ", ".join(sorted(set(inf.get("undetectable", [])))) or "—",
+                # **理由を日本語にする。** `api_mode_product` のままだと
+                # 読む人には「何かのエラー」に見え、いちばん大事な
+                # 「使っていないのではない」が伝わらない
+                "検出できない理由": ", ".join(
+                    UNDETECTABLE_LABELS.get(u, u)
+                    for u in sorted(set(inf.get("undetectable", [])))
+                )
+                or "—",
             }
         )
     rows.sort(key=lambda x: (x["企業名"], x["ドメイン"]))

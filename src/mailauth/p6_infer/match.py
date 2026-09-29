@@ -20,7 +20,9 @@ from ..contracts import (
     ConfidenceLevel,
     EvidenceRecordType,
     InferenceCategory,
+    UndetectableReason,
 )
+from ..p5_parse.orgdomain import resolve_psl
 from .fingerprints import VERIFICATION_CATEGORY, Rule, RuleSet
 
 #: 所有権確認 TXT だけが根拠のとき、その製品が「現行のメール基盤」である
@@ -34,7 +36,89 @@ _CONFIDENCE_ORDER = [ConfidenceLevel.LOW, ConfidenceLevel.MEDIUM, ConfidenceLeve
 #: API / OAuth 連携型の製品は原理的に DNS に痕跡を残さないため、
 #: 非検出をそのまま 0 と数えると実態を大きく取り違える（DESIGN.md P6）
 NOT_DETECTED_VENDOR = "not_detected"
-UNDETECTABLE_API_MODE = "api_mode_product"
+UNDETECTABLE_API_MODE = UndetectableReason.API_MODE_PRODUCT
+
+#: SPF を平坦化して include を消してしまう事業者（実測）。
+#: **「基盤が無い」ではなく「基盤が読めない」。** 展開されると
+#: `include:_spf.google.com` のような手掛かりが IP 列挙やマクロに化ける
+SPF_FLATTENING_MARKERS = (
+    "powerspf.com",
+    "_spf.vali.email",
+    "spf.has.pphosted.com",
+    "spf25.jp",
+)
+
+#: 理由ごとの言い回し。**画面にも明細にも同じ文を出す**
+UNDETECTABLE_MESSAGES: dict[str, str] = {
+    UndetectableReason.API_MODE_PRODUCT: (
+        "DNS 上でメールセキュリティ製品を検出できなかった。"
+        "MX を変更せず API / OAuth で連携する製品は原理的に痕跡を残さないため、"
+        "これは「使っていない」ことを意味しない"
+    ),
+    UndetectableReason.SELF_HOSTED_MX: (
+        "MX が自社ドメイン配下にある。**運用はしているが、"
+        "ホスト名からは製品が分からない**（自作かアプライアンスかも区別できない）。"
+        "「製品を使っていない」ことを意味しない"
+    ),
+    UndetectableReason.SPF_FLATTENED: (
+        "SPF が平坦化されていて include が読めない。**「基盤が無い」ではなく"
+        "「基盤が読めない」。** 10 lookup 制限を避けるために include を IP 列挙や"
+        "マクロへ展開すると、基盤を示す手掛かりが消える"
+    ),
+    UndetectableReason.NOT_OBSERVED: (
+        "そもそも観測できていない。**「無い」ではない**（原則5）。"
+        "検出できなかったことの根拠として数えてはならない"
+    ),
+}
+
+
+def undetectable_reason_for(fact: dict) -> str:
+    """検出できなかった理由を1つ選ぶ。
+
+    **「未検出」を1つに丸めない。** 理由が違えば読み方が違う。
+    強い順（言えることが多い順）に見て、最初に当たったものを返す。
+
+      1. 観測できていない ── 何も言えない。他の判定より先に来る
+      2. MX が自社ドメイン配下 ── 運用はしている。製品が分からないだけ
+      3. SPF が平坦化されている ── 基盤が読めない
+      4. それ以外 ── API 連携型の可能性が残る（既定）
+    """
+    if not fact.get("observed"):
+        return UndetectableReason.NOT_OBSERVED
+
+    hosts = [
+        (h or "").strip().rstrip(".").lower() for h in (fact.get("mx_hosts") or [])
+    ]
+    hosts = [h for h in hosts if h]
+    own = (fact.get("org_domain_psl") or "").strip().rstrip(".").lower()
+    if hosts and own:
+        # **1つでも外に出ていれば自社運用とは言わない。** 前段を通している
+        # 構成を「自社運用」と読むと、製品の有無の話がずれる
+        if all((resolve_psl(h) or h) == own for h in hosts):
+            return UndetectableReason.SELF_HOSTED_MX
+
+    if _spf_is_unreadable(fact):
+        return UndetectableReason.SPF_FLATTENED
+
+    return UndetectableReason.API_MODE_PRODUCT
+
+
+def _spf_is_unreadable(fact: dict) -> bool:
+    """SPF から基盤を読み取れない状態か。
+
+    P5 が数で判定した `spf_is_flattened` に加えて、**平坦化サービスの
+    痕跡そのもの**も見る。PowerSPF のように include は1つ残るが、
+    その先が展開済みという形があり、数だけでは捕まらない。
+    """
+    if fact.get("spf_is_flattened"):
+        return True
+    values = [
+        *(fact.get("spf_includes") or []),
+        *(fact.get("spf_mechanisms") or []),
+        fact.get("raw_spf") or "",
+    ]
+    haystack = " ".join(str(v).lower() for v in values if v)
+    return any(marker in haystack for marker in SPF_FLATTENING_MARKERS)
 
 
 @dataclass
@@ -257,6 +341,7 @@ def build_drafts(
             confidence=confidence,
             hits=hits,
             notes=notes,
+            undetectable_reason=_rule_undetectable_reason(hits),
         )
         for hit in hits:
             if hit.rule.note:
@@ -266,6 +351,19 @@ def build_drafts(
         drafts.append(draft)
 
     return drafts
+
+
+def _rule_undetectable_reason(hits: list[Hit]) -> str | None:
+    """辞書側が「一致しても使っているとは言えない」と宣言しているか。
+
+    **1つでも普通の証拠が混ざっていれば、理由は付けない。** 仮 MX を
+    残したまま DKIM CNAME も出ているなら、それは現に使っている証拠が
+    あるということで、利用数から外す理由にならない。
+    """
+    reasons = {h.rule.undetectable_reason for h in hits}
+    if len(reasons) == 1:
+        return next(iter(reasons))
+    return None
 
 
 def _pick_product(hits: list[Hit]) -> str | None:
@@ -337,29 +435,36 @@ def _apply_stale(
         )
 
 
-def undetectable_draft(rule_set: RuleSet) -> InferenceDraft:
-    """API 連携型製品の構造的盲点を1行として明示する（DESIGN.md P6）。
+def undetectable_draft(rule_set: RuleSet, fact: dict | None = None) -> InferenceDraft:
+    """検出できなかったことを1行として明示する（DESIGN.md P6）。
 
-    Abnormal Security や Avanan のような製品は MX を変更せず
-    API / OAuth で動作するため、**原理的に DNS へ痕跡を残さない**。
     security_gateway が一件も検出できなかったドメインについて、
     「検出されなかった＝使っていない」ではないことをデータ側に残す。
     manifest の注記だけにすると、P7 / P8 に渡った時点で消える。
+
+    **理由は1つではない。** 2026-09 の計測では 2,884 ドメインがここに
+    落ちていたが、中身は API 連携型・自社運用・SPF 平坦化・未観測が
+    混ざっていた。`fact` を渡すと理由を選び分ける
+    （`undetectable_reason_for`）。
     """
-    vendors = ", ".join(
-        v.vendor + (f"（{v.product}）" if v.product else "")
-        for v in rule_set.undetectable
+    reason = (
+        undetectable_reason_for(fact)
+        if fact is not None
+        else UndetectableReason.API_MODE_PRODUCT
     )
+    notes = [UNDETECTABLE_MESSAGES[reason]]
+    if reason == UndetectableReason.API_MODE_PRODUCT:
+        vendors = ", ".join(
+            v.vendor + (f"（{v.product}）" if v.product else "")
+            for v in rule_set.undetectable
+        )
+        if vendors:
+            notes.append(f"痕跡を残さない製品の例: {vendors}")
     return InferenceDraft(
         category=InferenceCategory.SECURITY_GATEWAY,
         vendor=NOT_DETECTED_VENDOR,
         product=None,
         confidence=ConfidenceLevel.LOW,
-        undetectable_reason=UNDETECTABLE_API_MODE,
-        notes=[
-            "DNS 上でメールセキュリティ製品を検出できなかった。"
-            "MX を変更せず API / OAuth で連携する製品は原理的に痕跡を残さないため、"
-            "これは「使っていない」ことを意味しない",
-            f"痕跡を残さない製品の例: {vendors}" if vendors else "",
-        ],
+        undetectable_reason=reason,
+        notes=notes,
     )

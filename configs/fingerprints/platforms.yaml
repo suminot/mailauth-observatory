@@ -36,6 +36,21 @@ rules:
       pattern: '\.mail\.eo\.outlook\.com\.?$'
     confidence: high
 
+  - id: m365-mx-04
+    vendor: Microsoft
+    match:
+      # ドメインを M365 に追加したときの**仮 MX**。メールは流れない。
+      # 2026-09 の実データに31件（`ms29696915.msv1.invalid.outlook.com`）
+      record: MX
+      pattern: '\.msv1\.invalid(\.|$)'
+    confidence: low
+    # **一致しても「使っている」ことにはならない。** テナントに
+    # ドメインは登録済みだが、受信はそこではない ── 第3の状態である。
+    # 未知ホストに落とすと辞書を育てる一覧が汚れるので規則にはするが、
+    # 利用数からは外す（DESIGN-platform.md §3.1、§5）
+    undetectable_reason: tenant_placeholder_mx
+    note: M365 にドメイン登録済み。**受信はそこではない**
+
   - id: m365-spf-01
     vendor: Microsoft
     product: Microsoft 365 (Exchange Online)

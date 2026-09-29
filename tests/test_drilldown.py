@@ -38,7 +38,8 @@ def test_手元と成果物には書ける(ok):
 # 中身
 
 
-def _fixture(tmp_path, monkeypatch, *, observed=True, dmarc=True):
+def _fixture(tmp_path, monkeypatch, *, observed=True, dmarc=True,
+             reason="DNS 上に痕跡を残さない製品がある"):
     """最小の run ディレクトリを作る。"""
     monkeypatch.setenv("MAILAUTH_DATA_ROOT", str(tmp_path / "data"))
     run = "2026-09"
@@ -69,7 +70,7 @@ def _fixture(tmp_path, monkeypatch, *, observed=True, dmarc=True):
     }]))
     put("p6_infer", "inferences.parquet", pd.DataFrame([{
         "domain_id": "d1", "category": "mail_platform", "vendor": "Microsoft",
-        "undetectable_reason": "DNS 上に痕跡を残さない製品がある",
+        "undetectable_reason": reason,
     }]))
     return run
 
@@ -158,3 +159,27 @@ def test_明細が社外秘だと名前で分かる():
     block = block[: block.index("公開しない実行でも")]
     assert "社外秘" in block
     assert "tier2" in block, "第2層だと分かる名前になっていない"
+
+
+def test_検出できない理由を日本語で出す(tmp_path, monkeypatch):
+    """**識別子のままだと「何かのエラー」に見える。**
+
+    いちばん大事な「使っていないのではない」が伝わらない。
+    `api_mode_product` のような値は日本語に直して出す。
+    """
+    from mailauth.contracts import UndetectableReason
+
+    run = _fixture(
+        tmp_path, monkeypatch, reason=UndetectableReason.SELF_HOSTED_MX.value
+    )
+    rows = drilldown.build_rows(run)
+    got = rows[0]["検出できない理由"]
+    assert "自社運用" in got, got
+    assert "self_hosted" not in got
+
+
+def test_知らない理由は捨てずにそのまま出す(tmp_path, monkeypatch):
+    """**表から消すのが一番まずい。** 訳せないなら原文で出す。"""
+    run = _fixture(tmp_path, monkeypatch, reason="まだ名前の無い理由")
+    rows = drilldown.build_rows(run)
+    assert rows[0]["検出できない理由"] == "まだ名前の無い理由"

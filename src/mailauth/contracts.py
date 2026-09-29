@@ -122,6 +122,31 @@ class ConfidenceLevel(StrEnum):
     LOW = "low"
 
 
+class UndetectableReason(StrEnum):
+    """**「検出できなかった」の理由。**
+
+    理由が違うものを1つに丸めると、**どれも「使っていない」に見える**。
+    2026-09 の計測では 2,884 ドメインが1つの理由で括られていたが、
+    中身は「原理的に見えない」「製品が分からない」「読めない」
+    「そもそも観測できていない」が混ざっていた。
+
+    **この列に値が入っている行は、利用数に数えない。** 検出できなかった
+    ことの記録であって、利用の証拠ではない（`vendor_share` で保証する）。
+    """
+
+    #: (a) API / OAuth 連携型。配送経路に入らないので**原理的に DNS に出ない**
+    API_MODE_PRODUCT = "api_mode_product"
+    #: (b) MX が自社ドメイン配下。運用はしているが**製品名が分からない**
+    SELF_HOSTED_MX = "self_hosted_mx"
+    #: (c) SPF が平坦化されて include が消えている。**基盤が読めない**
+    SPF_FLATTENED = "spf_flattened"
+    #: テナントにドメインは登録済みだが、**受信はそこではない**
+    #: （Microsoft の仮 MX `*.msv1.invalid` など）
+    TENANT_PLACEHOLDER_MX = "tenant_placeholder_mx"
+    #: そもそも観測できていない。**「無い」ではない**（原則5）
+    NOT_OBSERVED = "not_observed"
+
+
 class ParkClass(StrEnum):
     """パークドメイン分類（DESIGN.md P6）。本システム固有の差別化指標。"""
 
