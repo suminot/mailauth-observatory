@@ -249,10 +249,24 @@ def test_to_dict_carries_the_threshold_and_the_caveats(tmp_path):
 # --------------------------------------------------------------------------
 
 
-def test_the_shipped_record_is_readable_and_empty():
-    entries, available, _ = worklist.load_unidentified()
+def test_the_shipped_record_is_readable():
+    """同梱の記録が読めること。**中身の有無は問わない。**
+
+    元はここで「空であること」を求めていた。だが調査して同定できなかった
+    ホストは記録される側なので、**調べれば必ず落ちる検査**だった
+    （2026-09 の作業リストで実際に落ちた）。読めることと、書いてある
+    ことが揃っていることを見る。
+    """
+    entries, available, notes = worklist.load_unidentified()
     assert available is True
-    assert entries == {}
+    # 読めない行があれば注記に出る。黙って捨てさせない
+    assert notes == []
+    for domain, entry in entries.items():
+        assert entry.registered_domain == domain
+        assert entry.reason in worklist.UNIDENTIFIED_REASONS
+        # **いつ調べたかが無いと、何か月前の結論なのか分からない**
+        assert entry.investigated_on is not None
+        assert entry.note
 
 
 def test_the_top_n_matches_p6():

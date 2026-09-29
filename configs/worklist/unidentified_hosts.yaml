@@ -27,4 +27,20 @@
 # 同定できるようになったら、この行を消して configs/fingerprints/*.yaml に
 # 規則を足す。**次回の P6 から効く。過去の月は作り直さない。**
 
-hosts: []
+hosts:
+  - registered_domain: mailsecure.jp
+    reason: no_public_info
+    investigated_on: 2026-09-29
+    note: >-
+      2026-09 の作業リストに15ドメイン。ホスト名は `v2301-244.mailsecure.jp` の
+      形で連番。NS は asns1/asns2.customer.ne.jp。検索しても製品ページが
+      見つからず、提供者を特定できない
+
+  - registered_domain: sharedmail.jp
+    reason: no_public_info
+    investigated_on: 2026-09-29
+    note: >-
+      2026-09 の作業リストに10ドメイン。`filter1.mail.sharedmail.jp` /
+      `mx1.sharedmail.jp` の形で、前段と実基盤の両方を兼ねているように見える。
+      NS は ns1-4.dns-server.jp。提供者を特定できない
+

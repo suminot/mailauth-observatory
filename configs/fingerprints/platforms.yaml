@@ -3,7 +3,7 @@
 # 証拠の強さ: DKIM_CNAME >= MX > SPF_INCLUDE > VERIFICATION_TXT（DESIGN.md P3/P6）
 # ゲートウェイ型製品が MX を握っていても、SPF include / DKIM CNAME から
 # 背後の実基盤を別カテゴリとして残すこと（原則2。単一ベンダーに丸めない）。
-version: 2026-08-01
+version: 2026-09-29
 category: mail_platform
 
 rules:
@@ -13,6 +13,27 @@ rules:
     match:
       record: MX
       pattern: '\.mail\.protection\.outlook\.com\.?$'
+    confidence: high
+
+  - id: m365-mx-02
+    vendor: Microsoft
+    product: Microsoft 365 (Exchange Online)
+    match:
+      # **新形式。** `.microsoft` は Microsoft 自身の TLD で、
+      # `mx.microsoft` ゾーンは Azure DNS で運用されている
+      # （2026-09-29 に SOA / NS を実測。hostmaster は microsoft.com）
+      record: MX
+      pattern: '\.mx\.microsoft\.?$'
+    confidence: high
+
+  - id: m365-mx-03
+    vendor: Microsoft
+    product: Microsoft 365 (Exchange Online)
+    match:
+      # 旧 FOPE 系。2026-09 の実データに6件あり、`outlook.com` の
+      # 未知ホストとして作業リストに残っていた
+      record: MX
+      pattern: '\.mail\.eo\.outlook\.com\.?$'
     confidence: high
 
   - id: m365-spf-01
@@ -31,6 +52,19 @@ rules:
       pattern: '\.onmicrosoft\.com\.?$'
     confidence: high
     note: 署名基盤。MX が前段ゲートウェイでも実基盤が M365 であることを示す
+
+  - id: m365-dkim-02
+    vendor: Microsoft
+    product: Microsoft 365 (Exchange Online)
+    match:
+      record: DKIM_CNAME
+      pattern: '\.dkim\.mail\.microsoft\.?$'
+    confidence: high
+    note: >-
+      新形式の DKIM CNAME。**ゾーンの実在は DNS で確かめられない** ──
+      `mail.microsoft` は存在しない名前にも NXDOMAIN ではなく NODATA を
+      返すため、名前の有無では判定できない（2026-09-29 実測）。
+      一致が0件のまま続くなら形式が違う可能性がある
 
   - id: gws-mx-01
     vendor: Google
@@ -103,3 +137,129 @@ rules:
       record: SPF_INCLUDE
       pattern: '^spf\d*\.nifty\.com$'
     confidence: medium
+
+  # -------------------------------------------------------------------------
+  # 2026-09 の作業リスト（未知 MX の頻度順）から同定したもの。
+  #
+  # **上位は国内サービスで占められている。** 海外製品より量が多い。
+  # 迷ったときは実基盤ではなく前段（security_gw.yaml）に置く ──
+  # 実基盤だと言い切ると、その背後を SPF / DKIM から探す二段推定が
+  # 「別ベンダーの実基盤が2つ」という読みにくい形になる。
+  # 前段に置けば、間違っていても取りこぼすだけで済む。
+  # -------------------------------------------------------------------------
+
+  - id: ntt-ocn-mx-01
+    vendor: NTTコミュニケーションズ
+    product: Bizメール&ウェブ プレミアム
+    region: JP
+    match:
+      record: MX
+      pattern: '^mwpremgw\d*\.ocn\.ad\.jp\.?$'
+    confidence: medium
+    note: ホスト名の mwpremgw は「メール&ウェブ プレミアム」の綴り。製品名は推察
+
+  - id: ntt-ocn-mx-02
+    vendor: NTTコミュニケーションズ
+    region: JP
+    match:
+      # 系列を特定できない OCN の受け皿。作業リスト最多（138ドメイン）で、
+      # `vcgw*` など製品の分からないホストが混ざっている。
+      # **未知ホストに落とさず、系列だけ不明にする**（pp-mx-03 と同じ考え）
+      record: MX
+      pattern: '\.ocn\.ad\.jp\.?$'
+    confidence: medium
+    note: OCN のメール系サービス。製品系列は特定できていない
+
+  - id: otsuka-mx-01
+    vendor: 大塚商会
+    product: アルファメール プレミア
+    region: JP
+    match:
+      record: MX
+      pattern: '\.alpha-prm\.jp\.?$'
+    confidence: high
+    source: alpha-prm.jp（サービスの会員サイトそのもの）
+
+  - id: otsuka-mx-02
+    vendor: 大塚商会
+    product: アルファメール
+    region: JP
+    match:
+      record: MX
+      pattern: '\.alpha-mail\.net\.?$'
+    confidence: medium
+
+  - id: kagoya-mx-01
+    vendor: カゴヤ・ジャパン
+    region: JP
+    match:
+      record: MX
+      pattern: '\.kagoya\.net\.?$'
+    confidence: high
+
+  - id: cpi-mx-01
+    vendor: KDDIウェブコミュニケーションズ
+    product: CPI
+    region: JP
+    match:
+      record: MX
+      pattern: '\.secure\.ne\.jp\.?$'
+    confidence: high
+    note: secure.ne.jp の NS は ns0/ns1.cpi.ad.jp（2026-09-29 実測）
+
+  - id: airnet-mx-01
+    vendor: エアネット
+    product: AIRnet / ALL in One メール
+    region: JP
+    match:
+      record: MX
+      pattern: '\.airnet\.ne\.jp\.?$'
+    confidence: medium
+
+  - id: lineworks-mx-01
+    vendor: ワークスモバイルジャパン
+    product: LINE WORKS
+    region: JP
+    match:
+      record: MX
+      pattern: '\.worksmobile\.com\.?$'
+    confidence: high
+
+  - id: lark-mx-01
+    vendor: Lark
+    product: Lark Suite
+    match:
+      record: MX
+      pattern: '\.larksuite\.com\.?$'
+    confidence: high
+
+  - id: pepabo-mx-01
+    vendor: GMOペパボ
+    product: heteml
+    region: JP
+    match:
+      record: MX
+      pattern: '\.heteml\.jp\.?$'
+    confidence: high
+
+  - id: pepabo-mx-02
+    vendor: GMOペパボ
+    product: ロリポップ！
+    region: JP
+    match:
+      record: MX
+      pattern: '\.lolipop\.jp\.?$'
+    confidence: high
+
+  - id: mxmobiling-mx-01
+    vendor: MXモバイリング
+    product: Active! world
+    region: JP
+    match:
+      record: MX
+      pattern: '\.active-w\.net\.?$'
+    confidence: medium
+    note: >-
+      ホスト名の active-w は Active! world の綴り。**同社は前段製品
+      Active! gate SS も出しており**、SPF の IP レンジはクオリティアの
+      本家と一致する（別ベンダーとして二重に数えないこと）

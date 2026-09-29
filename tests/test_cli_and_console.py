@@ -511,6 +511,16 @@ def test_adding_a_rule_refuses_paths_outside_the_dictionary(client, sandbox_conf
 
 def test_vendor_names_that_break_yaml_are_quoted(client, sandbox_configs):
     """`@` で始まる値は plain scalar として書けない。"""
+
+    def _count(name: str) -> int:
+        body = client.get("/api/dict/fingerprints").json()
+        return next(
+            d["rule_count"] for d in body["dictionaries"] if d["file"].endswith(name)
+        )
+
+    # **辞書の中身に依らないように、追加の前後で数える。** 実物の規則数を
+    # 書くと、辞書を1つ足すたびにこの検査が落ちる（実際に落ちた）
+    before = _count("platforms.yaml")
     resp = client.post(
         "/api/dict/rules",
         json={
@@ -521,8 +531,7 @@ def test_vendor_names_that_break_yaml_are_quoted(client, sandbox_configs):
     )
     assert resp.status_code == 200, resp.text
     # 読み直せている（endpoint が検証している）ので YAML として妥当
-    body = client.get("/api/dict/fingerprints").json()
-    assert any(d["rule_count"] == 12 for d in body["dictionaries"])
+    assert _count("platforms.yaml") == before + 1
 
 
 # -- 画面6 月次差分 ----------------------------------------------------------
