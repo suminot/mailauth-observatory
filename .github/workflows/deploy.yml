@@ -17,6 +17,12 @@ on:
       - "gold/**"
       - "site/**"
       - "src/mailauth/p8_publish/**"
+      # **認証の中身を直しても出ないと困る。** `functions/` は Pages の
+      # middleware（Basic 認証）で、ここを外すと「直したのに掛かっていない」
+      # 状態が黙って続く
+      - "functions/**"
+      # デプロイ手順そのものを直したときも出す
+      - ".github/workflows/deploy.yml"
 
   # **月次ワークフローのコミットは、上の push を起こさない。**
   #

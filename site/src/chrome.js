@@ -178,44 +178,10 @@ function sync(wrap, value) {
   }
 }
 
-/** 検索の「Alt-K」を実際に効かせる。
- *
- * **Framework が出しているラベルと、実装が食い違っている。**
- * 検索欄の脇には Mac 以外で `Alt-K` と表示されるが、向こうの keydown は
- *
- *   e.code === "KeyK" && e.metaKey && !e.altKey && !e.ctrlKey
- *
- * という条件で、**Alt を明示的に除外している。** つまり拾われるのは
- * ⌘K（Mac）と `/` だけで、Alt-K はどこにも繋がっていない。
- * 押しても何も起きないショートカットを表示し続けるより、動くようにする。
- *
- * Mac では ⌘K が向こうで拾われているので、ここでは何もしない。
- */
-function fixSearchShortcut() {
-  const box = document.querySelector("#observablehq-search");
-  const input = box?.querySelector("input");
-  if (!input) return;
-  // **表示も Alt-K に揃える。** Framework は navigator.platform が
-  // Mac / iPhone なら ⌘K と出すが、iPhone で見ると ⌘K と表示された
-  // うえに何も起きなかった（向こうのハンドラは metaKey しか見ない）。
-  // 押せば動くものだけを表示する。⌘K は Mac で従来どおり効く
-  box.setAttribute("data-shortcut", "Alt-K");
-
-  addEventListener("keydown", (e) => {
-    if (e.code !== "KeyK" || !e.altKey || e.metaKey || e.ctrlKey) return;
-    e.preventDefault();
-    // 狭い画面では一覧ごと隠れている。開いてから合わせる
-    const toggle = document.querySelector("#observablehq-sidebar-toggle");
-    if (toggle && !toggle.checked && input.offsetParent === null) toggle.checked = true;
-    input.focus();
-    input.select();
-  });
-}
 
 function start() {
   filterSidebarByLang();
   buildControls();
-  fixSearchShortcut();
 }
 
 if (document.readyState === "loading") {
