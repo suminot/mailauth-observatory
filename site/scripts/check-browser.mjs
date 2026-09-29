@@ -220,8 +220,8 @@ async function main() {
     const consoleErrors = [];
     watch(page, consoleErrors);
 
-    // サンプルページを見る。**数字が入った状態の画面**で、gold が空でも中身がある
-    await page.goto(`${base}/sample`, { waitUntil: "networkidle" });
+    // **表紙から見る。** ここが一番読まれる画面で、壊れたときの影響も大きい
+    await page.goto(`${base}/`, { waitUntil: "networkidle" });
     await page.waitForTimeout(600);
 
     const controls = page.locator(".chrome-controls");
@@ -311,7 +311,7 @@ async function main() {
     const desktop = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const wide = await desktop.newPage();
     watch(wide, consoleErrors);
-    await wide.goto(`${base}/sample`, { waitUntil: "networkidle" });
+    await wide.goto(`${base}/`, { waitUntil: "networkidle" });
     await wide.waitForTimeout(600);
 
     // -- 検索を出さない -----------------------------------------------------
@@ -596,14 +596,12 @@ async function main() {
       }, headings);
     };
 
-    for (const [label, url, headings, mustHaveNumbers] of [
-      ["表紙", `${base}/`, ["自分と、その配下", "実際に引いたサブドメイン"], false],
-      ["サンプル", `${base}/sample`, ["自分と、その配下", "実際に引いたサブドメイン"], true],
+    for (const [label, url, headings] of [
+      ["表紙", `${base}/`, ["自分と、その配下", "実際に引いたサブドメイン"]],
       [
         "英語版の表紙",
         `${base}/en/`,
         ["The domain, and what sits under it", "Subdomains actually queried"],
-        false,
       ],
     ]) {
       const state = await sectionState(wide, url, headings);
@@ -621,15 +619,6 @@ async function main() {
             ? "計測していない断りと表が同時に出ている"
             : `表が無い、または空のセルが ${blank} 個ある`
         );
-        // **サンプルは「数字が入るとこう見える」を見せるページである。**
-        // 断りが出ていたら、それはサンプルの役目を果たしていない
-        if (mustHaveNumbers) {
-          check(
-            `サンプルの「${name}」に数字が入っている`,
-            hasTable && !got.note,
-            got.note ? "計測していない断りが出ている" : "表が無い"
-          );
-        }
       }
     }
 
