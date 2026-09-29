@@ -2133,3 +2133,55 @@ def test_公開しない意図を名前で言える():
     # 2つの理由が両方とも gold を止めること
     commit = text[text.index("gold と実行記録をコミット") :]
     assert "inputs.publish" in commit, "publish の指定がコミット段で読まれていない"
+
+
+def test_月次の結果が自動で公開される():
+    """**既定のトークンで作られた push は、他のワークフローを起動しない。**
+
+    `deploy.yml` には長らく「月次ワークフローのコミットが引き金になる」と
+    書いてあったが、そうならない（GitHub の無限ループ防止）。
+
+    2026-09-28、初めて gold がコミットされた日に実際に起きた ── その
+    コミットに対する実行は0件で、手で起こすまで公開されなかった。
+    **八工程が一度も最後まで通っていなかったので、誰も踏んでいなかった。**
+
+    **名前を書き写さない。** 月次側の `name:` を読んで突き合わせる ──
+    あちらを改名したら、ここが黙って効かなくなるのを捕まえる。
+    """
+    import re as _re
+
+    wf = repo_root() / ".github" / "workflows"
+    monthly = wf / "monthly.yml"
+    deploy = wf / "deploy.yml"
+    m = _re.search(r"^name:\s*(.+?)\s*$", monthly.read_text(encoding="utf-8"), _re.M)
+    assert m, "monthly.yml に name が無い"
+    monthly_name = m.group(1).strip().strip("\"'")
+
+    text = deploy.read_text(encoding="utf-8")
+    assert "workflow_run:" in text, (
+        "月次の完了で公開が起きない。bot の push では push イベントが飛ばない"
+    )
+    block = text[text.index("workflow_run:") :]
+    block = block[: block.index("workflow_dispatch:")]
+    assert monthly_name in block, (
+        f"workflow_run が参照している名前が monthly.yml の name（{monthly_name}）と違う"
+    )
+
+
+def test_失敗した月次の結果を公開しない():
+    """**workflow_run は成否にかかわらず飛んでくる。**
+
+    打ち切られた実行や落ちた実行のあとに公開が走ると、途中までの
+    データがサイトに出る。
+    """
+    text = (repo_root() / ".github" / "workflows" / "deploy.yml").read_text(
+        encoding="utf-8"
+    )
+    job = text[text.index("jobs:") :]
+    assert "workflow_run.conclusion == 'success'" in job, (
+        "月次が失敗しても公開してしまう"
+    )
+    # **他の引き金（人の push・手動）まで止めない**
+    assert "github.event_name != 'workflow_run'" in job, (
+        "人の push や手動実行まで止まっている"
+    )
