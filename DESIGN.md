@@ -560,13 +560,44 @@ breakdown:
 
 ### 処理
 
-`official_domain` を起点に、五つの経路で候補を追加する。
+`official_domain` を起点に、六つの経路で候補を追加する。
 
-1. **Certificate Transparency**: `crt.sh` で `%.<official_domain>` と組織名を検索し、SAN から FQDN を抽出。eTLD+1 に正規化して候補に追加
+1. **Certificate Transparency**: `crt.sh` で `%.<official_domain>` を検索し、SAN から FQDN を抽出。eTLD+1 に正規化して候補に追加
 2. **SPF redirect の追跡**: `official_domain` の SPF を引き、`redirect=` が別の組織ドメインを指していれば候補に追加
 3. **SPF include の追跡**: 同じ SPF の `include:` が**自社サブドメイン**（同一 eTLD+1）を指していれば候補に追加。他社を指す include は「その基盤を使っている」であって所有ではないので候補にしない。2 と同じ TXT を読むので問い合わせは増えない
 4. **DMARC rua 宛先**: `_dmarc.<official_domain>` の rua 宛先ドメインが自社ドメインなら候補に追加
 5. **既知の関連ドメイン辞書**: 手動メンテナンスの CSV。グループ会社や事業ブランドのドメインを人手で追加できる経路を必ず用意する
+6. **Certificate Transparency（組織名）**: `crt.sh` を `?O=<組織名>` で検索する。**起点ドメインが取れなかった企業だけに使う**（下記）
+
+#### 起点が無い企業を候補ゼロにしない
+
+起点ドメインが取れない企業は候補が1件も作られず、**率の分母から黙って
+外れる。** 2026-09 の国内計測では 628 社（16.3%）がこの状態だった。
+**メールが無いのではなく、ドメインを見つけられていない。**
+
+証明書の Subject O（組織名）は、OV / EV では CA が法人を確認して入れる欄
+である。ここから引くのは推測ではない。国内企業の組織名（英字）は
+EDINET コードリストの「提出者名（英字）」から取る。
+
+**`?O=` はあいまい一致で他社を返す。** 実測（2026-09-29、
+`O=Toyota Motor Corporation`）では1万件中 6,721 件が
+`Toyota Motor Credit Corporation`（別会社）、385 件が
+`Toyota Motor Corporation Australia Limited` だった。そのまま候補にすると
+**他社のドメインをその企業のものとして測る。**
+
+したがって、応答の `name_value`（当たった組織名）が**完全に一致する行だけ**
+を採る（大文字小文字と連続空白のみ吸収する）。**法人格の語は落とさない** ──
+落とすと別会社との距離が縮む方向にしか働かない。
+
+制約と限界:
+
+- **DV 証明書には O が無い。** 無料証明書だけを使っている企業は、この経路
+  では見つからない。**「見つからなかった」は「無い」ではない**
+- crt.sh は1応答 10,000 件で打ち切る。上限に当たって完全一致が0件だった
+  場合は、同名・類似名に押し出された可能性があるので**0件として静かに
+  通さず**、失敗として記録する
+- 起点が取れた企業には使わない。ドメイン検索のほうが確実で、crt.sh への
+  本数も増やさない
 
 #### サブドメインを捨てない
 
@@ -595,8 +626,8 @@ candidate_id      STRING  PK
 entity_id         STRING  FK
 run_id            STRING
 domain            STRING  eTLD+1、または is_apex=false のサブドメイン
-discovery_method  STRING  official_url | ct_log | spf_redirect | spf_include
-                          | dmarc_rua | manual
+discovery_method  STRING  official_url | ct_log | ct_org | spf_redirect
+                          | spf_include | dmarc_rua | manual
 discovered_at     TIMESTAMP
 source_detail     STRING  crt.sh の証明書IDなど
 is_apex           BOOLEAN

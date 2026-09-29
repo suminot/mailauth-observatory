@@ -120,6 +120,10 @@ DEFAULT_DOWN_AFTER = 20
 class CtSource(Protocol):
     def search(self, domain: str) -> CtResult: ...
 
+    def search_org(self, name: str) -> CtResult:
+        """組織名で引く。**持たない実装があるので P2 は有無を見る。**"""
+        ...
+
     def prefetch(
         self,
         domains: Iterable[str],
@@ -311,6 +315,51 @@ class CrtShClient:
         `client` を渡すと接続を使い回す。`prefetch()` が本数分の接続を
         張り直さないために使う（`httpx.Client` はスレッド安全）。
         """
+        return self._query(
+            domain,
+            {"q": f"%.{domain}", "output": "json"},
+            _extract,
+            client=client,
+        )
+
+    def search_org(self, name: str, *, client: httpx.Client | None = None) -> CtResult:
+        """**組織名で引く。** 起点ドメインが無い企業のための経路。
+
+        DESIGN.md P2 は「crt.sh で組織名を検索」と書いていたが、実装は
+        ドメイン検索だけだった。起点が取れない企業は候補ゼロになり、
+        **そのまま分母から消えていた**（2026-09 の国内計測で 628 社）。
+
+        `?O=<名前>` は**あいまい一致で他社を返す。** 実測（2026-09-29、
+        `O=Toyota Motor Corporation`）では1万件中 6,721 件が
+        `Toyota Motor Credit Corporation`（別会社）、385 件が
+        `Toyota Motor Corporation Australia Limited` だった。
+        **そのまま候補にすると他社のドメインをその企業のものとして測る。**
+
+        なので `name_value`（当たった組織名）が**完全に一致する行だけ**を
+        採る。同じ実測で完全一致は 2,684 件あり、取れたのは
+        `toyota.co.jp` / `toyotatimes.jp` / `nettam.jp` などだった。
+        """
+        key = _org_cache_key(name)
+        return self._query(
+            key,
+            {"O": name, "output": "json"},
+            lambda _key, rows: _extract_org(key, name, rows),
+            client=client,
+        )
+
+    def _query(
+        self,
+        cache_key: str,
+        params: dict[str, str],
+        extract: Callable[[str, list[dict]], CtResult],
+        *,
+        client: httpx.Client | None = None,
+    ) -> CtResult:
+        """crt.sh を1回引く。**キャッシュ・間隔・停止判定はここに集約する。**
+
+        ドメイン検索と組織名検索で、相手への当たり方を変えない。
+        """
+        domain = cache_key
         cached = self._cache_path(domain)
         if cached and cached.is_file():
             try:
@@ -364,7 +413,7 @@ class CrtShClient:
                 try:
                     resp = client.get(
                         CRTSH_ENDPOINT,
-                        params={"q": f"%.{domain}", "output": "json"},
+                        params=params,
                         headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                     )
                 except httpx.TimeoutException as exc:
@@ -405,7 +454,7 @@ class CrtShClient:
         elapsed = time.monotonic() - started
         self._record(elapsed, kind=None, attempts=attempt + 1)
 
-        result = _extract(domain, rows)
+        result = extract(domain, rows)
         result.cache_month = self.month
         result.duration_sec = round(elapsed, 3)
         result.attempts = attempt + 1
@@ -475,6 +524,66 @@ class CrtShClient:
         return out
 
 
+#: crt.sh が1回の応答で返す上限。これに達したら**取りこぼしている。**
+CRTSH_ROW_LIMIT = 10000
+
+
+def normalize_org(name: str | None) -> str:
+    """組織名を突き合わせられる形に揃える。**丸めすぎない。**
+
+    証明書の O は大文字だったり空白が重なっていたりする（実測で
+    `TOYOTA MOTOR CORPORATION` と `Toyota Motor Corporation` の両方、
+    `Toyota  Motor Corporation` もあった）。そこだけ吸収する。
+
+    **法人格の語（Inc. / Ltd. / Corporation）は落とさない。**
+    落とすと `Toyota Motor Corporation` と
+    `Toyota Motor Corporation Australia Limited` の距離が縮む方向にしか
+    働かない ── 別会社を同じ会社として扱うのが、この経路で一番まずい。
+    """
+    return " ".join((name or "").split()).casefold()
+
+
+def _org_cache_key(name: str) -> str:
+    """組織名のキャッシュ名。ドメインのキャッシュと衝突させない。"""
+    safe = "".join(c if c.isalnum() or c in "-_. " else "_" for c in name).strip()
+    return "org=" + (safe.replace(" ", "+") or "unknown")[:120]
+
+
+def _extract_org(key: str, name: str, rows: list[dict]) -> CtResult:
+    """組織名検索の応答から、**その会社の**ドメインだけを取り出す。
+
+    `?O=` はあいまい一致なので、`name_value`（当たった組織名）が完全に
+    一致する行だけを採る。ドメインは `common_name` に入る
+    （`?q=` のときと違い、`name_value` は組織名である）。
+    """
+    want = normalize_org(name)
+    seen: dict[str, None] = {}
+    raw = 0
+    matched = 0
+    for row in rows or []:
+        if normalize_org(row.get("name_value")) != want:
+            continue
+        matched += 1
+        cn = str(row.get("common_name") or "").strip().lstrip("*.").rstrip(".").lower()
+        if not cn or " " in cn:
+            continue
+        raw += 1
+        apex = etld_plus_one(cn)
+        if apex:
+            seen.setdefault(apex, None)
+    result = CtResult(domain=key, found=sorted(seen), raw_names=raw)
+    if len(rows or []) >= CRTSH_ROW_LIMIT and matched == 0:
+        # **上限に当たって、しかも1件も一致しなかった。**
+        # 「その会社の証明書が無い」ではなく「あいまい一致に押し出された」
+        # 可能性がある。0件として静かに通さない（原則5）
+        result.error = (
+            f"crt.sh が上限 {CRTSH_ROW_LIMIT} 件を返し、完全一致が0件だった。"
+            "同名・類似名の他社に押し出されている可能性がある"
+        )
+        result.error_kind = "org_truncated"
+    return result
+
+
 def _extract(domain: str, rows: list[dict]) -> CtResult:
     """crt.sh の行から eTLD+1 を取り出して重複排除する。"""
     seen: dict[str, None] = {}
@@ -495,14 +604,28 @@ def _extract(domain: str, rows: list[dict]) -> CtResult:
 class StaticCtSource:
     """テスト用。ネットワークに出ない。"""
 
-    def __init__(self, mapping: dict[str, list[str]] | None = None) -> None:
+    def __init__(
+        self,
+        mapping: dict[str, list[str]] | None = None,
+        orgs: dict[str, list[str]] | None = None,
+    ) -> None:
         self.mapping = mapping or {}
+        #: 組織名 -> ドメイン。**空でも `search_org` は持つ。**
+        #: 持たないと P2 が「この CT ソースは組織名検索を持たない」として
+        #: 経路ごと落とし、検査が**通っているのに何も見ていない**状態になる
+        self.orgs = orgs or {}
         self.calls: list[str] = []
+        self.org_calls: list[str] = []
 
     def search(self, domain: str) -> CtResult:
         self.calls.append(domain)
         found = self.mapping.get(domain, [])
         return CtResult(domain=domain, found=list(found), raw_names=len(found))
+
+    def search_org(self, name: str) -> CtResult:
+        self.org_calls.append(name)
+        found = self.orgs.get(name, [])
+        return CtResult(domain=f"org={name}", found=list(found), raw_names=len(found))
 
     def prefetch(
         self,
@@ -518,6 +641,9 @@ class DisabledCtSource:
 
     def search(self, domain: str) -> CtResult:
         return CtResult(domain=domain, found=[], raw_names=0)
+
+    def search_org(self, name: str) -> CtResult:
+        return CtResult(domain=f'org={name}', found=[], raw_names=0)
 
     def prefetch(
         self,

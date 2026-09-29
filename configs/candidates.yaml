@@ -6,6 +6,8 @@ discovery:
   # 五つの経路（DESIGN.md P2）。個別に切れるようにしてある
   official_url: true      # P1 の official_domain を起点にする
   ct_log: true            # crt.sh。重いので qps を絞る
+  # **起点ドメインが無い企業だけに使う。** 証明書の O（組織名）で引く
+  ct_org: true
   spf_redirect: true      # SPF の redirect= が別組織を指していれば候補に
   spf_include: true       # SPF の include: が自社サブドメインを指していれば候補に
   dmarc_rua: true         # rua 宛先が自社ドメインなら候補に
@@ -93,6 +95,24 @@ ct:
   # 1社あたり CT から採る候補の上限。爆発を抑える
   max_per_entity: 200
 
+# 組織名で引く経路（BACKLOG 15）。**起点が無い企業だけに使う。**
+#
+# 2026-09 の国内計測では 628 社（16.3%）に起点が無く、候補ゼロのまま
+# 率の分母から外れていた。**メールが無いのではなく、ドメインを見つけられて
+# いない。** DESIGN.md は前から「組織名を検索」と書いていたが、実装は
+# ドメイン検索だけだった。
+#
+# `?O=` は**あいまい一致で他社を返す。** 実測（2026-09-29、
+# `O=Toyota Motor Corporation`）では1万件中 6,721 件が
+# `Toyota Motor Credit Corporation`（別会社）だった。`name_value` が
+# 完全に一致する行だけを採る（`ctlog.py` の `_extract_org`）。
+ct_org:
+  # 1社あたり採るドメイン数の上限
+  max_per_entity: 20
+  # そのうち何件を DNS 展開（rua / SPF）の起点にも使うか。
+  # **0 にすると経路が1本になる**ので、少なくとも1は要る
+  dns_seeds_per_entity: 3
+
 limits:
   # 網羅展開の上限（DESIGN.md 1.3）。超えたら打ち切って manifest に記録する
   max_candidates_total: 30000
@@ -116,7 +136,7 @@ resolver:
 confidence:
   # 独立した裏付けと見なす発見経路。
   # spf_redirect と dmarc_rua は DNS 由来なので、DNS 一次実証からは独立でない
-  independent_methods: [official_url, ct_log, manual]
+  independent_methods: [official_url, ct_log, ct_org, manual]
 
 acceptance:
   # DESIGN.md P2 / P3 の受け入れ基準。満たさなくても止めず manifest に記録する

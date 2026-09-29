@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -19,7 +18,7 @@ from typing import Annotated
 import typer
 
 from . import PHASE_LABELS, PHASES, __version__
-from .config import list_populations
+from .config import list_populations, offline_from_env
 from .paths import default_run_id, list_run_ids, phase_dir, validate_run_id
 from .stubs import PhaseNotImplementedError, not_implemented
 
@@ -38,10 +37,6 @@ LimitOption = Annotated[
 DryRunOption = Annotated[bool, typer.Option("--dry-run", help="出力を書かずに件数だけ確認する")]
 
 
-#: 偽と読む値。`MAILAUTH_OFFLINE=0` を「立っている」と読むと事故になる
-_FALSY = frozenset(("", "0", "false", "no", "off"))
-
-
 def _offline(flag: bool) -> bool:
     """`--offline` は環境変数 `MAILAUTH_OFFLINE` でも立てられる。
 
@@ -57,7 +52,7 @@ def _offline(flag: bool) -> bool:
     """
     if flag:
         return True
-    return os.environ.get("MAILAUTH_OFFLINE", "").strip().lower() not in _FALSY
+    return offline_from_env()
 
 
 def _echo_summary(result: dict) -> None:

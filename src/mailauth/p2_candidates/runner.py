@@ -22,7 +22,7 @@ import statistics
 from pathlib import Path
 from typing import Any
 
-from ..config import load_yaml
+from ..config import load_yaml, offline_from_env
 from ..contracts import (
     DOMAIN_CANDIDATE_ARROW_SCHEMA,
     DOMAIN_CANDIDATE_SORT_KEYS,
@@ -117,6 +117,8 @@ OWNERSHIP_METHODS = frozenset(
     {
         DiscoveryMethod.OFFICIAL_URL,
         DiscoveryMethod.CT_LOG,
+        # 証明書の O は CA が法人を確認して入れる欄なので、所有の裏付けになる
+        DiscoveryMethod.CT_ORG,
         DiscoveryMethod.MANUAL,
     }
 )
@@ -371,6 +373,20 @@ def run(
                 retries=int(res_cfg.get("retries", 2)),
                 qps=float(res_cfg.get("qps", 20)),
             )
+        # **`MAILAUTH_OFFLINE` は外部 API 全体の約束である。**
+        #
+        # P2 はこれを見ておらず、crt.sh だけ例外になっていた。起点ドメインの
+        # 無い企業を組織名で引くようにするまで、seed が無ければ CT を呼ばない
+        # という偶然で表に出ていなかった（検査のネットワーク遮断が捕まえた）。
+        offline = offline_from_env()
+        if offline and discovery.get("ct_log"):
+            manifest.add_warning(
+                "CT_SKIPPED_OFFLINE",
+                message=(
+                    "MAILAUTH_OFFLINE のため crt.sh を引いていない。"
+                    "**「証明書が無かった」ではなく「引いていない」**（原則5）"
+                ),
+            )
         if ct_source is None:
             ct_source = (
                 CrtShClient(
@@ -386,7 +402,7 @@ def run(
                     # **相手が落ちているなら叩き続けない。** 0 で無効
                     down_after=int(ct_cfg.get("down_after", DEFAULT_DOWN_AFTER)),
                 )
-                if discovery.get("ct_log")
+                if discovery.get("ct_log") and not offline
                 else DisabledCtSource()
             )
 
@@ -466,10 +482,45 @@ def run(
         # あるので、全件を先に取ると、使わないドメインまで crt.sh に
         # 投げることになる。1塊ぶんの取りすぎで済ませる
         ct_enabled = bool(discovery.get("ct_log"))
+        # **起点の無い企業だけに使う経路。** 起点があるならドメイン検索の
+        # ほうが確実なので、組織名では引かない（crt.sh への本数も増やさない）
+        org_cfg = cfg.get("ct_org") or {}
+        org_enabled = bool(discovery.get("ct_org")) and hasattr(ct_source, "search_org")
+        if bool(discovery.get("ct_org")) and not org_enabled:
+            manifest.add_warning(
+                "CT_ORG_UNSUPPORTED",
+                message=(
+                    "組織名検索が有効だが、この CT ソースは search_org を持たない。"
+                    "**「該当が無かった」ではなく「引いていない」**"
+                ),
+            )
+        org_max = int(org_cfg.get("max_per_entity", 20))
+        org_dns_seeds = int(org_cfg.get("dns_seeds_per_entity", 3))
+        ct_org_stats: dict[str, int] = {
+            "searched": 0,
+            "from_cache": 0,
+            "errors": 0,
+            "entities_recovered": 0,
+            "domains": 0,
+            "nothing_found": 0,
+            "no_name": 0,
+        }
 
         def _seed(i: int) -> str | None:
             value = rows.iloc[i].get("official_domain")
             return None if not value or str(value) == "nan" else str(value)
+
+        def _org_name(i: int) -> str | None:
+            """組織名検索に使う名前。**英字を優先する。**
+
+            証明書の O は英字なので、国内企業は EDINET の
+            「提出者名（英字）」を使う。米国は `name` が元から英字である。
+            """
+            for column in ("name_en", "name"):
+                value = rows.iloc[i].get(column)
+                if value and str(value) != "nan" and str(value).strip():
+                    return str(value).strip()
+            return None
 
         ct_ready: dict[str, CtResult] = {}
         ct_tracker: Progress | None = None
@@ -514,6 +565,36 @@ def run(
 
             official = _seed(idx)
 
+            # **起点が無い企業を、そのまま候補ゼロにしない**（BACKLOG 15）。
+            #
+            # 2026-09 の国内計測では 628 社（16.3%）に起点が無く、丸ごと
+            # 率の分母から外れていた。**メールが無いのではなく、ドメインを
+            # 見つけられていない。** 証明書の O は CA が法人を確認して
+            # 入れる欄なので、そこから引けば推測にならない
+            org_seeds: list[str] = []
+            if not official and org_enabled:
+                name = _org_name(idx)
+                if not name:
+                    ct_org_stats["no_name"] += 1
+                else:
+                    found = ct_source.search_org(name)
+                    ct_org_stats["searched"] += 1
+                    if found.from_cache:
+                        ct_org_stats["from_cache"] += 1
+                    if found.error:
+                        ct_org_stats["errors"] += 1
+                        manifest.add_failure(f"ct_org_{found.error_kind or 'error'}")
+                    for domain in found.found[:org_max]:
+                        collector.add(
+                            domain, DiscoveryMethod.CT_ORG, f"crt.sh O={name}"
+                        )
+                        org_seeds.append(domain)
+                    if found.found:
+                        ct_org_stats["entities_recovered"] += 1
+                        ct_org_stats["domains"] += len(found.found[:org_max])
+                    else:
+                        ct_org_stats["nothing_found"] += 1
+
             if discovery.get("official_url") and official:
                 collector.add(official, DiscoveryMethod.OFFICIAL_URL, "P1 gBizINFO company_url")
 
@@ -547,6 +628,21 @@ def run(
 
                 _discover_from_dns(
                     official,
+                    resolver,
+                    collector,
+                    bool(discovery.get("spf_redirect")),
+                    bool(discovery.get("dmarc_rua")),
+                    vendor_patterns,
+                    vendor_hits,
+                    unaligned_rua,
+                    use_include=bool(discovery.get("spf_include")),
+                )
+
+            # **組織名から拾ったドメインも起点として扱う。** ここを通さないと
+            # rua や SPF からの展開が効かず、その企業だけ経路が1本になる
+            for seed in org_seeds[:org_dns_seeds]:
+                _discover_from_dns(
+                    seed,
                     resolver,
                     collector,
                     bool(discovery.get("spf_redirect")),
@@ -741,6 +837,9 @@ def run(
             candidate_rows=len(candidates),
             # **apex とサブドメインを混ぜて数えない。** 分母は apex で閉じており、
             # サブドメインは別枠（BACKLOG 14）
+            # **起点が無かった企業を何社拾えたか。** ここが増えないなら
+            # この経路は効いていない（BACKLOG 15）
+            ct_org=ct_org_stats,
             subdomain_candidates=subdomain_count,
             shared_subdomains_dropped=len(shared_subdomains),
             ct=ct_stats,

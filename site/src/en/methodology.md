@@ -180,7 +180,42 @@ as `example.com`) and widens from there.
 | SPF `redirect=` | where SPF is delegated |
 | SPF `include:` | own subdomains the record has been split across |
 | DMARC `rua=` | the report destination, where it is the company's own domain |
+| Certificate organization | **only for companies with no starting domain**: a search of certificate logs by organization name |
 | Manual dictionary | group companies and business brands, added by hand |
+
+### Companies with no starting domain
+
+Measurement starts from a company's official website domain, but **for some
+companies that domain is not known**. No candidates are built for them by any
+of the routes above.
+
+**That does not mean they use no email.** It means the domain has not been
+found.
+
+So, for those companies only, the certificate logs are searched by
+**organization name**. Certificates that verify the existence of the
+organization (OV and EV) carry an organization field that the issuing
+authority fills in after checking the company register. **Reading that is not
+guesswork.** For Japanese companies the Latin-script name comes from the
+EDINET register.
+
+**That search also returns companies with similar names.** In one measurement,
+6,721 of 10,000 results for `Toyota Motor Corporation` belonged to
+`Toyota Motor Credit Corporation`, a different company. Only certificates whose
+organization name matches **exactly** are used, and suffixes such as `Inc.` or
+`Corporation` are not stripped — stripping them only makes different companies
+harder to tell apart.
+
+<div class="limits">
+
+- **Free certificates carry no organization field.** A company using only
+  those cannot be found by this route. **Not being found does not mean not
+  using email**
+- Certificate log searches return a capped number of results. Where the cap is
+  reached and no exact match survives, that is recorded as **"could not be
+  established", not as "none"**
+
+</div>
 
 ### A company's mail can sit on a subdomain
 

@@ -172,7 +172,34 @@ jobs:
             echo "::error::デプロイ先の URL が取れないため確認できない"
             exit 1
           fi
-          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$URL/")
+
+          # **出し終えた直後はまだ配られていない。**
+          #
+          # wrangler が返した時点では、この配備ごとの URL
+          # （`https://<hash>.<project>.pages.dev`）はまだ名前が生きて
+          # おらず、Cloudflare は 404 を返す。**middleware が無いときの
+          # 404 ではない** ── 認証が外れていれば index.html の 200 が
+          # 返るので、404 は「まだ配られていない」の側である。
+          #
+          # 1秒後に叩いて 404 を「認証が効いていない」と読み、
+          # #82 と #83 のデプロイが2回とも赤くなった。**出したもの自体は
+          # 正しく出ていた。**
+          #
+          # 名前が生きるまで待ってから判定する。待っても生きなければ、
+          # そのときは落とす ── 「確かめられなかった」を「通った」に
+          # しない
+          code=""
+          for _ in $(seq 1 20); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$URL/" || echo 000)
+            case "$code" in
+              404|000) sleep 6 ;;
+              *) break ;;
+            esac
+          done
+          if [ "$code" = "404" ] || [ "$code" = "000" ]; then
+            echo "::error::$URL が 2 分たっても応答しない（最後の応答: $code）。確かめられなかった"
+            exit 1
+          fi
           if [ "$code" != "401" ]; then
             echo "::error::認証なしで $code が返った。Basic 認証が効いていない"
             exit 1

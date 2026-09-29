@@ -1197,3 +1197,164 @@ def test_subdomains_can_be_switched_off(seeded_run, tmp_path):
     df = candidates()
     assert "mail.sample-info.co.jp" not in set(df["domain"])
     assert all(bool(v) for v in df["is_apex"])
+
+
+# ===========================================================================
+# 起点が無い企業を候補ゼロにしない（BACKLOG 15）
+# ===========================================================================
+
+
+def test_org_search_keeps_only_the_exact_organization():
+    """**`?O=` はあいまい一致で他社を返す。**
+
+    実測（2026-09-29、`O=Toyota Motor Corporation`）では1万件中
+    6,721 件が `Toyota Motor Credit Corporation`（別会社）、385 件が
+    `Toyota Motor Corporation Australia Limited` だった。そのまま
+    候補にすると、**他社のドメインをその企業のものとして測る。**
+    """
+    from mailauth.ctlog import _extract_org
+
+    rows = [
+        {"name_value": "Toyota Motor Corporation", "common_name": "www.toyota.co.jp"},
+        # 大文字・空白の揺れは同じ会社
+        {"name_value": "TOYOTA MOTOR CORPORATION", "common_name": "*.toyotatimes.jp"},
+        {"name_value": "Toyota  Motor Corporation", "common_name": "www.nettam.jp"},
+        # 別会社。**ここを通すのがこの経路で一番まずい**
+        {"name_value": "Toyota Motor Credit Corporation", "common_name": "x.tfscloudapps.com"},
+        {
+            "name_value": "Toyota Motor Corporation Australia Limited",
+            "common_name": "www.toyota.com.au",
+        },
+        {"name_value": "KAGAWA TOYOTA Motor Corporation", "common_name": "www.kagawa.example"},
+    ]
+    result = _extract_org("org=x", "Toyota Motor Corporation", rows)
+    assert result.found == ["nettam.jp", "toyota.co.jp", "toyotatimes.jp"]
+
+
+def test_org_normalization_does_not_drop_the_legal_suffix():
+    """法人格の語を落とすと**別会社との距離が縮む方向にしか働かない。**"""
+    from mailauth.ctlog import normalize_org
+
+    assert normalize_org("TOYOTA  MOTOR CORPORATION") == normalize_org("Toyota Motor Corporation")
+    assert normalize_org("Toyota Motor Corporation") != normalize_org(
+        "Toyota Motor Corporation Australia Limited"
+    )
+    assert normalize_org("Sample Inc.") != normalize_org("Sample")
+
+
+def test_org_search_says_so_when_crtsh_truncated_without_a_match():
+    """上限に当たって完全一致が0件。**「証明書が無い」ではない**（原則5）。"""
+    from mailauth.ctlog import CRTSH_ROW_LIMIT, _extract_org
+
+    rows = [{"name_value": "Other Corp", "common_name": "x.example"}] * CRTSH_ROW_LIMIT
+    result = _extract_org("org=x", "Wanted Inc.", rows)
+    assert result.found == []
+    assert result.error_kind == "org_truncated"
+
+
+def test_org_search_with_a_real_match_is_not_flagged_as_truncated():
+    """**当てはまらない説明を添えない。** 添えると次から読まれなくなる。"""
+    from mailauth.ctlog import CRTSH_ROW_LIMIT, _extract_org
+
+    rows = [{"name_value": "Other Corp", "common_name": "x.example"}] * (CRTSH_ROW_LIMIT - 1)
+    rows.append({"name_value": "Wanted Inc.", "common_name": "www.wanted.co.jp"})
+    result = _extract_org("org=x", "Wanted Inc.", rows)
+    assert result.found == ["wanted.co.jp"]
+    assert result.error_kind is None
+
+
+def test_p2_recovers_an_entity_that_has_no_starting_domain(seeded_run, monkeypatch):
+    """**起点が無い企業を候補ゼロのままにしない。**
+
+    2026-09 の国内計測では 628 社が起点を持たず、率の分母から外れていた。
+    メールが無いのではなく、ドメインを見つけられていない。
+    """
+    import pandas as pd
+
+    path = phase_output(RUN, "p1_population", "entities.parquet")
+    df = pd.read_parquet(path)
+    # 1社だけ起点を落とし、英字名を与える（EDINET の「提出者名（英字）」相当）
+    target = "jp:3234567890123"
+    df.loc[df["entity_id"] == target, "official_domain"] = None
+    df.loc[df["entity_id"] == target, "official_url"] = None
+    df.loc[df["entity_id"] == target, "name_en"] = "Sample Bank, Inc."
+    pq.write_table(
+        pa.Table.from_pandas(df, schema=ENTITY_ARROW_SCHEMA, preserve_index=False),
+        path,
+        compression="zstd",
+    )
+
+    ct = StaticCtSource(
+        {"sample-info.co.jp": ["sample-info.co.jp"]},
+        orgs={"Sample Bank, Inc.": ["sample-bank.co.jp"]},
+    )
+    out = run_p2(run_id=RUN, resolver=StaticResolver(ANSWERS), ct_source=ct)
+
+    df = candidates()
+    rows = df[(df["entity_id"] == target) & (df["discovery_method"] == "ct_org")]
+    assert len(rows) == 1, sorted(df[df["entity_id"] == target]["domain"])
+    assert rows.iloc[0]["domain"] == "sample-bank.co.jp"
+    assert "Sample Bank, Inc." in ct.org_calls
+
+    # fixture は17社あり、起点を持つのは SEED_DOMAINS の3社だけ。
+    # **起点の無い社は全部引く**ので、件数はそれに合わせて見る
+    stats = out["breakdown"]["ct_org"]
+    assert stats["searched"] == len(ct.org_calls)
+    assert stats["entities_recovered"] == 1
+    assert stats["domains"] == 1
+    # 当たらなかった社は「見つからなかった」として数える。黙って消さない
+    assert stats["nothing_found"] == stats["searched"] - 1
+
+
+def test_p2_does_not_use_org_search_when_a_starting_domain_exists(seeded_run):
+    """**起点があるなら組織名では引かない。** crt.sh への本数を増やさない。
+
+    ドメイン検索のほうが確実なので、組織名は起点が取れなかった社だけに使う。
+    """
+    import pandas as pd
+
+    entities = pd.read_parquet(phase_output(RUN, "p1_population", "entities.parquet"))
+    seeded_names = {
+        str(r["name_en"] or r["name"])
+        for _, r in entities.iterrows()
+        if str(r["entity_id"]) in SEED_DOMAINS
+    }
+    assert seeded_names, "起点を持つ社が居ない。検査の前提が崩れている"
+
+    ct = StaticCtSource(dict(CT.mapping), orgs={n: ["x.example"] for n in seeded_names})
+    out = run_p2(run_id=RUN, resolver=StaticResolver(ANSWERS), ct_source=ct)
+
+    # 起点を持つ3社は**一度も組織名で引かれていない**
+    assert not (seeded_names & set(ct.org_calls)), sorted(ct.org_calls)
+    assert out["breakdown"]["ct_org"]["searched"] == len(entities) - len(SEED_DOMAINS)
+    assert "x.example" not in set(candidates()["domain"])
+
+
+def test_p2_does_not_reach_crtsh_when_offline(seeded_run, monkeypatch):
+    """**`MAILAUTH_OFFLINE` は外部 API 全体の約束である。**
+
+    P2 はこれを見ておらず、crt.sh だけ例外になっていた。起点ドメインの
+    無い企業を組織名で引くようにするまで、seed が無ければ CT を呼ばない
+    という偶然で表に出ていなかった。
+
+    引かなかったことは warning に残す ── **「証明書が無かった」ではなく
+    「引いていない」**（原則5）。
+    """
+    monkeypatch.setenv("MAILAUTH_OFFLINE", "1")
+    # ct_source を渡さない。**本物が組み立てられる経路**を通す
+    out = run_p2(run_id=RUN, resolver=StaticResolver(ANSWERS))
+    assert out["status"] in ("success", "partial"), out
+    codes = [w["code"] for w in out["warnings"]]
+    assert "CT_SKIPPED_OFFLINE" in codes, codes
+
+
+def test_offline_is_not_set_by_a_falsy_value(monkeypatch):
+    """`MAILAUTH_OFFLINE=0` を「立っている」と読むと、黙って引かなくなる。"""
+    from mailauth.config import offline_from_env
+
+    for value in ("", "0", "false", "no", "off", "OFF"):
+        monkeypatch.setenv("MAILAUTH_OFFLINE", value)
+        assert offline_from_env() is False, value
+    for value in ("1", "true", "yes"):
+        monkeypatch.setenv("MAILAUTH_OFFLINE", value)
+        assert offline_from_env() is True, value

@@ -50,6 +50,24 @@ def load_dotenv(path: Path | None = None) -> dict[str, str]:
     return loaded
 
 
+#: 偽と読む値。`MAILAUTH_OFFLINE=0` を「立っている」と読むと事故になる
+_FALSY = frozenset(("", "0", "false", "no", "off"))
+
+
+def offline_from_env() -> bool:
+    """`MAILAUTH_OFFLINE` が立っているか。
+
+    **プロセスの境界を越える手段として使う。** コンソールはフェーズを
+    subprocess で起動するので、旗だけだと子に届かない。
+
+    判定を1か所に置くのは、**外部 API を引く場所が増えるたびに
+    同じ条件を書き写すと、いつか書き写し忘れるため。** 実際 P2 は
+    crt.sh を引くのにこれを見ておらず、起点ドメインが無い企業では
+    offline でも外に出ていた。
+    """
+    return os.environ.get("MAILAUTH_OFFLINE", "").strip().lower() not in _FALSY
+
+
 def credential(name: str) -> str | None:
     """認証情報を1か所から取る。未設定は None（例外にしない）。
 
