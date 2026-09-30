@@ -275,3 +275,29 @@ def test_an_explicit_dotenv_path_is_still_read(tmp_path):
     env_file = tmp_path / "custom.env"
     env_file.write_text("MAILAUTH_SOMETHING=1\n", encoding="utf-8")
     assert load_dotenv(env_file) == {"MAILAUTH_SOMETHING": "1"}
+
+
+def test_証券コードは_qualifier_で引く():
+    """**Wikidata はティッカーを P414 の qualifier に持つ。**
+
+    最初 `wdt:P249`（主文）で書いていて、返ってきたのは US 12 件 /
+    JP 2 件だった。2026-09-30 の米国実行で ticker 突合が 2 社しか埋めず、
+    そこで気付いた。
+
+        実測（2026-09-30、WDQS）
+          wdt:P249 を直接持つ項目（全世界）       1,016
+          p:P414 / pq:P249 を持つ項目（全世界）  15,933
+
+        このクエリ  US 12 → 4,390 件 / JP 2 → 5,055 件
+
+    **同じ書き間違いに戻らないように縛る。** 形を見るだけの検査なので
+    「引ける」ことの保証にはならないが、**分かっている間違い**は止まる。
+    """
+    for name in ("us_ticker_identity.rq", "jp_securities_identity.rq"):
+        text = (repo_root() / "configs/populations/_sparql" / name).read_text(encoding="utf-8")
+        body = text.split("SELECT", 1)[1]
+        assert "pq:P249" in body, f"{name} が qualifier の形になっていない"
+        assert "wdt:P249" not in body, (
+            f"{name} が主文の P249 を使っている。US 12 件 / JP 2 件しか返らない形"
+        )
+        assert "p:P414" in body and "ps:P414" in body, f"{name} に取引所の文が無い"

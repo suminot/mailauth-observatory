@@ -65,6 +65,7 @@ class DomainRow:
     spf_present: bool
     dmarc_present: bool
     effective_7489: str | None
+    applied_7489: str | None
     sp_effective_7489: str | None
     sp_weaker: bool
     dmarc_p: str | None
@@ -90,6 +91,7 @@ class DomainRow:
             spf_present=_truthy(fact.get("spf_present")),
             dmarc_present=_truthy(fact.get("dmarc_present")),
             effective_7489=_text(fact.get("effective_7489")),
+            applied_7489=_text(fact.get("applied_7489")),
             sp_effective_7489=_text(fact.get("sp_effective_7489")),
             sp_weaker=_truthy(fact.get("sp_weaker")),
             dmarc_p=_text(fact.get("dmarc_p")),
@@ -107,6 +109,17 @@ class DomainRow:
     @property
     def dmarc_enforced(self) -> bool:
         return self.effective_7489 in ENFORCING
+
+    @property
+    def applied_enforced(self) -> bool:
+        """**実際に効いている強度**が quarantine 以上か。
+
+        自分の `_dmarc` があればその値、無ければ上位から継承した値。
+        `applied_7489` が埋まっていない古い run では `effective_7489`
+        に落とす ── 列が無いことを「効いていない」と読まないため。
+        """
+        applied = self.applied_7489 or self.effective_7489
+        return applied in ENFORCING
 
     @property
     def subdomain_enforced(self) -> bool:
@@ -225,7 +238,15 @@ def aggregate(
         subdomains_measured=len(subdomains),
         subdomains_observed=len(subdomains_observed),
         subdomains_with_own_dmarc=sum(1 for r in subdomains_observed if r.dmarc_present),
-        subdomains_dmarc_enforced=sum(1 for r in subdomains_observed if r.dmarc_enforced),
+        # **継承したものも数える。** 自分の `_dmarc` を持たないサブドメインは
+        # 上位の `sp=` が効いている。自分のレコードだけ見ると、守られている
+        # のに未対応側に入る（BACKLOG 14 の d）
+        subdomains_dmarc_enforced=sum(
+            1 for r in subdomains_observed if r.applied_enforced
+        ),
+        subdomains_inherited_policy=sum(
+            1 for r in subdomains_observed if not r.dmarc_present and r.applied_7489
+        ),
         entities_with_subdomain_mail=len(
             {r.entity_id for r in subdomains if r.entity_id}
         ),

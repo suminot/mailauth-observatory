@@ -643,3 +643,54 @@ def test_符号だけで区別が付く():
         )
     assert "ENRICH_FAILED_WIKIDATA" in src
     assert Path(repo_root() / "src" / "mailauth" / "p1_population" / "runner.py").is_file()
+
+
+# ---------------------------------------------------------------------------
+# Wikidata に届く形で投げているか
+# ---------------------------------------------------------------------------
+
+
+def test_wdqs_には_http2_で話す(monkeypatch):
+    """**WDQS は HTTP/1.1 を robot policy で弾く。**
+
+    httpx の既定は HTTP/1.1 なので、開発環境から 403 が返り続け、
+    米国 P1 の official_url 欠損が 100% になっていた（2026-09-30）。
+    同じ環境・同じ URL・同じ UA で切り分けた実測:
+
+        curl（既定で HTTP/2）  200 / httpx 既定  403 / httpx + http2  200
+    """
+    import httpx
+
+    from mailauth.p1_population import wikidata as wd
+
+    seen = {}
+
+    class _Client:
+        def __init__(self, *a, **kw):
+            seen.update(kw)
+
+        def post(self, *a, **kw):
+            return httpx.Response(200, json={"results": {"bindings": []}})
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(wd.httpx, "Client", _Client)
+    wd.run_query("SELECT * WHERE {}")
+    assert seen.get("http2") is True, f"HTTP/2 で投げていない: {seen}"
+
+
+def test_wdqs_の_user_agent_に連絡先を入れる(monkeypatch):
+    """robot policy は連絡先を求めている。
+
+    **これは 403 の原因ではなかった** ── そう決めつけて直したら、まだ
+    403 だった（原因は HTTP/1.1）。作法として入れる、という位置づけ。
+    """
+    from mailauth.p1_population.wikidata import user_agent
+
+    monkeypatch.setenv("MAILAUTH_CONTACT_EMAIL", "someone@example.com")
+    assert "someone@example.com" in user_agent()
+
+    monkeypatch.delenv("MAILAUTH_CONTACT_EMAIL", raising=False)
+    ua = user_agent()
+    assert ua.endswith(")") and "@" not in ua, ua

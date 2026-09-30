@@ -23,9 +23,28 @@ import httpx
 from ..paths import config_path
 
 ENDPOINT = "https://query.wikidata.org/sparql"
-#: 連絡先を含めるのが WDQS の作法。無いと弾かれる
-USER_AGENT = "mailauth-observatory/0.1 (https://github.com/suminot/mailauth-observatory)"
+#: 連絡先を**含めていなかった。**
+#:
+#: この行のすぐ上のコメントは前から「連絡先を含めるのが作法」と書いて
+#: いたのに、実際に送っていた UA には連絡先が無かった。robot policy が
+#: 求めているので入れる。
+#:
+#: **ただし 403 の原因はこれではなかった。** 最初そう決めつけて、直して
+#: から試したらまだ 403 だった。切り分けた結果は下の `run_query` に書く。
+BASE_USER_AGENT = "mailauth-observatory/0.1 (https://github.com/suminot/mailauth-observatory"
 TIMEOUT_SEC = 60.0
+
+
+def user_agent() -> str:
+    """WDQS に名乗る文字列。**連絡先があれば必ず入れる。**
+
+    Wikimedia の robot policy は連絡先を求めている。`MAILAUTH_CONTACT_EMAIL`
+    は SEC EDGAR でも使う同じ鍵なので、新しい設定項目は増やさない。
+    """
+    from ..config import credential
+
+    contact = credential("MAILAUTH_CONTACT_EMAIL")
+    return f"{BASE_USER_AGENT}; {contact})" if contact else f"{BASE_USER_AGENT})"
 
 
 class WikidataError(RuntimeError):
@@ -72,15 +91,30 @@ def load_query(path: str | Path) -> str:
 
 
 def run_query(query: str, *, client: httpx.Client | None = None) -> list[dict[str, Any]]:
-    """SPARQL を実行して bindings をそのまま返す。"""
+    """SPARQL を実行して bindings をそのまま返す。
+
+    **HTTP/2 で話す。** WDQS は HTTP/1.1 の問い合わせを robot policy で
+    弾く。httpx の既定は HTTP/1.1 なので、**開発環境から 403 が返り続け、
+    米国 P1 の official_url 欠損が 100% になっていた**（2026-09-30）。
+
+    同じ環境・同じ URL・同じ UA で切り分けた実測:
+
+        curl（既定で HTTP/2）           200
+        httpx 既定（HTTP/1.1）          403
+        httpx + Accept-Encoding 変更    403
+        httpx + http2=True              200
+
+    UA に連絡先を入れるのは robot policy への作法であって、**403 の原因
+    ではなかった。** 最初そう決めつけて直し、まだ 403 だったので測り直した。
+    """
     owned = client is None
-    c = client or httpx.Client(timeout=TIMEOUT_SEC, follow_redirects=True)
+    c = client or httpx.Client(timeout=TIMEOUT_SEC, follow_redirects=True, http2=True)
     try:
         resp = c.post(
             ENDPOINT,
             data={"query": query},
             headers={
-                "User-Agent": USER_AGENT,
+                "User-Agent": user_agent(),
                 "Accept": "application/sparql-results+json",
             },
         )

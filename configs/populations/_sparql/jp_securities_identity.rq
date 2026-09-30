@@ -15,9 +15,22 @@
 #+
 #+ **1クエリで全件取る。** endpoint: https://query.wikidata.org/sparql
 
+#+ **証券コードは主文ではなく qualifier に入っている。**
+#+
+#+ 最初 `wdt:P249` で書いていたが、**2 件しか返らなかった**（2026-09-30、
+#+ 米国側で同じ間違いに気付いて国内も測り直した）。Wikidata は証券コードを
+#+ P414（証券取引所）の文に対する qualifier として持つ。
+#+
+#+   実測（2026-09-30、WDQS）
+#+     旧: 2 件  →  新: 2,049 件（東証 Q217475、公式サイトを持つ項目）
+#+
+#+ **国ではなく取引所（東証）で絞る。** 他国の同じコードとぶつかって
+#+ 両方捨てられるのを防げる。
+
 SELECT ?securities_code ?website ?lei ?label WHERE {
-  ?company wdt:P17 wd:Q17 .                  # 国＝日本
-  ?company wdt:P249 ?securities_code .       # 証券コード（ティッカー）
+  ?company p:P414 ?listing .
+  ?listing ps:P414 wd:Q217475 .              # 東京証券取引所
+  ?listing pq:P249 ?securities_code .        # 証券コードは qualifier
   ?company wdt:P856 ?website .               # **公式サイトがある項目だけ**
   OPTIONAL { ?company wdt:P1278 ?lei }
   ?company rdfs:label ?label .
