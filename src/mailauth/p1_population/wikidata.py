@@ -13,6 +13,7 @@ Wikidata Query Service の作法
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,6 +21,7 @@ from typing import Any
 
 import httpx
 
+from ..normalize import domain_from_url
 from ..paths import config_path
 
 ENDPOINT = "https://query.wikidata.org/sparql"
@@ -231,12 +233,8 @@ _NAME_NOISE = (
 
 
 def _name_tokens(name: str) -> set[str]:
-    s = name.lower()
-    for ch in ".,&'\"()-/":
-        s = s.replace(ch, " ")
-    for noise in _NAME_NOISE:
-        s = s.replace(noise.lower(), " ")
-    return {w for w in s.split() if w}
+    """語の集合。**並びを見ない比較**に使う。"""
+    return set(_ordered_tokens(name))
 
 
 def names_agree(ours: str | None, theirs: str | None) -> bool:
@@ -256,7 +254,88 @@ def names_agree(ours: str | None, theirs: str | None) -> bool:
     a, b = _name_tokens(ours), _name_tokens(theirs)
     if not a or not b:
         return False
-    return a <= b or b <= a
+    if a <= b or b <= a:
+        return True
+    # **日本語には語の切れ目が無い。**
+    #
+    # 「コカ・コーラ　ボトラーズジャパンホールディングス株式会社」と
+    # 「コカ・コーラボトラーズジャパンホールディングス」は同じ会社だが、
+    # 片方にだけ全角スペースが入っているので語の集合では一致しない。
+    #
+    # **含有ではなく一致で通す。** 含有にすると「日本電気」が
+    # 「日本電気硝子」に含まれてしまい、別会社を同じ会社として扱う ──
+    # この経路で一番まずい間違いである。
+    return _joined(ours) == _joined(theirs)
+
+
+def _joined(name: str) -> str:
+    """空白を落として1つながりにしたもの。語の切れ目が無い言語向け。"""
+    return "".join(sorted_tokens) if (sorted_tokens := _ordered_tokens(name)) else ""
+
+
+def _ordered_tokens(name: str) -> list[str]:
+    """社名を比較できる語に割る。**正規化はここ1か所だけ。**
+
+    最初 `_name_tokens` と2か所に同じ処理を書いていて、片方の正規化を
+    外しても**もう片方が拾うので検査が素通りした。** 1つにまとめてある。
+
+    **全角と半角を揃える。** EDINET は「ＤＯＷＡホールディングス」、
+    Wikidata は「DOWAホールディングス」と書く。揃えないと**同じ会社が
+    別会社として落ちる** ── 2026-09-30 の実測で、社名で捨てた国内 229 社の
+    うち目に見える範囲はほとんどこれだった（ＩＮＰＥＸ / ｆａｎｔａｓｉｓｔａ /
+    ｍｅｉｔｏ、全角スペース入りの社名も）。
+    """
+    s = unicodedata.normalize("NFKC", name).lower()
+    for ch in ".,&\'\"()-/":
+        s = s.replace(ch, " ")
+    for noise in _NAME_NOISE:
+        s = s.replace(noise.lower(), " ")
+    return [w for w in s.split() if w]
+
+
+#: 1社に複数あって当たり前の欄。**競合として数えない。**
+#:
+#: 国内のクエリは日本語か英語のラベルを要求している（語順・表記が
+#: 名簿と揃わないため両方欲しい）。ところが `drop_on_conflict` が
+#: 「同じ鍵に違う値」を一律に競合として数えていたので、**ラベルが2つ
+#: ある会社が丸ごと捨てられていた** ── 2026-09-30 の実測で、国内
+#: 3,817社のうち 1,828 件がこれで落ちていた。
+#:
+#: 競合として見るのは、**どの会社かを決める欄**（公式サイト・LEI）だけ。
+#: ラベルは決める側ではなく、突き合わせて確かめる側である。
+MULTI_VALUED_FIELDS = frozenset({"label"})
+
+#: 複数値を1つの文字列にまとめるときの区切り。ラベルには現れない
+MULTI_VALUE_SEPARATOR = "\n"
+
+
+def multi_values(value: str | None) -> list[str]:
+    """`MULTI_VALUED_FIELDS` の欄を元の並びに戻す。"""
+    if not value:
+        return []
+    return [v for v in value.split(MULTI_VALUE_SEPARATOR) if v]
+
+
+def _conflict_key(field: str, value: str) -> str:
+    """競合かどうかを**使う形で**比べる。
+
+    公式サイトは URL のまま比べていたので、同じ会社の日本語版と英語版、
+    `http` と `https`、末尾スラッシュの有無が「どちらの会社か分からない」
+    として扱われ、**その会社ごと捨てられていた。**
+
+    実測（2026-09-30、国内 3,817社）:
+
+        ホクト      https://www.hokto-kinoko.co.jp/
+                    https://www.hokto-kinoko.co.jp/lang/en/
+        西松建設    https://www.nishimatsu.co.jp
+                    https://www.nishimatsu.co.jp/
+
+    使うのはドメインなので、ドメインで比べる。**別の会社なら別の
+    ドメインになる**ので、歯止めとしての働きは変わらない。
+    """
+    if field == "website":
+        return domain_from_url(value) or value.strip().lower()
+    return value
 
 
 def _cik_key(raw: str) -> str | None:
@@ -347,10 +426,20 @@ def fetch_identity(
             value = _value(binding, field_name)
             if not value:
                 continue
+            if field_name in MULTI_VALUED_FIELDS:
+                # **複数あって当たり前の欄。** 積んでいくだけで競合にしない
+                existing = multi_values(entry.get(field_name))
+                if value not in existing:
+                    existing.append(value)
+                    entry[field_name] = MULTI_VALUE_SEPARATOR.join(existing)
+                    stats[field_name] += 1
+                continue
             if field_name not in entry:
                 entry[field_name] = value
                 stats[field_name] += 1
-            elif entry[field_name] != value:
+            elif _conflict_key(field_name, entry[field_name]) != _conflict_key(
+                field_name, value
+            ):
                 stats["conflicts"] += 1
                 if drop_on_conflict:
                     # **どちらか分からないなら、両方使わない。**

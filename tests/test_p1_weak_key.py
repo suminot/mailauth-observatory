@@ -227,3 +227,112 @@ def test_entities_without_a_key_are_counted_not_hidden(monkeypatch):
     e = _Entity("No Ticker Corporation", None)
     stats, _ = _fill([e], [], monkeypatch)
     assert stats["without_key"] == 1
+
+
+def test_社名の全角と半角を揃えてから比べる():
+    """**同じ会社が別会社として落ちていた。**
+
+    EDINET は「ＤＯＷＡホールディングス」、Wikidata は
+    「DOWAホールディングス」と書く。2026-09-30 の実測では、社名で
+    捨てた国内 229 社のうち目に見える範囲はほとんどこれだった。
+    """
+    from mailauth.p1_population.wikidata import _name_tokens, names_agree
+
+    # **語に割る段で揃っていること。** ここを見ておかないと、正規化を
+    # 外しても一つながりの比較が拾って検査が素通りする（実際に素通りした）
+    assert _name_tokens("ＤＯＷＡホールディングス") == _name_tokens("DOWAホールディングス")
+
+    assert names_agree("ＤＯＷＡホールディングス株式会社", "DOWAホールディングス")
+    assert names_agree("株式会社ＩＮＰＥＸ", "INPEX")
+    assert names_agree("株式会社ｆａｎｔａｓｉｓｔａ", "fantasista")
+    # 全角スペース入りの社名
+    assert names_agree(
+        "コカ・コーラ　ボトラーズジャパンホールディングス株式会社",
+        "コカ・コーラボトラーズジャパンホールディングス",
+    )
+    # **別会社は落ちたままであること。**
+    #
+    # 一つながりの形を**含有で**比べると「日本電気」が「日本電気硝子」に
+    # 含まれて通ってしまう。一致でしか通さない
+    assert not names_agree("サッポロビール株式会社", "アサヒビール")
+    assert not names_agree("株式会社土屋ホールディングス", "積水ハウス")
+    assert not names_agree("日本電気株式会社", "日本電気硝子株式会社")
+
+
+def test_ラベルが2つあることを競合として数えない(monkeypatch):
+    """**1社に日本語と英語のラベルがあるのは正常である。**
+
+    国内のクエリは ja か en のラベルを要求している（語順・表記が名簿と
+    揃わないため両方欲しい）。ところが `drop_on_conflict` が「同じ鍵に
+    違う値」を一律に競合として数えていたので、**ラベルが2つある会社が
+    丸ごと捨てられていた** ── 2026-09-30 の実測で、国内 3,817社のうち
+    1,828 件がこれで落ちていた。
+
+    競合として見るのは**どの会社かを決める欄**（公式サイト・LEI）だけ。
+    """
+    from mailauth.p1_population.wikidata import (
+        fetch_identity,
+        multi_values,
+    )
+
+    bindings = [
+        {
+            "securities_code": {"value": "9976"},
+            "website": {"value": "http://www.sekichu.co.jp/"},
+            "label": {"value": "Sekichu"},
+        },
+        {
+            "securities_code": {"value": "9976"},
+            "website": {"value": "http://www.sekichu.co.jp/"},
+            "label": {"value": "セキチュー"},
+        },
+    ]
+    monkeypatch.setattr(
+        "mailauth.p1_population.wikidata.run_query", lambda *a, **k: bindings
+    )
+    identity, stats = fetch_identity(
+        "configs/populations/_sparql/jp_securities_identity.rq",
+        key="securities_code",
+        fields=("website", "lei", "label"),
+        drop_on_conflict=True,
+    )
+
+    assert stats["dropped_ambiguous"] == 0, "ラベルの違いで会社ごと捨てている"
+    assert "9976" in identity
+    assert set(multi_values(identity["9976"]["label"])) == {"Sekichu", "セキチュー"}
+
+
+def test_同じドメインの表記ゆれを競合として数えない(monkeypatch):
+    """`http` と `https`、日本語版と英語版、末尾スラッシュ。
+
+    **使うのはドメインなので、ドメインで比べる。** 別の会社なら別の
+    ドメインになるので、歯止めとしての働きは変わらない。
+    """
+    from mailauth.p1_population.wikidata import fetch_identity
+
+    def run(bindings):
+        return fetch_identity(
+            "configs/populations/_sparql/jp_securities_identity.rq",
+            key="securities_code",
+            fields=("website",),
+            drop_on_conflict=True,
+        )
+
+    same = [
+        {"securities_code": {"value": "1820"}, "website": {"value": "https://www.nishimatsu.co.jp"}},
+        {"securities_code": {"value": "1820"}, "website": {"value": "https://www.nishimatsu.co.jp/"}},
+    ]
+    monkeypatch.setattr("mailauth.p1_population.wikidata.run_query", lambda *a, **k: same)
+    identity, stats = run(same)
+    assert stats["dropped_ambiguous"] == 0
+    assert "1820" in identity
+
+    # **別のドメインなら、これまでどおり捨てる**
+    other = [
+        {"securities_code": {"value": "1820"}, "website": {"value": "https://a.example.co.jp"}},
+        {"securities_code": {"value": "1820"}, "website": {"value": "https://b.example.jp"}},
+    ]
+    monkeypatch.setattr("mailauth.p1_population.wikidata.run_query", lambda *a, **k: other)
+    identity, stats = run(other)
+    assert stats["dropped_ambiguous"] == 1
+    assert "1820" not in identity
