@@ -1099,12 +1099,32 @@ def _run_sec(
     if client is not None:
         client.close()
 
-    if industry_missing:
+    # **「業種が無い」と「業種はあるが写せない」を分ける。**
+    #
+    # 前は一緒に数えて「写像CSVに追記すること」と出していた。2026-09-30 の
+    # 米国実測では 417 件のうち **401 件が SIC を持っていなかった** ──
+    # 写像を足しても1件も直らない。**当てはまらない手当てを指示していた。**
+    unmapped_codes = sic_mapper.unmapped if sic_mapper else {}
+    no_source = sic_mapper.no_source if sic_mapper else 0
+    if unmapped_codes:
         manifest.add_warning(
             "INDUSTRY_UNMAPPED",
-            count=industry_missing,
+            count=sum(unmapped_codes.values()),
             sample=[c for c, _ in (sic_mapper.top_unmapped(5) if sic_mapper else [])],
-            message="SIC から共通12分類に写せなかった企業がある。写像CSVに追記すること",
+            message=(
+                "SIC はあるが共通12分類に写せなかった。"
+                "**configs/industry/sic_to_common12.csv に追記すると直る。**"
+            ),
+        )
+    if no_source:
+        manifest.add_warning(
+            "INDUSTRY_NOT_PROVIDED",
+            count=no_source,
+            message=(
+                "一次情報（SEC）に業種が入っていない企業がある。"
+                "**写像を足しても直らない。** ファンド・投資信託や ADR の"
+                "提出者で、SEC 側に業種が無いか 0000 / 8880 が入っている"
+            ),
         )
 
     if limit:

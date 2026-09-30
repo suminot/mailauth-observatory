@@ -75,3 +75,5 @@ SIC,82,prefix2,Educational services,12,サービス・その他,2026-08-01,
 SIC,83,prefix2,Social services,12,サービス・その他,2026-08-01,
 SIC,87,prefix2,Engineering and management services,12,サービス・その他,2026-08-01,
 SIC,99,prefix2,Nonclassifiable establishments,12,サービス・その他,2026-08-01,
+SIC,7600,prefix4,Services-miscellaneous repair services,12,サービス・その他,2026-08-01,ISIC S95。2026-09-30 の米国実測で未写像だった（E-Home Household Service / TEAM INC）
+SIC,8111,prefix4,Services-legal services,12,サービス・その他,2026-08-01,ISIC M69。2026-09-30 の米国実測で未写像だった（CRA International）
