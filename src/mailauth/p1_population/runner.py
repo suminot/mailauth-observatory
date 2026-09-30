@@ -419,7 +419,12 @@ def _fill_from_weak_key(
     弾いた数も残す ── 「当たらなかった」のか「当てたが名前が違った」のかで
     次の手が違う（原則5）。
     """
-    from .wikidata import WikidataError, fetch_identity, names_agree
+    from .wikidata import (
+        WikidataError,
+        fetch_identity,
+        multi_values,
+        names_agree,
+    )
 
     missing_before = [e for e in entities if not e.official_domain]
     if not missing_before:
@@ -445,7 +450,8 @@ def _fill_from_weak_key(
         extra = identity.get(str(raw).strip().upper()) or identity.get(str(raw).strip())
         if not extra:
             continue
-        if not names_agree(name_of(entity), extra.get("label")):
+        labels = multi_values(extra.get("label"))
+        if not any(names_agree(name_of(entity), lbl) for lbl in labels):
             # **名前が合わないものは使わない。** 鍵が当たっただけで
             # 別の会社のサイトを紐づけるのが、この経路で一番怖い
             name_rejected += 1

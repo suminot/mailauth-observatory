@@ -142,12 +142,25 @@ def test_missing_sparql_file_raises():
 
 
 def test_cik_identity_normalizes_and_counts_conflicts(monkeypatch):
-    """CIK の桁揃えを SEC に合わせ、値の競合を数える。"""
+    """CIK の桁揃えを SEC に合わせ、**本当の競合だけ**を数える。
+
+    公式サイトは URL のまま比べていたので、同じ会社の日本語版と英語版、
+    `http` と `https`、末尾スラッシュの有無が競合として数えられ、
+    **その会社ごと捨てられていた**（国内 3,817社で 283 社。
+    ホクト・西松建設・鹿島建設などが全部これだった）。
+
+    使うのはドメインなので、ドメインで比べる。**別の会社なら別の
+    ドメインになる**ので歯止めとしての働きは変わらない。
+    """
     bindings = [
+        # 同じドメインの表記ゆれ。**競合ではない**
         {"cik": {"value": "320193"}, "website": {"value": "https://apple.com"}},
-        {"cik": {"value": "0000320193"}, "website": {"value": "https://www.apple.com"}},
+        {"cik": {"value": "0000320193"}, "website": {"value": "https://www.apple.com/jp/"}},
         {"cik": {"value": "789019"}, "lei": {"value": "INR2EJN1ERAN0W5ZP974"}},
         {"cik": {"value": "not-a-number"}},
+        # **別のドメイン。これは本当の競合**
+        {"cik": {"value": "111"}, "website": {"value": "https://example.com"}},
+        {"cik": {"value": "0000000111"}, "website": {"value": "https://other.co.jp"}},
     ]
     monkeypatch.setattr(
         "mailauth.p1_population.wikidata.run_query", lambda *a, **k: bindings
@@ -158,8 +171,8 @@ def test_cik_identity_normalizes_and_counts_conflicts(monkeypatch):
 
     assert identity["0000320193"]["website"] == "https://apple.com"
     assert identity["0000789019"]["lei"] == "INR2EJN1ERAN0W5ZP974"
-    assert stats["conflicts"] == 1
-    assert stats["cik_count"] == 2
+    assert stats["conflicts"] == 1, "表記ゆれを競合として数えている"
+    assert stats["cik_count"] == 3
 
 
 def test_bindings_are_collapsed_per_company():
