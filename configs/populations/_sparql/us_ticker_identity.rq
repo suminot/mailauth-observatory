@@ -5,24 +5,39 @@
 #+ ファンドで、NYSE/Nasdaq/CBOE の名簿とは重ならない。**CIK を持たないが
 #+ ティッカーは持っている項目**を拾うのがこのクエリの目的である。
 #+
+#+ **ティッカーは主文ではなく qualifier に入っている。**
+#+
+#+ 最初 `wdt:P249` で書いて、**12 件しか返らなかった**（2026-09-30 の米国
+#+ 実行で ticker 突合が 2 社しか埋めず、そこで気付いた）。Wikidata は
+#+ ティッカーを P414（証券取引所）の文に対する qualifier として持つ。
+#+
+#+   実測（2026-09-30、WDQS）
+#+     wdt:P249 を直接持つ項目（全世界）        1,016
+#+     p:P414 / pq:P249 を持つ項目（全世界）   15,933
+#+     うち公式サイトもある                    11,964
+#+
+#+     このクエリ ── 旧: 12 件  →  新: 3,680 件
+#+
+#+ **国ではなく取引所で絞る。** 米国に上場する外国企業（foreign private
+#+ issuer）も SEC に提出するので、`wdt:P17 wd:Q30` で絞ると名簿にいる会社を
+#+ 落とす。qualifier の形なら取引所は必ず付いているので、そちらで絞れる。
+#+ ついでに、他国の同じティッカーとぶつかって**両方捨てられる**のも防げる。
+#+
 #+ **ティッカーは一意ではない。** 使い回しも上場廃止後の再割当てもある。
 #+ そのまま突合すると**別の会社のサイトを紐づける**ので、呼び出し側で
 #+   1. 同じティッカーに2件以上当たったら捨てる（drop_on_conflict）
 #+   2. 社名が一致しなければ使わない（names_agree）
 #+ の2段で防ぐ。だから `?label` を一緒に返す。
 #+
-#+ 国を米国（Q30）に限る。**取引所の QID で絞らない** ── 項目ごとに
-#+ 付いていたりいなかったりで、絞ると当たるものまで落ちる。
-#+ 国は company 項目にほぼ必ず付いている。
-#+
 #+ **1クエリで全件取る。** 1社ずつ引くと WDQS に不当な負荷をかける。
 #+ endpoint: https://query.wikidata.org/sparql
 
 SELECT ?ticker ?website ?lei ?label WHERE {
-  ?company wdt:P17 wd:Q30 .                  # 国＝アメリカ合衆国
-  ?company wdt:P249 ?ticker .                # ティッカー
+  VALUES ?exchange { wd:Q13677 wd:Q82059 }   # NYSE / Nasdaq
+  ?company p:P414 ?listing .
+  ?listing ps:P414 ?exchange .
+  ?listing pq:P249 ?ticker .                 # ティッカーは qualifier
   ?company wdt:P856 ?website .               # **公式サイトがある項目だけ**
   OPTIONAL { ?company wdt:P1278 ?lei }
-  SERVICE wikibase:label { bd:serviceParam wikibase:language "en" . }
   ?company rdfs:label ?label . FILTER(LANG(?label) = "en")
 }
