@@ -250,6 +250,20 @@ A record reading `p=reject; sp=none` applies `reject` to the domain itself and
 **A subdomain carrying its own `_dmarc` record does not inherit `sp=`**, and
 where that is the case the `sp=` figures do not describe it.
 
+For subdomains that were measured, one **without** its own `_dmarc` is counted
+as inheriting `sp=` from above. Inherited and own policies are reported
+separately.
+
+<div class="limits">
+
+- **Only the immediate parent is consulted.** A different setting on
+  `b.example.com` under `a.b.example.com` is invisible unless that name was
+  itself measured
+- Where the parent was not measured, the subdomain is treated as **not
+  inheriting**. That is "the parent was not looked at", not "there is no parent"
+
+</div>
+
 ## What cannot be detected
 
 ### API-integrated email security products

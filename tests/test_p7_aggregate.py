@@ -95,6 +95,7 @@ def _row(**kwargs) -> DomainRow:
         "spf_present": False,
         "dmarc_present": False,
         "effective_7489": None,
+        "applied_7489": None,
         "sp_effective_7489": None,
         "sp_weaker": False,
         "dmarc_p": None,
@@ -858,3 +859,54 @@ def test_facts_without_the_is_apex_column_are_treated_as_apex():
     assert DomainRow.from_fact({"domain_id": "d:1", "entity_id": "jp:1"}).is_apex is True
     assert DomainRow.from_fact({"domain_id": "d:1", "is_apex": float("nan")}).is_apex is True
     assert DomainRow.from_fact({"domain_id": "d:1", "is_apex": False}).is_apex is False
+
+
+def test_継承したポリシーもサブドメインの達成に数える():
+    """**守られているのに未対応側に入る**のを止める（BACKLOG 14 の d）。
+
+    自分の `_dmarc` を持たないサブドメインは、上位の `sp=` が効いている。
+    """
+    stats = _agg(
+        [
+            _row(domain_id="d:1", entity_id="jp:1"),
+            # 自分のレコードは無いが、apex の sp=reject を継承している
+            _row(
+                domain_id="d:2",
+                entity_id="jp:1",
+                is_apex=False,
+                dmarc_present=False,
+                effective_7489=None,
+                applied_7489="reject",
+            ),
+            # 継承元が無く、本当に何も効いていない
+            _row(
+                domain_id="d:3",
+                entity_id="jp:2",
+                is_apex=False,
+                dmarc_present=False,
+                effective_7489=None,
+                applied_7489=None,
+            ),
+        ]
+    )
+    assert stats.subdomains_measured == 2
+    assert stats.subdomains_dmarc_enforced == 1
+    assert stats.subdomains_inherited_policy == 1
+    # 自分の DMARC を持つ数は増えない。**継承と自前を混ぜない**
+    assert stats.subdomains_with_own_dmarc == 0
+
+
+def test_applied_が無い古い_run_は自分の値に落とす():
+    """列が無いことを「効いていない」と読まない（原則5）。"""
+    stats = _agg(
+        [
+            _row(
+                domain_id="d:1",
+                is_apex=False,
+                dmarc_present=True,
+                effective_7489="reject",
+                applied_7489=None,
+            )
+        ]
+    )
+    assert stats.subdomains_dmarc_enforced == 1

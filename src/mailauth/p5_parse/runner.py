@@ -307,6 +307,46 @@ def parse_domain(
     return out
 
 
+def apply_inherited_policy(
+    facts: list[Fact], fact_by_domain: dict[str, Fact]
+) -> dict[str, int]:
+    """継承したポリシーを埋める。**自分のレコードは上書きしない。**
+
+    `effective_7489` は「自分のレコードから読んだ値」のままにして、
+    実際に効いている強度は `applied_7489` に別に持つ。どちらを見て
+    いるかが後から分かるようにするため（原則5 と同じ考え方）。
+
+    直近の上位で止める ── `a.b.example.co.jp` の途中の
+    `b.example.co.jp` を測っていない場合、そこに自前の `_dmarc` が
+    あっても見えない。**その限界は `applied_source` に残らない**ので、
+    サイトの限界に書いてある。
+    """
+    counts = {"dmarc_inherited": 0, "dmarc_inherit_source_missing": 0}
+    # **名前は1回だけ引き直す。** fact ごとに探すと O(n^2) になり、
+    # 30,000 ドメインでここだけ数分かかる（BACKLOG 7 の規模の話）
+    name_by_id = {f.fact_id: name for name, f in fact_by_domain.items()}
+    for fact in facts:
+        if fact.dmarc_present:
+            fact.applied_7489 = fact.effective_7489
+            fact.applied_source = "own"
+            continue
+        if fact.is_apex:
+            # apex に DMARC が無ければ、継承元も無い
+            fact.applied_source = "none"
+            continue
+        parent = etld_plus_one(name_by_id.get(fact.fact_id) or "")
+        source = fact_by_domain.get(parent or "")
+        if source is None or not source.dmarc_present:
+            fact.applied_source = "none"
+            counts["dmarc_inherit_source_missing"] += 1
+            continue
+        fact.applied_7489 = source.sp_effective_7489
+        fact.applied_source = "inherited_sp"
+        fact.dmarc_inherited_from = parent
+        counts["dmarc_inherited"] += 1
+    return counts
+
+
 def run(
     run_id: str,
     *,
@@ -367,6 +407,8 @@ def run(
             )
 
         facts: list[Fact] = []
+        #: domain -> その fact。**継承の解決に使う**（下の第2周）
+        fact_by_domain: dict[str, Fact] = {}
         counters: dict[str, int] = defaultdict(int)
         notes_sample: list[str] = []
         month = month_date(run_id)
@@ -384,8 +426,7 @@ def run(
             parsed.pop("_null_mx", None)
             notes = parsed.pop("_notes", [])
 
-            facts.append(
-                Fact(
+            fact = Fact(
                     fact_id=fact_id(domain_id, run_id),
                     domain_id=domain_id,
                     entity_id=entity_id,
@@ -394,8 +435,9 @@ def run(
                     is_apex=apex_by_domain.get(domain, True),
                     parser_version=PARSER_VERSION,
                     **parsed,
-                )
             )
+            facts.append(fact)
+            fact_by_domain[domain] = fact
 
             if parsed.get("spf_error") == spf_mod.SpfError.PERMERROR:
                 counters["spf_permerror"] += 1
@@ -423,6 +465,18 @@ def run(
                 counters["dkim_not_found_in_known_selectors"] += 1
             if notes:
                 notes_sample.extend(notes[:2])
+
+        # **自分の `_dmarc` を持たないサブドメインは、上位の `sp=` が効く。**
+        #
+        # RFC 9989 §4.8。これを繋がないと、apex が `p=reject` の会社の
+        # サブドメインが「DMARC 無し」として数えられる ── **実際には
+        # 守られているのに未対応側に入る**（BACKLOG 14 の d）。
+        #
+        # **新しい問い合わせは要らない。** サブドメインを残す条件が
+        # 「所有の裏付けがある apex の配下」なので、その apex は同じ実行で
+        # 必ず測っている。
+        inherited = apply_inherited_policy(facts, fact_by_domain)
+        counters.update(inherited)
 
         manifest.counts.success = len(facts)
         manifest.set_breakdown(

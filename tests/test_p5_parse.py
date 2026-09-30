@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime as dt
+
 import pandas as pd
 import pytest
 
@@ -730,3 +732,82 @@ def test_the_registrable_domain_is_queried_not_the_rua_host():
     source = inspect.getsource(p5.parse_domain)
     assert "etld_plus_one(ext)" in source
     assert 'ns.rcode == "NXDOMAIN"' in source
+
+
+def _fact(domain_id, *, is_apex=True, dmarc_present=False, effective=None, sp=None):
+    from mailauth.contracts import Fact
+
+    return Fact(
+        fact_id=domain_id,
+        domain_id=domain_id,
+        entity_id="jp:1",
+        run_id="2026-09",
+        measured_month=dt.date(2026, 9, 1),
+        observed=True,
+        is_apex=is_apex,
+        dmarc_present=dmarc_present,
+        effective_7489=effective,
+        sp_effective_7489=sp,
+    )
+
+
+def test_自分の_dmarc_が無いサブドメインは上位の_sp_を継承する():
+    """RFC 9989 §4.8。**新しい問い合わせは要らない。**
+
+    繋がないと、apex が `p=reject` の会社のサブドメインが「DMARC 無し」
+    として数えられ、**実際には守られているのに未対応側に入る。**
+    """
+    from mailauth.p5_parse.runner import apply_inherited_policy
+
+    apex = _fact("f:apex", dmarc_present=True, effective="reject", sp="quarantine")
+    sub = _fact("f:sub", is_apex=False)
+    by_domain = {"example.co.jp": apex, "mail.example.co.jp": sub}
+
+    counts = apply_inherited_policy([apex, sub], by_domain)
+
+    assert apex.applied_7489 == "reject"
+    assert apex.applied_source == "own"
+    # **継承するのは sp= であって p= ではない**
+    assert sub.applied_7489 == "quarantine"
+    assert sub.applied_source == "inherited_sp"
+    assert sub.dmarc_inherited_from == "example.co.jp"
+    assert counts["dmarc_inherited"] == 1
+
+
+def test_自分の_dmarc_を持つサブドメインは継承しない():
+    """avex の `av.avex.co.jp` はこちら。**自分の値が勝つ。**"""
+    from mailauth.p5_parse.runner import apply_inherited_policy
+
+    apex = _fact("f:apex", dmarc_present=True, effective="reject", sp="reject")
+    sub = _fact("f:sub", is_apex=False, dmarc_present=True, effective="none", sp="none")
+    apply_inherited_policy([apex, sub], {"avex.co.jp": apex, "av.avex.co.jp": sub})
+
+    assert sub.applied_7489 == "none"
+    assert sub.applied_source == "own"
+    assert sub.dmarc_inherited_from is None
+
+
+def test_継承元が測れていなければ継承しない():
+    """**「上位を見ていない」を「上位が無い」にしない**（原則5）。"""
+    from mailauth.p5_parse.runner import apply_inherited_policy
+
+    sub = _fact("f:sub", is_apex=False)
+    counts = apply_inherited_policy([sub], {"mail.example.co.jp": sub})
+
+    assert sub.applied_7489 is None
+    assert sub.applied_source == "none"
+    assert counts["dmarc_inherit_source_missing"] == 1
+
+
+def test_apex_に_dmarc_が無ければ継承元にならない():
+    """DMARC を持たない apex から `sp=` は生えない。"""
+    from mailauth.p5_parse.runner import apply_inherited_policy
+
+    apex = _fact("f:apex", dmarc_present=False)
+    sub = _fact("f:sub", is_apex=False)
+    counts = apply_inherited_policy(
+        [apex, sub], {"example.co.jp": apex, "mail.example.co.jp": sub}
+    )
+
+    assert sub.applied_source == "none"
+    assert counts["dmarc_inherited"] == 0

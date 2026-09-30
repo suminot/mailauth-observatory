@@ -185,6 +185,7 @@ Parquet は月ごとに保管しています。同じ数字を二重に持つと
 | `sp_weaker_domains` | `sp=` が `p=` より弱い。**そのドメイン自身と配下で適用される強度が違う** |
 | `subdomains_measured` | **実際に引いたサブドメイン数。** 上のどの割合の分母にも入っていない（別枠） |
 | `subdomains_with_own_dmarc` | そのサブドメイン自身が `_dmarc` を持つ。`sp=` を継承しない |
+| `subdomains_inherited_policy` | 自分の `_dmarc` が無く、上位の `sp=` を継承していた数 |
 | `entities_with_subdomain_mail` | サブドメインでメールを扱っていた企業数 |
 | `dkim_detected_domains` | 既知セレクタで検出できた |
 | `dkim_not_found_domains` | 既知セレクタでは検出できなかった。**未設定ではない** |

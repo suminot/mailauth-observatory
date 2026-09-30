@@ -528,6 +528,18 @@ class Fact(_Model):
     sp_effective_9989: str | None = None
     #: 自分より配下が弱い。**apex だけ見ると達成側に数えてしまう向きの誤り**
     sp_weaker: bool | None = None
+
+    #: **このドメインに実際に効いている強度。**
+    #:
+    #: 自分の `_dmarc` があればその実効値。無いサブドメインは、上位の
+    #: `sp=` を継承する（RFC 9989 §4.8）。`effective_7489` は「自分の
+    #: レコードから読んだ値」なので、継承した場合は null のままになる ──
+    #: 両方を持って、どちらを見ているかが分かるようにする
+    applied_7489: str | None = None
+    #: 上のポリシーをどこから得たか（own / inherited_sp / none）
+    applied_source: str | None = None
+    #: 継承元のドメイン。継承していなければ null
+    dmarc_inherited_from: str | None = None
     policy_label: str | None = None
     blind_enforcement: bool | None = None
 
@@ -623,6 +635,9 @@ FACT_ARROW_SCHEMA = pa.schema(
         ("sp_effective_7489", pa.string()),
         ("sp_effective_9989", pa.string()),
         ("sp_weaker", pa.bool_()),
+        ("applied_7489", pa.string()),
+        ("applied_source", pa.string()),
+        ("dmarc_inherited_from", pa.string()),
         ("policy_label", pa.string()),
         ("blind_enforcement", pa.bool_()),
         ("org_domain_psl", pa.string()),
@@ -803,6 +818,8 @@ class StatsOverall(_Model):
     subdomains_observed: int = 0
     subdomains_with_own_dmarc: int = 0
     subdomains_dmarc_enforced: int = 0
+    #: 自分の `_dmarc` を持たず、上位の `sp=` を継承していた数
+    subdomains_inherited_policy: int = 0
     entities_with_subdomain_mail: int = 0
 
     dkim_detected_domains: int = 0
@@ -872,6 +889,7 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("subdomains_observed", pa.int32()),
     ("subdomains_with_own_dmarc", pa.int32()),
     ("subdomains_dmarc_enforced", pa.int32()),
+    ("subdomains_inherited_policy", pa.int32()),
     ("entities_with_subdomain_mail", pa.int32()),
     ("sp_weaker_domains", pa.int32()),
     ("dkim_detected_domains", pa.int32()),

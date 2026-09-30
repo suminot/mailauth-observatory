@@ -230,6 +230,7 @@ display(
           { Category: "Subdomains measured", Count: current?.subdomains_measured },
           { Category: "Of those, observed", Count: current?.subdomains_observed },
           { Category: "Carrying their own DMARC", Count: current?.subdomains_with_own_dmarc },
+      { Category: "Inheriting sp= from above", Count: current?.subdomains_inherited_policy },
           { Category: "Of those, quarantine or stronger", Count: current?.subdomains_dmarc_enforced },
           { Category: "Companies with mail on a subdomain", Count: current?.entities_with_subdomain_mail },
         ],

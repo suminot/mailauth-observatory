@@ -224,6 +224,7 @@ display(
           { 区分: "計測したサブドメイン", 数: current?.subdomains_measured },
           { 区分: "うち観測できた", 数: current?.subdomains_observed },
           { 区分: "自分の DMARC を持つ", 数: current?.subdomains_with_own_dmarc },
+      { 区分: "上位の sp= を継承している", 数: current?.subdomains_inherited_policy },
           { 区分: "うち quarantine 以上", 数: current?.subdomains_dmarc_enforced },
           { 区分: "サブドメインでメールを扱う企業数", 数: current?.entities_with_subdomain_mail },
         ],

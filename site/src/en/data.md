@@ -192,6 +192,7 @@ The main columns used in the tables above.
 | `sp_weaker_domains` | `sp=` is weaker than `p=`. **A different strength applies to the domain itself and to what sits under it** |
 | `subdomains_measured` | **subdomains actually queried.** These enter no share's denominator above; they are counted apart |
 | `subdomains_with_own_dmarc` | the subdomain carries its own `_dmarc` and does not inherit `sp=` |
+| `subdomains_inherited_policy` | has no `_dmarc` of its own and inherits `sp=` from above |
 | `entities_with_subdomain_mail` | companies found handling mail on a subdomain |
 | `dkim_detected_domains` | found among known selectors |
 | `dkim_not_found_domains` | not found among known selectors. **This is not the same as unset** |
