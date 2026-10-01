@@ -97,3 +97,42 @@ def test_sic_mapping_loads():
     """Sprint 1.5 で使う SIC 写像も、今のうちに読めることだけ確かめる。"""
     m = IndustryMapper.load("configs/industry/sic_to_common12.csv")
     assert m.map_version
+
+
+def test_業種が無いのと写せないのを分ける():
+    """**当てはまらない手当てを指示しない**（原則5）。
+
+    前は一緒に数えて「写像CSVに追記すること」と出していた。
+    2026-09-30 の米国実測では 417 件のうち **401 件が SIC を持って
+    いなかった** ── 写像を足しても1件も直らない。
+    """
+    from mailauth.p1_population.industry import SicMapper
+
+    m = SicMapper.load("configs/industry/sic_to_common12.csv")
+
+    # 一次情報に業種が無い
+    assert m.map(None) is None
+    assert m.map("") is None
+    # SEC の置き場所値。**業種ではない**
+    assert m.map("0000") is None
+    assert m.map("8880") is None
+    assert m.no_source == 4
+    assert m.unmapped == {}, "業種が無いものを『写せない』に数えている"
+
+    # **本当に写せないコードは、これまでどおり数える。**
+    # 8500（Services-health）は写像に無く、前置の規則にも当たらない
+    assert m.map("8500") is None
+    assert m.unmapped == {"8500": 1}, "写せないコードを数えていない"
+    # 置き場所値は混ざらない
+    assert "0000" not in m.unmapped and "8880" not in m.unmapped
+
+
+def test_米国実測で未写像だったコードを写せる():
+    """2026-09-30 の実測で出た SIC を写像に足した。"""
+    from mailauth.p1_population.industry import SicMapper
+
+    m = SicMapper.load("configs/industry/sic_to_common12.csv")
+    for sic in ("7600", "8111"):
+        got = m.map(sic)
+        assert got is not None, f"SIC {sic} を写せない"
+        assert got.code == "12", f"SIC {sic} の写り先が変わった: {got.code}"

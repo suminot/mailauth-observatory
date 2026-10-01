@@ -78,6 +78,18 @@ class IndustryMapper:
         return sorted(self.unmapped.items(), key=lambda kv: (-kv[1], kv[0]))[:n]
 
 
+#: SEC が業種の代わりに入れる値。**業種ではない。**
+#:
+#: 実測（2026-09-30、米国 6,068社）で中身を確かめた。
+#:   0000  12社。すべてクローズドエンド・ファンド／投資信託
+#:         （General American Investors、John Hancock Investors Trust ほか）
+#:   8880   1社。Clinuvel Pharmaceuticals（豪州）── 米国預託証券（ADR）
+#:
+#: どちらも「この会社の業種」を表していないので、写像に足さない。
+#: 足すと**本当に写像が足りない件数**が見えなくなる。
+SIC_PLACEHOLDERS = frozenset({"0000", "8880"})
+
+
 @dataclass(frozen=True)
 class SicRule:
     prefix: str
@@ -103,6 +115,8 @@ class SicMapper:
         self.map_version = map_version
         self.source = source
         self.unmapped: dict[str, int] = {}
+        #: 一次情報に業種が入っていなかった件数。**写像の問題ではない**
+        self.no_source = 0
 
     @classmethod
     def load(cls, path: str | Path, *, scheme: str = "SIC") -> SicMapper:
@@ -142,8 +156,18 @@ class SicMapper:
         return cls(rules, versions.pop(), p)
 
     def map(self, sic: str | None) -> Common12 | None:
-        """SIC コードを共通12分類に写す。未知は None を返して数える。"""
+        """SIC コードを共通12分類に写す。
+
+        **「業種が無い」と「業種はあるが写せない」を分ける。**
+        前者は写像を足しても直らない ── 一次情報に業種が入っていない
+        のであって、こちらの表が足りないのではない（原則5）。
+        """
         if not sic:
+            self.no_source += 1
+            return None
+        if str(sic).strip().zfill(4) in SIC_PLACEHOLDERS:
+            # **業種ではない値。** 写像に足しても意味が無い
+            self.no_source += 1
             return None
         # SIC は概念上4桁で、先頭ゼロを落として3桁で流通することがある。
         # 左ゼロ詰めが SIC の慣行だが、`737` を `0737`（農業サービス）と
