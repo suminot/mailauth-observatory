@@ -418,6 +418,8 @@ def run(
 
         per_entity_limit = int(limits.get("max_per_entity", 500))
         total_limit = int(limits.get("max_candidates_total", 30000))
+        # **この調子では終わらないと分かったら、そこで止める**（0 で無効）
+        phase_budget_sec = float(limits.get("max_phase_minutes", 0) or 0) * 60
 
         # **サブドメインを捨てない**（BACKLOG 14）。設定で切れる
         sub_cfg = cfg.get("subdomains") or {}
@@ -465,6 +467,8 @@ def run(
         }
         total = 0
         hit_total_limit = False
+        #: 持ち時間に対して見込みが超えたときの、その見込み（秒）
+        over_budget: float | None = None
 
         # **この工程は数時間かかることがある。** CT ログの取得が支配的で、
         # 1件あたりの所要は相手によって1秒から3分まで開く。進捗を出さないと、
@@ -676,6 +680,16 @@ def run(
                     break
             if hit_total_limit:
                 break
+            # **自分が出している見込みを、自分で使う。**
+            #
+            # 塊の切れ目でだけ見る（1件ごとに見ても答えは変わらないのに
+            # 時計を読む回数だけ増える）。見込みは「これまでと同じ調子なら」
+            # でしかないので、**超えたら止めるのであって、超えそうだから
+            # 急ぐのではない。**
+            projected = tracker.projected_total_sec()
+            if phase_budget_sec and projected and projected > phase_budget_sec:
+                over_budget = projected
+                break
 
         # 打ち切られた場合も最後に1行出す
         if ct_tracker is not None:
@@ -688,6 +702,22 @@ def run(
                 message=(
                     f"候補総数が上限 {total_limit} に達したため展開を打ち切った。"
                     "処理していない企業が残っている"
+                ),
+            )
+
+        if over_budget is not None:
+            done = len(collectors)
+            left = len(order) - done
+            manifest.add_warning(
+                "PHASE_BUDGET_EXCEEDED",
+                count=left,
+                message=(
+                    f"この調子では持ち時間（{phase_budget_sec / 60:.0f} 分）に"
+                    f"収まらないと分かったので、{done} 社まででやめた。"
+                    f"見込みは全体で {over_budget / 3600:.1f} 時間だった。"
+                    f"**残り {left} 社は「候補ゼロ」ではなく「まだ測っていない」。** "
+                    "同じ run_id で流し直すと、CT のキャッシュに積み上がって "
+                    "いる分はそのまま使われるので続きから進む"
                 ),
             )
 

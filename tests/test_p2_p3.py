@@ -1358,3 +1358,66 @@ def test_offline_is_not_set_by_a_falsy_value(monkeypatch):
     for value in ("1", "true", "yes"):
         monkeypatch.setenv("MAILAUTH_OFFLINE", value)
         assert offline_from_env() is True, value
+
+
+def test_この調子では終わらないと分かったら止める(seeded_run, tmp_path):
+    """**自分が出している見込みを、自分で使う。**
+
+    2026-09-30 の米国計測は、画面に「この調子なら残り 27時間01分」と
+    5時間にわたって出し続けたまま、330分の上限で落とされた。
+    落とされ方が悪い ── P2 の manifest が書かれないので、**どこまで
+    進んだのかも、なぜ遅かったのかも残らない。**
+    """
+    import yaml
+
+    from mailauth.paths import config_path
+
+    cfg = yaml.safe_load(config_path("configs/candidates.yaml").read_text(encoding="utf-8"))
+    # 1社でも超えるように、持ち時間をほぼ 0 にする
+    cfg["limits"]["max_phase_minutes"] = 0.0001
+    path = tmp_path / "candidates-tight.yaml"
+    path.write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding="utf-8")
+
+    out = run_p2(
+        run_id=RUN,
+        resolver=StaticResolver(ANSWERS),
+        ct_source=CT,
+        config=str(path),
+    )
+    codes = [w["code"] for w in out["warnings"]]
+    assert "PHASE_BUDGET_EXCEEDED" in codes, codes
+
+    msg = next(w["message"] for w in out["warnings"] if w["code"] == "PHASE_BUDGET_EXCEEDED")
+    # **「候補ゼロ」と読ませない。** ここを落とすと、短く終わった月が
+    # 「そういう分布だった」として残る（原則5）
+    assert "まだ測っていない" in msg, msg
+    # **次の一手が書いてあること**
+    assert "流し直す" in msg, msg
+
+    # 途中までの候補は書かれている。**捨てない**
+    df = candidates()
+    assert len(df) > 0
+
+
+def test_持ち時間に収まるなら止めない(seeded_run):
+    """**当てはまらない説明を添えない。** 添えると次から読まれなくなる。"""
+    out = _run_p2()
+    codes = [w["code"] for w in out["warnings"]]
+    assert "PHASE_BUDGET_EXCEEDED" not in codes, codes
+
+
+def test_持ち時間の既定が入っていること():
+    """**既定を 0 にすると、この歯止めが黙って外れる。**
+
+    検査は自前の設定を書くので、配っている既定値を誰も見ていなかった
+    （`max_phase_minutes: 0` に戻しても検査が全部通った）。
+    """
+    import yaml
+
+    from mailauth.paths import config_path
+
+    cfg = yaml.safe_load(config_path("configs/candidates.yaml").read_text(encoding="utf-8"))
+    budget = cfg["limits"].get("max_phase_minutes")
+    assert budget, "max_phase_minutes が未設定か 0。見込みで止める歯止めが効かない"
+    # Actions の持ち時間は 330 分。P3〜P8 のぶんを残すこと
+    assert budget < 330, f"持ち時間 330 分に対して {budget} 分は余白が無い"

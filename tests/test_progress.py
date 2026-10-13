@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import io
 
+import pytest
+
 from mailauth.progress import Progress
 
 
@@ -183,3 +185,36 @@ def test_長い工程に組み込まれている():
         source = inspect.getsource(mod)
         assert "Progress(" in source, f"{name} に進捗表示が無い"
         assert ".tick(" in source, f"{name} が tick を呼んでいない"
+
+
+def test_見込みを数字で取り出せる():
+    """画面に出している「この調子なら残り N」を、呼び出し側が使えること。
+
+    2026-09-30 の米国計測は、**5時間にわたって「残り27時間」と出し続けた
+    まま**時間切れで落とされた ── 自分で計算していた数字を誰も使って
+    いなかった。
+    """
+    from mailauth.progress import Progress
+
+    now = [0.0]
+    p = Progress(100, "x", stream=io.StringIO(), clock=lambda: now[0])
+
+    # **まだ1件も終わっていなければ推し量れない。** 数字にしない
+    assert p.projected_total_sec() is None
+
+    now[0] = 10.0
+    p.tick()
+    assert p.projected_total_sec() == pytest.approx(1000.0)
+
+    now[0] = 40.0
+    p.tick(3)
+    assert p.projected_total_sec() == pytest.approx(1000.0)
+
+
+def test_件数が分からなければ見込みを出さない():
+    """`total` が 0 のときに割り算をしない。"""
+    from mailauth.progress import Progress
+
+    p = Progress(0, "x", stream=io.StringIO(), clock=lambda: 10.0)
+    p.tick()
+    assert p.projected_total_sec() is None
