@@ -120,6 +120,24 @@ class Progress:
 
         print("  " + " ".join(parts), file=self.stream, flush=True)
 
+    def projected_total_sec(self) -> float | None:
+        """**この調子なら全部で何秒かかるか。**
+
+        画面には前から「この調子なら残り N」と出していた。2026-09-30 の
+        米国計測は、**5時間にわたって「残り27時間」と出し続けたまま**
+        時間切れで落ちた ── 自分で計算していた数字を、誰も使っていなかった。
+
+        呼び出し側が持ち時間と比べられるように、同じ計算を返す。
+        **断定ではない** ── 1件あたりの所要は相手によって桁が違うので、
+        これは「これまでと同じ調子なら」でしかない。
+
+        件数が分からない（`total` が 0）か、まだ1件も終わっていなければ
+        None を返す。**推し量れないことを数字にしない。**
+        """
+        if not self.total or not self.done:
+            return None
+        return (self._clock() - self._start) / self.done * self.total
+
     def finish(self) -> None:
         """打ち切られた場合に、どこまで進んだかを1行残す。
 
