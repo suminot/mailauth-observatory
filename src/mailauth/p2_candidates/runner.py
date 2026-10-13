@@ -420,6 +420,8 @@ def run(
         total_limit = int(limits.get("max_candidates_total", 30000))
         # **この調子では終わらないと分かったら、そこで止める**（0 で無効）
         phase_budget_sec = float(limits.get("max_phase_minutes", 0) or 0) * 60
+        #: 見込みを信じるのは、ここまで進んでから（小さい標本で決めない）
+        budget_after = float(limits.get("budget_check_after_fraction", 0.05) or 0)
 
         # **サブドメインを捨てない**（BACKLOG 14）。設定で切れる
         sub_cfg = cfg.get("subdomains") or {}
@@ -687,7 +689,17 @@ def run(
             # でしかないので、**超えたら止めるのであって、超えそうだから
             # 急ぐのではない。**
             projected = tracker.projected_total_sec()
-            if phase_budget_sec and projected and projected > phase_budget_sec:
+            enough = len(collectors) >= budget_after * len(order)
+            # **もう全部終わっているなら止めない。** 「残り0社でやめた」と
+            # いう当てはまらない警告を出すことになる
+            remaining = len(collectors) < len(order)
+            if (
+                phase_budget_sec
+                and enough
+                and remaining
+                and projected
+                and projected > phase_budget_sec
+            ):
                 over_budget = projected
                 break
 

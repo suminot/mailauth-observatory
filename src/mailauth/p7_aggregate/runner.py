@@ -51,6 +51,46 @@ class MissingInputError(RuntimeError):
     pass
 
 
+class TruncatedRunError(RuntimeError):
+    """**前の工程が途中でやめた run から gold を作らない。**"""
+
+
+#: これが P2 に出ていたら、母集団の一部しか測っていない
+TRUNCATION_WARNINGS = ("PHASE_BUDGET_EXCEEDED", "CANDIDATE_LIMIT_REACHED")
+
+
+def truncated_by(run_id: str) -> str | None:
+    """P2 が途中でやめていたら、その警告コードを返す。
+
+    **途中でやめた P2 の後ろで gold を作ると、それがそのまま公開される。**
+
+    2026-10-13、P2 が持ち時間の見込みで 64 社でやめたあと、P3〜P8 が
+    残った 50 ドメインで9月の国内データを作り直し、**3,198 ドメインの
+    公開を 50 ドメインで上書きした。** P2 は「残りは『候補ゼロ』ではなく
+    『まだ測っていない』」と正しく書いていたが、**後ろの工程は誰もそれを
+    読んでいなかった。**
+
+    ワークフローは `--limit` の実行の gold を入れないようにしていた
+    （「50社だけ回した結果を母集団の数字として出さない」）。途中で
+    やめた P2 は**暗黙の `--limit`** であって、同じ扱いにする。
+    YAML ではなく gold を作るここで止めるのは、検査できるからである。
+    """
+    from ..manifest import MANIFEST_FILENAME
+
+    path = phase_dir(run_id, "p2_candidates") / MANIFEST_FILENAME
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    for warning in data.get("warnings") or []:
+        code = str(warning.get("code") or "")
+        if code in TRUNCATION_WARNINGS:
+            return code
+    return None
+
+
 def _merge_other_populations(
     new_rows: list[dict],
     existing_path: Path,
@@ -168,6 +208,17 @@ def run(
         tool_versions={"aggregator": AGGREGATOR_VERSION},
         params={"dry_run": dry_run, "min_cell_size": cell_threshold},
     ) as manifest:
+        # **途中でやめた run から gold を作らない。** 作れば公開される
+        truncation = truncated_by(run_id)
+        if truncation:
+            raise TruncatedRunError(
+                f"{run_id} の P2 が途中でやめている（{truncation}）。"
+                "**母集団の一部しか測っていないので gold を作らない。** "
+                "作ると、その一部が母集団の数字として公開される"
+                "（2026-10-13 に 3,198 ドメインの公開が 50 ドメインで上書きされた）。"
+                "同じ run_id で流し直して P2 を最後まで通すこと"
+            )
+
         facts_frame = read_parquet(phase_output(run_id, "p5_parse", "facts.parquet"))
         if facts_frame is None:
             raise MissingInputError(

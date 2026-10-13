@@ -1360,7 +1360,7 @@ def test_offline_is_not_set_by_a_falsy_value(monkeypatch):
         assert offline_from_env() is True, value
 
 
-def test_この調子では終わらないと分かったら止める(seeded_run, tmp_path):
+def test_この調子では終わらないと分かったら止める(seeded_run, tmp_path, monkeypatch):
     """**自分が出している見込みを、自分で使う。**
 
     2026-09-30 の米国計測は、画面に「この調子なら残り 27時間01分」と
@@ -1370,11 +1370,18 @@ def test_この調子では終わらないと分かったら止める(seeded_run
     """
     import yaml
 
+    import mailauth.p2_candidates.runner as p2r
     from mailauth.paths import config_path
+
+    # **塊を小さくする。** fixture の17社が1つの塊に収まると、塊の切れ目は
+    # 全部終わった後にしか来ない。最初そのまま書いて、「残り0社でやめた」
+    # という**直すべきバグのおかげで通っていた**
+    monkeypatch.setattr(p2r, "PREFETCH_CHUNK", 4)
 
     cfg = yaml.safe_load(config_path("configs/candidates.yaml").read_text(encoding="utf-8"))
     # 1社でも超えるように、持ち時間をほぼ 0 にする
     cfg["limits"]["max_phase_minutes"] = 0.0001
+    cfg["limits"]["budget_check_after_fraction"] = 0.0
     path = tmp_path / "candidates-tight.yaml"
     path.write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding="utf-8")
 
@@ -1393,6 +1400,10 @@ def test_この調子では終わらないと分かったら止める(seeded_run
     assert "まだ測っていない" in msg, msg
     # **次の一手が書いてあること**
     assert "流し直す" in msg, msg
+
+    # **本当に途中でやめていること。** 残りが 0 なら、この検査は何も見ていない
+    left = next(w["count"] for w in out["warnings"] if w["code"] == "PHASE_BUDGET_EXCEEDED")
+    assert left > 0, "残り0社で『やめた』と言っている"
 
     # 途中までの候補は書かれている。**捨てない**
     df = candidates()
@@ -1421,3 +1432,81 @@ def test_持ち時間の既定が入っていること():
     assert budget, "max_phase_minutes が未設定か 0。見込みで止める歯止めが効かない"
     # Actions の持ち時間は 330 分。P3〜P8 のぶんを残すこと
     assert budget < 330, f"持ち時間 330 分に対して {budget} 分は余白が無い"
+
+
+def test_小さい標本の見込みでは止めない(seeded_run, tmp_path, monkeypatch):
+    """**見込みを信じるのは、ある程度進んでから。**
+
+    2026-10-13 に、64/3,816 社（1.7%）の時点の見込みで止めた。
+    最初の塊はキャッシュに無い分が固まって遅く出やすく、1.7% の標本で
+    残り 98% を決めるのは早すぎる。
+    """
+    import yaml
+
+    import mailauth.p2_candidates.runner as p2r
+    from mailauth.paths import config_path
+
+    # **塊を小さくする。** 塊が1つだと切れ目は全部済んだ後にしか来ず、
+    # 「全部済んでいたら止めない」の方で通ってしまう（実際にそうなって、
+    # 最小標本の規則を外しても素通りした）
+    monkeypatch.setattr(p2r, "PREFETCH_CHUNK", 4)
+
+    cfg = yaml.safe_load(config_path("configs/candidates.yaml").read_text(encoding="utf-8"))
+    cfg["limits"]["max_phase_minutes"] = 0.0001  # 見込みは必ず超える
+    cfg["limits"]["budget_check_after_fraction"] = 1.0  # だが全部済むまで信じない
+    path = tmp_path / "candidates-patient.yaml"
+    path.write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding="utf-8")
+
+    out = run_p2(
+        run_id=RUN, resolver=StaticResolver(ANSWERS), ct_source=CT, config=str(path)
+    )
+    codes = [w["code"] for w in out["warnings"]]
+    # 全部済んでいるので「残り0社でやめた」とも言わない
+    assert "PHASE_BUDGET_EXCEEDED" not in codes, codes
+
+
+def test_途中でやめた_run_から_gold_を作らない(seeded_run):
+    """**途中でやめた P2 の後ろで gold を作ると、それがそのまま公開される。**
+
+    2026-10-13、P2 が 64 社でやめたあと、P3〜P8 が残った 50 ドメインで
+    9月の国内データを作り直し、**3,198 ドメインの公開を 50 ドメインで
+    上書きした。** P2 は「まだ測っていない」と正しく書いていたが、
+    後ろの工程は誰もそれを読んでいなかった。
+    """
+    import json
+
+    from mailauth.manifest import MANIFEST_FILENAME
+    from mailauth.p7_aggregate import TruncatedRunError
+    from mailauth.p7_aggregate import run as run_p7
+    from mailauth.p7_aggregate.runner import truncated_by
+    from mailauth.paths import phase_dir
+
+    _run_p2()
+    # 途中でやめていない P2 なら、止めない
+    assert truncated_by(RUN) is None
+
+    # 途中でやめた P2 の manifest を作る
+    path = phase_dir(RUN, "p2_candidates") / MANIFEST_FILENAME
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["warnings"].append({"code": "PHASE_BUDGET_EXCEEDED", "message": "x"})
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+    assert truncated_by(RUN) == "PHASE_BUDGET_EXCEEDED"
+    with pytest.raises(TruncatedRunError, match="gold を作らない"):
+        run_p7(run_id=RUN)
+
+
+def test_候補総数の上限で打ち切った_run_からも_gold_を作らない(seeded_run):
+    """`CANDIDATE_LIMIT_REACHED` も「処理していない企業が残っている」。同じ扱い。"""
+    import json
+
+    from mailauth.manifest import MANIFEST_FILENAME
+    from mailauth.p7_aggregate.runner import truncated_by
+    from mailauth.paths import phase_dir
+
+    _run_p2()
+    path = phase_dir(RUN, "p2_candidates") / MANIFEST_FILENAME
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["warnings"].append({"code": "CANDIDATE_LIMIT_REACHED", "message": "x"})
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    assert truncated_by(RUN) == "CANDIDATE_LIMIT_REACHED"

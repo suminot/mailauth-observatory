@@ -337,13 +337,13 @@ def p7_aggregate(
     ] = None,
 ) -> None:
     """P7 集計 ── 公開用の統計を gold に生成し前月差分を計算する。"""
-    from .p7_aggregate import MissingInputError
+    from .p7_aggregate import MissingInputError, TruncatedRunError
     from .p7_aggregate import run as run_p7
 
     run_id = validate_run_id(run or default_run_id())
     try:
         result = run_p7(run_id=run_id, dry_run=dry_run, threshold=min_cell_size)
-    except MissingInputError as exc:
+    except (MissingInputError, TruncatedRunError) as exc:
         typer.secho(str(exc), fg="red", err=True)
         raise typer.Exit(code=2) from exc
     _echo_summary(result)
