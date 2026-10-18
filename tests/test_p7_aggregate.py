@@ -910,3 +910,104 @@ def test_applied_が無い古い_run_は自分の値に落とす():
         ]
     )
     assert stats.subdomains_dmarc_enforced == 1
+
+
+# --------------------------------------------------------------------------
+# 相手が落ちていた run で、既にある gold を小さく上書きしない
+# --------------------------------------------------------------------------
+
+
+def _p2_warns(*codes: str) -> None:
+    """P2 の manifest を、指定の警告だけ持つ形で置く。"""
+    from mailauth.manifest import MANIFEST_FILENAME
+    from mailauth.paths import phase_dir
+
+    path = phase_dir(RUN, "p2_candidates") / MANIFEST_FILENAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"warnings": [{"code": c, "message": "x"} for c in codes]}),
+        encoding="utf-8",
+    )
+
+
+def _existing_gold(population_id: str, total_domains: int) -> None:
+    from mailauth.contracts import STATS_OVERALL_ARROW_SCHEMA, STATS_OVERALL_SORT_KEYS
+
+    row = _gold_row(population_id, month="2026-08", observed=total_domains)
+    row["total_domains"] = total_domains
+    write_parquet(
+        [row],
+        gold_dir("2026-08") / "stats_overall.parquet",
+        STATS_OVERALL_ARROW_SCHEMA,
+        sort_keys=STATS_OVERALL_SORT_KEYS,
+    )
+
+
+def _codes(result) -> set[str]:
+    return {w["code"] for w in result["warnings"]}
+
+
+def test_相手が落ちていた_run_で既にある_gold_を小さく上書きしない():
+    """2026-10-13 の国内は crt.sh が落ちたまま回り、分母が 3,386 → 3,198 に
+    縮んだまま公開された。P2 は CT_UPSTREAM_UNAVAILABLE と正しく書いて
+    いたが、**後ろの工程はそれを読んでいなかった。**
+    """
+    from mailauth.p7_aggregate import DegradedRunError
+
+    ids = _write_entities({"1": 8, "2": 6})
+    _write_facts(ids)
+    _existing_gold(POP, total_domains=20)
+    _p2_warns("CT_UPSTREAM_UNAVAILABLE")
+
+    with pytest.raises(DegradedRunError, match=r"20 → 14"):
+        run_p7(run_id=RUN)
+    # **書いていない。** 前の数字がそのまま残る
+    assert _gold("stats_overall.parquet").iloc[0]["total_domains"] == 20
+
+
+def test_相手が落ちていても_初めての月は警告付きで出す():
+    """止めるのは「もっと良い数字が既にある」ときだけ。何も出ないよりよい。"""
+    ids = _write_entities({"1": 8, "2": 6})
+    _write_facts(ids)
+    _p2_warns("CT_UPSTREAM_UNAVAILABLE")
+
+    result = run_p7(run_id=RUN)
+    assert "GOLD_FROM_DEGRADED_RUN" in _codes(result)
+    assert _gold("stats_overall.parquet").iloc[0]["total_domains"] == 14
+
+
+def test_相手が落ちていても_分母が増えるなら書く():
+    """キャッシュが積み上がった流し直しは、前より良い。"""
+    ids = _write_entities({"1": 8, "2": 6})
+    _write_facts(ids)
+    _existing_gold(POP, total_domains=10)
+    _p2_warns("CT_UPSTREAM_UNAVAILABLE")
+
+    result = run_p7(run_id=RUN)
+    assert "GOLD_FROM_DEGRADED_RUN" in _codes(result)
+    assert _gold("stats_overall.parquet").iloc[0]["total_domains"] == 14
+
+
+def test_相手が落ちていなければ_分母が減っても書く():
+    """**減ったこと自体は誤りではない**（上場廃止もある）。"""
+    ids = _write_entities({"1": 8, "2": 6})
+    _write_facts(ids)
+    _existing_gold(POP, total_domains=20)
+    _p2_warns()
+
+    result = run_p7(run_id=RUN)
+    assert "GOLD_FROM_DEGRADED_RUN" not in _codes(result)
+    assert _gold("stats_overall.parquet").iloc[0]["total_domains"] == 14
+
+
+def test_相手が落ちていても_他の母集団の分母とは比べない():
+    """同じ月の米国が 6,000 ドメインでも、国内の 14 は縮んだのではない。"""
+    ids = _write_entities({"1": 8, "2": 6})
+    _write_facts(ids)
+    _existing_gold("us-all-listed", total_domains=6000)
+    _p2_warns("CT_UPSTREAM_UNAVAILABLE")
+
+    result = run_p7(run_id=RUN)
+    overall = _gold("stats_overall.parquet")
+    assert sorted(overall["population_id"]) == [POP, "us-all-listed"]
+    assert "GOLD_FROM_DEGRADED_RUN" in _codes(result)
