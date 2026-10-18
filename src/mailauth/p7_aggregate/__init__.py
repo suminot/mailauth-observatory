@@ -16,6 +16,7 @@ from .runner import (
     OVERALL_FILENAME,
     PHASE,
     PLATFORM_FILENAME,
+    DegradedRunError,
     MissingInputError,
     TruncatedRunError,
     run,
@@ -28,6 +29,7 @@ __all__ = [
     "BY_SECTOR_FILENAME",
     "PLATFORM_FILENAME",
     "AGGREGATOR_VERSION",
+    "DegradedRunError",
     "MissingInputError",
     "TruncatedRunError",
 ]

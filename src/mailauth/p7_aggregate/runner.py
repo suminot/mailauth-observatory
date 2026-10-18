@@ -59,6 +59,64 @@ class TruncatedRunError(RuntimeError):
 TRUNCATION_WARNINGS = ("PHASE_BUDGET_EXCEEDED", "CANDIDATE_LIMIT_REACHED")
 
 
+class DegradedRunError(RuntimeError):
+    """**相手が落ちていた run で、既にある gold を小さく上書きしない。**"""
+
+
+#: これが P2 に出ていたら、CT 由来の候補はキャッシュにあった分だけである。
+#: 母集団は最後まで回っているので `TRUNCATION_WARNINGS` とは扱いが違う
+DEGRADATION_WARNINGS = ("CT_UPSTREAM_UNAVAILABLE",)
+
+
+def _p2_warning_codes(run_id: str) -> list[str]:
+    """P2 の manifest に出ている警告コード。manifest が無い・読めなければ空。"""
+    from ..manifest import MANIFEST_FILENAME
+
+    path = phase_dir(run_id, "p2_candidates") / MANIFEST_FILENAME
+    if not path.is_file():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    return [str(w.get("code") or "") for w in data.get("warnings") or []]
+
+
+def degraded_by(run_id: str) -> str | None:
+    """P2 が「相手が落ちていた」と書いていたら、その警告コードを返す。"""
+    codes = _p2_warning_codes(run_id)
+    return next((c for c in codes if c in DEGRADATION_WARNINGS), None)
+
+
+def shrinking_populations(new_rows: list[dict], existing_path: Path) -> list[str]:
+    """既にある gold より `total_domains` が減る母集団。
+
+    **減ったこと自体は誤りではない**（上場廃止もある）。止めるのは、
+    減った理由が「相手が落ちていた」と分かっているときだけである ──
+    呼ぶ側が `degraded_by` と組み合わせる。
+
+    既存の値が無い（列が無い過去の gold・初めての月）母集団は比べない。
+    """
+    if not existing_path.is_file():
+        return []
+    frame = read_parquet(existing_path)
+    if frame is None:
+        return []
+    before: dict[str, int] = {}
+    for row in frame_records(frame):
+        value = row.get("total_domains")
+        if value is None or (isinstance(value, float) and value != value):
+            continue
+        before[str(row.get("population_id"))] = int(value)
+    out = []
+    for row in new_rows:
+        pop = str(row.get("population_id"))
+        new = row.get("total_domains")
+        if pop in before and new is not None and int(new) < before[pop]:
+            out.append(f"{pop}（{before[pop]:,} → {int(new):,} ドメイン）")
+    return out
+
+
 def truncated_by(run_id: str) -> str | None:
     """P2 が途中でやめていたら、その警告コードを返す。
 
@@ -75,20 +133,8 @@ def truncated_by(run_id: str) -> str | None:
     やめた P2 は**暗黙の `--limit`** であって、同じ扱いにする。
     YAML ではなく gold を作るここで止めるのは、検査できるからである。
     """
-    from ..manifest import MANIFEST_FILENAME
-
-    path = phase_dir(run_id, "p2_candidates") / MANIFEST_FILENAME
-    if not path.is_file():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    for warning in data.get("warnings") or []:
-        code = str(warning.get("code") or "")
-        if code in TRUNCATION_WARNINGS:
-            return code
-    return None
+    codes = _p2_warning_codes(run_id)
+    return next((c for c in codes if c in TRUNCATION_WARNINGS), None)
 
 
 def _merge_other_populations(
@@ -396,6 +442,35 @@ def run(
             manifest.add_warning("DRY_RUN", message="dry_run のため出力を書いていない")
         else:
             target = gold_dir(run_id.split("-")[0] + "-" + run_id.split("-")[1])
+            # **相手が落ちていた run で、既にある gold を小さく上書きしない。**
+            #
+            # 2026-10-13 の国内は crt.sh が落ちたまま回り、P2 は
+            # CT_UPSTREAM_UNAVAILABLE と正しく書いたが、分母は 3,386 → 3,198 に
+            # 縮んだまま公開された。**縮んだのは実態ではなく相手の都合である。**
+            #
+            # 初めての月は止めない ── 何も出ないより、警告付きで出るほうがよい。
+            # 止めるのは「もっと良い数字が既にある」ときだけ
+            degraded = degraded_by(run_id)
+            if degraded:
+                shrinking = shrinking_populations(
+                    _rows_for_write(overall_rows), target / OVERALL_FILENAME
+                )
+                if shrinking:
+                    raise DegradedRunError(
+                        f"{run_id} の P2 は相手が落ちていた（{degraded}）。"
+                        "**既にある gold より分母が小さくなるので上書きしない:** "
+                        + "、".join(shrinking)
+                        + "。縮んだのは実態ではなく、CT を引けなかったためである。"
+                        "相手が戻ってから同じ run_id で流し直すこと"
+                    )
+                manifest.add_warning(
+                    "GOLD_FROM_DEGRADED_RUN",
+                    message=(
+                        f"P2 は相手が落ちていた（{degraded}）が、既にある gold より"
+                        "分母が小さくならないので書いた。CT 由来の候補はキャッシュに"
+                        "あった分だけである"
+                    ),
+                )
             meta = {
                 "mailauth.phase": PHASE,
                 "mailauth.run_id": run_id,
