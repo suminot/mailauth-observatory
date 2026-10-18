@@ -105,6 +105,8 @@ CREDENTIALS: dict[str, Credential] = {
 OFFICIAL_URL_SOURCES: dict[str, str | None] = {
     "gbizinfo": "MAILAUTH_GBIZINFO_TOKEN",
     "wikidata_identity": None,
+    # SEC の年次報告書。連絡先は一次ソース（sec_edgar）の側で既に要る
+    "sec_annual_report": None,
 }
 
 #: 母集団の一次ソースが**無いと取れない**鍵。

@@ -33,7 +33,7 @@ and how many failed.
 | Population | Primary register | Filled in from |
 |---|---|---|
 | Listed companies in Japan | FSA EDINET code list | NTA corporate number (name, address), gBizINFO (official site) |
-| Listed companies in the US | SEC EDGAR (public domain) | Wikidata (official site; SEC's website field is almost always empty) |
+| Listed companies in the US | SEC EDGAR (public domain) | Wikidata (official site; SEC's website field is almost always empty), annual reports filed with the SEC (official site for companies Wikidata lacks) |
 
 **EDINET is a Japanese register, so it is not used for the US population.**
 The same applies to sectors: Japan's come from EDINET's 33 sectors and the
@@ -64,8 +64,11 @@ in the summary is the size of the population, **not a claim that all of them
 were measured.** Where the two differ, the count is shown next to the figure.
 
 Official websites are looked up by corporate number against the Japanese
-government company registry (gBizINFO) and Wikidata. Some companies appear in
-neither. **No guesses are made** — measuring another company's domain by
+government company registry (gBizINFO) and Wikidata. For US companies that
+Wikidata lacks, the site is read from the annual report filed with the SEC
+(10-K / 20-F / 40-F), **only where the company itself states "our website is
+…"**. Other URLs in the document (the SEC, auditors, business partners) are
+not used. Some companies are still left without one. **No guesses are made** — measuring another company's domain by
 mistake is a worse error than not measuring at all.
 
 ## Some domains are excluded from measurement
@@ -175,7 +178,7 @@ as `example.com`) and widens from there.
 
 | Route | What it is |
 |---|---|
-| Official site | the official URL from government registries and Wikidata |
+| Official site | the official URL from government registries, Wikidata and US annual reports (as stated by the company) |
 | CT logs | names appearing in Certificate Transparency logs |
 | SPF `redirect=` | where SPF is delegated |
 | SPF `include:` | own subdomains the record has been split across |

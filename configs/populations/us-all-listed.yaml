@@ -28,6 +28,10 @@ source:
   enrich:
     - sec_edgar_submissions         # SIC（website はほぼ取れない）
     - wikidata_identity             # official_url と LEI
+    # **それでも残った分は、年次報告書（10-K / 20-F / 40-F）の本文から。**
+    # 会社が「Our website address is …」と自分で書いた箇所だけを読む。
+    # 2026-10-18、無作為30社で年次報告書のある22社中13社が取れた
+    - sec_annual_report
   industry:
     primary_scheme: SIC
     common_mapping: configs/industry/sic_to_common12.csv

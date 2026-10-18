@@ -1009,9 +1009,11 @@ def _run_sec(
     wants_submissions = any(
         str(e) == "sec_edgar_submissions" for e in (cfg.source.enrich or [])
     )
+    annual_reports: dict[str, Any] = {}
     if client is not None and wants_submissions and not dry_run:
         for row in rows:
             facts = client.facts_for_cik(row.cik)
+            annual_reports[row.cik] = facts.annual_report
             if facts.website and not row.website:
                 row.website = facts.website
             if facts.sic and not row.sic:
@@ -1082,8 +1084,48 @@ def _run_sec(
             label="ticker",
         )
 
+    # **それでも残った分を、年次報告書の本文から拾う**（BACKLOG 15）。
+    # 会社が「Our website address is …」と自分で書いた箇所だけを読む。
+    # Wikidata の後に置くのは、1社1文書を落とす重い経路だから
+    annual_stats: dict[str, Any] = {}
+    wants_annual = any(str(e) == "sec_annual_report" for e in (cfg.source.enrich or []))
+    if wants_annual and client is not None and annual_reports:
+        from .annual_report import AnnualReportWebsites
+
+        reader = AnnualReportWebsites(client)
+        missing = [e for e in entities if not e.official_domain]
+        for entity in missing:
+            website = reader.website_for(annual_reports.get(entity.cik or ""))
+            domain = domain_from_url(website) if website else None
+            if domain:
+                entity.official_url = website
+                entity.official_domain = domain
+        annual_stats = {
+            **reader.stats.to_dict(),
+            "missing_before": len(missing),
+            "still_missing": sum(1 for e in entities if not e.official_domain),
+        }
+        if reader.stats.fetch_failed:
+            manifest.add_warning(
+                "ENRICH_FAILED_SEC_ANNUAL_REPORT",
+                count=reader.stats.fetch_failed,
+                message=(
+                    "年次報告書を取得できなかった企業がある。**「サイトの記述が"
+                    "無かった」ではなく「読めなかった」**（原則5）"
+                ),
+            )
+    elif wants_annual:
+        manifest.add_warning(
+            "ENRICH_SKIPPED_SEC_ANNUAL_REPORT",
+            message=(
+                "submissions を引いていないため年次報告書を読んでいない。"
+                "「サイトが無い」のではなく「引いていない」（原則5）"
+            ),
+        )
+
     manifest.set_breakdown(
         wikidata_ticker=weak_stats,
+        sec_annual_report=annual_stats,
         sec_enrichment={
             "submissions_fetched": client.stats.submissions_fetched if client else 0,
             "submissions_failed": client.stats.submissions_failed if client else 0,

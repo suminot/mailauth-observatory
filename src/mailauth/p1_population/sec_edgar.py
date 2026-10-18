@@ -60,6 +60,9 @@ class SecFacts:
     sic: str | None = None
     sic_label: str | None = None
     name: str | None = None
+    #: 最新の年次報告書（10-K / 20-F / 40-F）。website 欄が空なので、
+    #: 本文から公式サイトを読むのに使う（`annual_report.py`）
+    annual_report: Any = None
 
 
 @dataclass
@@ -131,6 +134,27 @@ class SecEdgarClient:
             raise SecEdgarError(f"SEC が {resp.status_code} を返した: {url}")
         return resp.json()
 
+    def get_text(self, url: str, *, max_bytes: int) -> str | None:
+        """本文を先頭から `max_bytes` まで読む。404 なら None。
+
+        年次報告書は丸ごとだと 10 MB を超えることがある。読みたい節は
+        前のほうにあるので、**全部は落とさない**（相手の帯域も使う）。
+        """
+        self._limiter.wait()
+        with self._http().stream("GET", url) as resp:
+            if resp.status_code == 404:
+                return None
+            if resp.status_code != 200:
+                raise SecEdgarError(f"SEC が {resp.status_code} を返した: {url}")
+            chunks: list[bytes] = []
+            size = 0
+            for chunk in resp.iter_bytes():
+                chunks.append(chunk)
+                size += len(chunk)
+                if size >= max_bytes:
+                    break
+        return b"".join(chunks)[:max_bytes].decode(resp.encoding or "utf-8", errors="replace")
+
     # -- ティッカー -> CIK ---------------------------------------------------
 
     def load_tickers(self, *, refresh: bool = False) -> dict[str, int]:
@@ -199,6 +223,9 @@ class SecEdgarClient:
             facts.sic = sic
             facts.sic_label = (payload.get("sicDescription") or "").strip() or None
             self.stats.sic_found += 1
+        from .annual_report import latest_annual_report
+
+        facts.annual_report = latest_annual_report(cik, payload)
         return facts
 
 
