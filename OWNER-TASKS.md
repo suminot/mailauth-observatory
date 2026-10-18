@@ -88,7 +88,7 @@ GitHub の Settings → Secrets and variables → Actions に入れる。
 
 | secret | 用途 | 取得元 | 無いとどうなるか |
 |---|---|---|---|
-| `MAILAUTH_EDINET_SUBSCRIPTION_KEY` | 書類取得 API（現状は未使用） | [EDINET API](https://api.edinet-fsa.go.jp/api/auth/index.aspx?mode=1)（無料・要登録） | コードリストは鍵なしで取れるので**いまは影響しない** |
+| `MAILAUTH_EDINET_SUBSCRIPTION_KEY` | 書類取得 API。**有報の公告掲載方法から公式サイトを読む経路に要る**（国内の起点なし 16.4% 向け、BACKLOG 15） | [EDINET API](https://api.edinet-fsa.go.jp/api/auth/index.aspx?mode=1)（無料・要登録） | コードリストは鍵なしで取れるので母集団には影響しない。**2026-10-18 に試験（`probe-edinet-koukoku.yml`）を流したら secrets に無く、当たり率を測れなかった** |
 | `MAILAUTH_GBIZINFO_TOKEN` | 公式サイト URL | [gBizINFO](https://info.gbiz.go.jp/api/index.html)（無料・申請制） | `official_domain` が全社欠損し、**P2 の候補生成が起点を失う** |
 | `MAILAUTH_HOUJIN_BANGOU_APP_ID` | 商号の裏取り | [国税庁](https://www.houjin-bangou.nta.go.jp/webapi/)（無料） | 裏取りをスキップ（動く） |
 | `MAILAUTH_CONTACT_EMAIL` | SEC の User-Agent | あなたの連絡先 | 米国母集団が**理由を添えて停止**する |
