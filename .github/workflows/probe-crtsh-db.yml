@@ -1,0 +1,70 @@
+name: crt.sh の DB 直結を試す
+
+# BACKLOG 12「試す価値があるのに、まだ試せていない：crt.sh の Postgres 直結」。
+#
+# crt.sh の web 前段が 502 を返している間も、公開されている Postgres
+# （guest@crt.sh:5432/certwatch）が生きていれば抜け道になる。開発コンテナからは
+# TCP 5432 が届かず、**crt.sh のせいか環境のせいかを切り分けられていない。**
+# Actions から試せば分かる。
+#
+# **手で起こすときだけ動く。** 投げるのは接続確認1本と、小さな照会1本だけ
+# （qps 0.5 の礼儀は DB 側でも同じ）。月次計測が動いている間は起こさないこと。
+
+on:
+  workflow_dispatch:
+    inputs:
+      domain:
+        description: 照会に使うドメイン（1件）
+        required: false
+        default: toyota.co.jp
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: psql を入れる
+        run: sudo apt-get install -y -qq postgresql-client >/dev/null
+
+      - name: TCP 5432 に届くか
+        run: |
+          if timeout 15 bash -c 'echo > /dev/tcp/crt.sh/5432'; then
+            echo "tcp=open" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "tcp=blocked" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: 接続できるか
+        env:
+          PGCONNECT_TIMEOUT: "20"
+        run: |
+          start=$(date +%s)
+          psql -h crt.sh -p 5432 -U guest -d certwatch -At \
+            -c "SET statement_timeout = '20s'; SELECT now();" 2>&1 | tee probe.txt
+          echo "connect_sec=$(( $(date +%s) - start ))" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: 照会が返るか
+        env:
+          PGCONNECT_TIMEOUT: "20"
+          DOMAIN: ${{ inputs.domain }}
+        run: |
+          sleep 3
+          start=$(date +%s)
+          # crt.sh 自身の web 画面が使う索引（identities の全文検索）に乗る形。
+          # 件数だけ数え、名前そのものはログに出さない
+          psql -h crt.sh -p 5432 -U guest -d certwatch -At -v domain="$DOMAIN" <<'SQL' 2>&1 | tee -a probe.txt
+          SET statement_timeout = '60s';
+          SELECT count(*)
+            FROM (
+              SELECT ci.NAME_VALUE
+                FROM certificate_and_identities ci
+               WHERE plainto_tsquery('certwatch', :'domain') @@ identities(ci.CERTIFICATE)
+               LIMIT 1000
+            ) sub;
+          SQL
+          echo "query_sec=$(( $(date +%s) - start ))" | tee -a "$GITHUB_STEP_SUMMARY"
+          tail -n 1 probe.txt | sed 's/^/rows=/' | tee -a "$GITHUB_STEP_SUMMARY"
