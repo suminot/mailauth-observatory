@@ -64,6 +64,14 @@ concurrency:
 permissions:
   contents: write
 
+# **`shell: bash` を明示する。** 明示しないと Actions は `bash -e {0}` で
+# 走らせ、`pipefail` が付かない ── `cmd | tee` の cmd が失敗しても
+# ステップは成功になる。2026-10-18、crt.sh の DB 直結の試験が、接続を
+# 断られたのに success で終わった
+defaults:
+  run:
+    shell: bash
+
 jobs:
   measure:
     runs-on: ubuntu-latest

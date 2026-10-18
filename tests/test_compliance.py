@@ -2146,3 +2146,34 @@ def test_pages_that_show_one_population_filter_by_it():
         assert "Inputs.select(populations" in text, (
             f"{name} に母集団の選択が無い。絞っても選べなければ片方しか見えない"
         )
+
+
+def test_ワークフローは_pipefail_付きの_bash_で走る():
+    """**`shell:` を書かないと、Actions は `bash -e {0}` で走らせる。**
+
+    `pipefail` が付かないので、`cmd | tee` の cmd が失敗してもステップは
+    成功になる。2026-10-18、crt.sh の DB 直結の試験が、接続を断られた
+    （`max_client_conn`）のに success で終わった。`shell: bash` と書けば
+    `bash --noprofile --norc -eo pipefail {0}` になる。
+
+    ジョブ側の `defaults.run` があると上書きされうるので、そちらにも要る。
+    """
+    import re as _re
+
+    import yaml
+
+    for path in sorted((repo_root() / ".github" / "workflows").glob("*.yml")):
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        top = ((data.get("defaults") or {}).get("run") or {}).get("shell")
+        assert top == "bash", f"{path.name}: 先頭に defaults.run.shell: bash が無い"
+        for job_name, job in (data.get("jobs") or {}).items():
+            run = (job.get("defaults") or {}).get("run")
+            if run is not None:
+                assert run.get("shell") == "bash", (
+                    f"{path.name}:{job_name}: ジョブの defaults.run に shell: bash が無い"
+                )
+            for step in job.get("steps") or []:
+                shell = step.get("shell")
+                assert shell in (None, "bash") or _re.search(r"pipefail", str(shell)), (
+                    f"{path.name}:{job_name}: ステップ {step.get('name')} が別の shell を使っている"
+                )
