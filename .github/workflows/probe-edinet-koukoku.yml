@@ -1,0 +1,100 @@
+name: 有報の公告掲載方法を試す
+
+# BACKLOG 15「有価証券報告書の本文」。国内の起点なし（16.4%）を埋められるかを
+# 測る。有報の「株式事務の概要」には公告掲載方法があり、電子公告の会社は
+# **自社サイトの URL を自分で書いている**（例: https://www.example.co.jp/ir/koukoku/）。
+#
+# **EDINET はスクレイピング禁止。API 経由のみ**（v2、Subscription-Key）。
+# 手で起こすときだけ動く。1秒に1本まで。社名とドメインだけをログに出す。
+
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 有報を集める提出日（3月決算の提出が集中する6月下旬が多い）
+        required: false
+        default: "2026-06-26"
+      sample:
+        description: 読む有報の件数
+        required: false
+        default: "40"
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      MAILAUTH_EDINET_SUBSCRIPTION_KEY: ${{ secrets.MAILAUTH_EDINET_SUBSCRIPTION_KEY }}
+    steps:
+      - name: 鍵があるか
+        run: |
+          if [ -z "$MAILAUTH_EDINET_SUBSCRIPTION_KEY" ]; then
+            echo "key=missing" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "key=present" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: 有報を読む
+        env:
+          DATE: ${{ inputs.date }}
+          SAMPLE: ${{ inputs.sample }}
+        run: |
+          pip install -q httpx
+          python - <<'PY'
+          import io, os, random, re, time, zipfile, html
+          import httpx
+
+          key = os.environ["MAILAUTH_EDINET_SUBSCRIPTION_KEY"]
+          base = "https://api.edinet-fsa.go.jp/api/v2"
+          c = httpx.Client(timeout=60)
+
+          def get(url, **params):
+              time.sleep(1.0)
+              params["Subscription-Key"] = key
+              r = c.get(url, params=params)
+              r.raise_for_status()
+              return r
+
+          docs = get(f"{base}/documents.json", date=os.environ["DATE"], type=2).json()
+          yuho = [d for d in docs.get("results") or []
+                  if d.get("docTypeCode") == "120" and d.get("secCode")]
+          print(f"有報 {len(yuho)} 件（{os.environ['DATE']}）")
+          random.seed(1)
+          sample = random.sample(yuho, min(int(os.environ["SAMPLE"]), len(yuho)))
+
+          url_re = re.compile(r"https?://[A-Za-z0-9.\-]+(?:/[^\s<>\"'）)」]*)?")
+          hit = no_koukoku = nikkei = 0
+          for d in sample:
+              z = zipfile.ZipFile(io.BytesIO(get(f"{base}/documents/{d['docID']}", type=1).content))
+              text = ""
+              for name in z.namelist():
+                  if "PublicDoc" in name and name.endswith(".htm"):
+                      text += z.read(name).decode("utf-8", "replace")
+              text = html.unescape(re.sub(r"<[^>]+>", " ", text))
+              text = re.sub(r"\s+", " ", text)
+              i = text.find("公告掲載方法")
+              if i < 0:
+                  no_koukoku += 1
+                  print(f"  {d['secCode']} {d['filerName'][:20]:20} 公告掲載方法の記載なし")
+                  continue
+              window = text[i : i + 400]
+              urls = [u for u in url_re.findall(window)]
+              hosts = sorted({re.sub(r"^https?://", "", u).split("/")[0].lower() for u in urls})
+              if hosts:
+                  hit += 1
+              elif "新聞" in window:
+                  nikkei += 1
+              print(f"  {d['secCode']} {d['filerName'][:20]:20} {' '.join(hosts) or ('新聞' if '新聞' in window else '-')}")
+          n = len(sample)
+          summary = f"sample={n} url={hit} newspaper={nikkei} no_section={no_koukoku}"
+          print(summary)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write(summary + "\n")
+          PY
