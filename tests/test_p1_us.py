@@ -367,3 +367,22 @@ def test_delisted_companies_are_marked_not_dropped():
     df = read_parquet(phase_output(RUN, "p1_population", "entities.parquet"))
     by_id = df.set_index("entity_id")
     assert by_id.loc["cik:104169", "status"] == EntityStatus.DELISTED
+
+
+def test_途中で切れた_Wikidata_の応答は補完の失敗として扱う(monkeypatch):
+    """**WDQS は時間切れになると、200 のまま途中までの JSON を返す。**
+
+    2026-10-20、米国 P1 がこれで JSONDecodeError を出して丸ごと落ち、
+    13 分かけて引いた SEC の submissions が全部消えた。補完の失敗は
+    `WikidataError` にして、呼ぶ側が警告に変える（母集団は止めない）。
+    """
+    import httpx
+
+    from mailauth.p1_population.wikidata import run_query
+
+    monkeypatch.setenv("MAILAUTH_CONTACT_EMAIL", "a@example.com")
+    truncated = b'{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","va'
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, content=truncated))
+    with httpx.Client(transport=transport) as client:
+        with pytest.raises(WikidataError, match="途中で切れた"):
+            run_query("SELECT * WHERE {}", client=client)

@@ -127,6 +127,13 @@ def run_query(query: str, *, client: httpx.Client | None = None) -> list[dict[st
         payload = resp.json()
     except httpx.HTTPError as exc:
         raise WikidataError(f"Wikidata に接続できない: {exc}") from exc
+    except ValueError as exc:
+        # **200 で途中までの JSON が返ることがある。** WDQS は問い合わせが
+        # 時間切れになると、それまでの結果を流したまま応答を打ち切る。
+        # 2026-10-20、米国 P1 がこれで JSONDecodeError を出して丸ごと落ち、
+        # 13 分かけて引いた SEC の submissions が全部消えた。
+        # **補完の失敗であって、母集団の失敗ではない**（呼ぶ側が警告にする）
+        raise WikidataError(f"Wikidata の応答を読めない（途中で切れた可能性）: {exc}") from exc
     finally:
         if owned:
             c.close()
