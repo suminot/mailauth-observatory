@@ -1010,10 +1010,12 @@ def _run_sec(
         str(e) == "sec_edgar_submissions" for e in (cfg.source.enrich or [])
     )
     annual_reports: dict[str, Any] = {}
+    releases: dict[str, list[str]] = {}
     if client is not None and wants_submissions and not dry_run:
         for row in rows:
             facts = client.facts_for_cik(row.cik)
             annual_reports[row.cik] = facts.annual_report
+            releases[row.cik] = list(getattr(facts, "releases", None) or [])
             if facts.website and not row.website:
                 row.website = facts.website
             if facts.sic and not row.sic:
@@ -1153,9 +1155,51 @@ def _run_sec(
             ),
         )
 
+    # **年次報告書でも埋まらなかった分を、プレスリリースから拾う**（BACKLOG 15）。
+    # 「About 〇〇」と問い合わせ先のメール（ドメイン部だけ）を読み、
+    # **社名と合うドメインだけを採る**（IR 代行のドメインが混ざるため）
+    release_stats: dict[str, Any] = {}
+    wants_releases = any(str(e) == "sec_press_release" for e in (cfg.source.enrich or []))
+    if wants_releases and client is not None and releases:
+        from .press_release import PressReleaseWebsites
+
+        release_reader = PressReleaseWebsites(client)
+        still = [e for e in entities if not e.official_domain]
+        for entity in still:
+            website = release_reader.website_for(
+                entity.cik, releases.get(entity.cik or "", []), entity.name
+            )
+            domain = domain_from_url(website) if website else None
+            if domain:
+                entity.official_url = website
+                entity.official_domain = domain
+        release_stats = {
+            **release_reader.stats.to_dict(),
+            "missing_before": len(still),
+            "still_missing": sum(1 for e in entities if not e.official_domain),
+        }
+        if release_reader.stats.fetch_failed:
+            manifest.add_warning(
+                "ENRICH_FAILED_SEC_PRESS_RELEASE",
+                count=release_reader.stats.fetch_failed,
+                message=(
+                    "プレスリリースを取得できなかったものがある。**「書いていなかった」"
+                    "ではなく「読めなかった」**（原則5）"
+                ),
+            )
+    elif wants_releases:
+        manifest.add_warning(
+            "ENRICH_SKIPPED_SEC_PRESS_RELEASE",
+            message=(
+                "submissions を引いていないためプレスリリースを読んでいない。"
+                "「サイトが無い」のではなく「引いていない」（原則5）"
+            ),
+        )
+
     manifest.set_breakdown(
         wikidata_ticker=weak_stats,
         sec_annual_report=annual_stats,
+        sec_press_release=release_stats,
         sec_enrichment={
             "submissions_fetched": client.stats.submissions_fetched if client else 0,
             "submissions_failed": client.stats.submissions_failed if client else 0,

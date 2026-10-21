@@ -107,6 +107,7 @@ OFFICIAL_URL_SOURCES: dict[str, str | None] = {
     "wikidata_identity": None,
     # SEC の年次報告書。連絡先は一次ソース（sec_edgar）の側で既に要る
     "sec_annual_report": None,
+    "sec_press_release": None,
 }
 
 #: 母集団の一次ソースが**無いと取れない**鍵。

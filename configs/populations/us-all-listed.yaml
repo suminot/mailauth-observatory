@@ -32,6 +32,9 @@ source:
     # 会社が「Our website address is …」と自分で書いた箇所だけを読む。
     # 2026-10-18、無作為30社で年次報告書のある22社中13社が取れた
     - sec_annual_report
+    # **年次報告書でも埋まらなかった分は、プレスリリース（8-K / 6-K）から。**
+    # 「About 〇〇」と問い合わせ先のドメイン。社名と合うものだけを採る
+    - sec_press_release
   industry:
     primary_scheme: SIC
     common_mapping: configs/industry/sic_to_common12.csv
