@@ -84,13 +84,15 @@ lower the rates as companies with no starting domain, or pile dozens of them
 onto the manager's domain so that **one configuration is counted as dozens of
 "companies"**.
 
-The classification uses the SEC's own categories, not words in the name
-("Trust" also appears in bank names).
+The classification uses the SEC's own categories and, as a rule, not words in
+the name ("Trust" also appears in the names of banks and real estate
+investment trusts).
 
 | Category | Rule |
 |---|---|
-| SPAC (blank-check company) | SEC industry code 6770 |
+| SPAC (blank-check company) | SEC industry code 6770, or a name of the form "… Acquisition Corp" (the SEC sometimes assigns the target's industry code) |
 | Commodity or crypto trust | Industry code 6221 and a name containing ETF / Trust / Fund |
+| Royalty or structured trust | Industry code 6189 (asset-backed), or 6792 with Trust in the name |
 | Fund, ETF or closed-end fund | Files investment-company forms (N-CSR, N-PORT, N-2 and so on) and no 10-K / 10-Q / 20-F |
 
 Business development companies (BDCs) file 10-Ks and are kept.
@@ -109,6 +111,7 @@ const excludedEntities = FileAttachment("../data/excluded_entities.json").json()
     spac: "SPAC (blank-check company)",
     commodity_trust: "Commodity or crypto trust",
     registered_fund: "Fund, ETF or closed-end fund",
+    passive_trust: "Royalty or structured trust",
   };
   const rows = (excludedEntities ?? []).map((r) => ({...r, category: labels[r.reason] ?? r.reason}));
   if (!rows.length) {

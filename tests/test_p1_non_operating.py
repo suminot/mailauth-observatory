@@ -13,6 +13,7 @@ import pytest
 from mailauth.p1_population import run as run_p1
 from mailauth.p1_population.non_operating import (
     COMMODITY_TRUST,
+    PASSIVE_TRUST,
     REGISTERED_FUND,
     SPAC,
     classify,
@@ -49,8 +50,19 @@ CONFIG = "configs/populations/us-all-listed.yaml"
         ("3571", {"10-K", "10-Q", "8-K"}, "Apple Inc.", None),
         # **社名だけでは決めない。** 「Trust」は銀行にも付く
         ("6022", {"10-K", "10-Q"}, "Northern Trust Corp", None),
-        # 「Acquisition」でも、買収を終えて業種が付いた事業会社は残す
+        # 「Acquisition Holdings」は事業会社にもあるので残す
         ("7372", {"10-K"}, "Example Acquisition Holdings Inc", None),
+        # **SEC が買収予定先の業種コードを付けた SPAC**（2026-10-21 の全数で 23 社）
+        ("7372", {"10-K", "S-1"}, "McKinley Acquisition Corp", SPAC),
+        ("4911", {"10-K"}, "Plum Acquisition Corp. IV", SPAC),
+        # ロイヤルティ信託・仕組み債の信託
+        ("6792", {"10-K"}, "SAN JUAN BASIN ROYALTY TRUST", PASSIVE_TRUST),
+        ("6189", {"10-K"}, "STRATS(SM) Trust for Procter & Gamble Securities", PASSIVE_TRUST),
+        # **6792 でも事業会社は残す**
+        ("6792", {"10-K", "10-Q"}, "Texas Pacific Land Corp", None),
+        ("6792", {"10-K"}, "LandBridge Corp", None),
+        # 表から読んだ欠損（NaN）は「業種コードなし」として扱う
+        (float("nan"), {"10-K"}, "Apple Inc.", None),
     ],
 )
 def test_事業会社でないものの判定(sic, forms, name, expected):
