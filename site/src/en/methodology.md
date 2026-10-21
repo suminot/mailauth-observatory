@@ -75,6 +75,59 @@ relations agencies). Only the domain part of email addresses is used; the
 addresses themselves are not stored. Some companies are still left without one. **No guesses are made** — measuring another company's domain by
 mistake is a worse error than not measuring at all.
 
+## Companies left out of the population
+
+**Entities that are not operating companies** are left out of the US
+population. They have no staff or mail servers of their own and normally use
+their manager's or sponsor's mail infrastructure. Keeping them would either
+lower the rates as companies with no starting domain, or pile dozens of them
+onto the manager's domain so that **one configuration is counted as dozens of
+"companies"**.
+
+The classification uses the SEC's own categories, not words in the name
+("Trust" also appears in bank names).
+
+| Category | Rule |
+|---|---|
+| SPAC (blank-check company) | SEC industry code 6770 |
+| Commodity or crypto trust | Industry code 6221 and a name containing ETF / Trust / Fund |
+| Fund, ETF or closed-end fund | Files investment-company forms (N-CSR, N-PORT, N-2 and so on) and no 10-K / 10-Q / 20-F |
+
+Business development companies (BDCs) file 10-Ks and are kept.
+
+**These were deliberately not measured; they are not "could not be measured".**
+They are not counted in the "N companies" of the summary. Their names and the
+reason are listed below (with no measurement values).
+
+```js
+const excludedEntities = FileAttachment("../data/excluded_entities.json").json();
+```
+
+```js
+{
+  const labels = {
+    spac: "SPAC (blank-check company)",
+    commodity_trust: "Commodity or crypto trust",
+    registered_fund: "Fund, ETF or closed-end fund",
+  };
+  const rows = (excludedEntities ?? []).map((r) => ({...r, category: labels[r.reason] ?? r.reason}));
+  if (!rows.length) {
+    display(html`<p>No companies were left out this month.</p>`);
+  } else {
+    const counts = d3.rollups(rows, (v) => v.length, (r) => r.category);
+    display(html`<ul>${counts.map(([k, n]) => html`<li>${k}: ${n.toLocaleString("en-US")}</li>`)}</ul>`);
+    display(html`<details><summary>Companies left out (${rows.length.toLocaleString("en-US")}, ${rows[0].measured_month})</summary>${
+      Inputs.table(rows, {
+        columns: ["name", "ticker", "exchange", "category"],
+        header: {name: "Name", ticker: "Ticker", exchange: "Exchange", category: "Category"},
+        sort: "name",
+        rows: 20,
+      })
+    }</details>`);
+  }
+}
+```
+
 ## Some domains are excluded from measurement
 
 Once a domain is excluded, no further DNS queries are sent to it. **"Excluded"

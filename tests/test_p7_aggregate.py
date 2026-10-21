@@ -1011,3 +1011,78 @@ def test_相手が落ちていても_他の母集団の分母とは比べない(
     overall = _gold("stats_overall.parquet")
     assert sorted(overall["population_id"]) == [POP, "us-all-listed"]
     assert "GOLD_FROM_DEGRADED_RUN" in _codes(result)
+
+
+# --------------------------------------------------------------------------
+# 母集団から外した事業会社でないもの（SPAC・ファンド・ETF）
+# --------------------------------------------------------------------------
+
+
+def _write_excluded(rows: list[dict]) -> None:
+    from mailauth.contracts import EXCLUDED_ENTITY_ARROW_SCHEMA
+
+    write_parquet(
+        rows,
+        phase_output(RUN, "p1_population", "excluded_entities.parquet"),
+        EXCLUDED_ENTITY_ARROW_SCHEMA,
+    )
+
+
+def test_外した社数を全社統計に出し_一覧を_gold_に写す():
+    """**外した会社は名前と理由を示す**（運営者の判断、2026-10-21）。
+
+    `total_entities` には入れない。入れると、測らないと決めた会社が
+    「起点なし」として率を下げる。
+    """
+    ids = _write_entities({"1": 8, "2": 6})
+    _write_facts(ids)
+    _write_excluded(
+        [
+            {
+                "population_id": POP,
+                "run_id": RUN,
+                "cik": "1",
+                "ticker": "SPAC",
+                "name": "Example SPAC Corp",
+                "exchange": "NYSE",
+                "sic": "6770",
+                "reason": "spac",
+            },
+            {
+                "population_id": POP,
+                "run_id": RUN,
+                "cik": "2",
+                "ticker": "FND",
+                "name": "Example Fund",
+                "exchange": "NYSE",
+                "sic": None,
+                "reason": "registered_fund",
+            },
+        ]
+    )
+
+    run_p7(run_id=RUN)
+
+    row = _gold("stats_overall.parquet").iloc[0]
+    assert row["total_entities"] == 14
+    assert row["excluded_non_operating"] == 2
+    excluded = _gold("excluded_entities.parquet")
+    assert sorted(excluded["name"]) == ["Example Fund", "Example SPAC Corp"]
+    # **測定値は持たない**（名前と理由だけ）
+    assert set(excluded.columns) == {
+        "population_id",
+        "run_id",
+        "cik",
+        "ticker",
+        "name",
+        "exchange",
+        "sic",
+        "reason",
+    }
+
+
+def test_外した一覧が無い母集団は0社():
+    ids = _write_entities({"1": 8})
+    _write_facts(ids)
+    run_p7(run_id=RUN)
+    assert _gold("stats_overall.parquet").iloc[0]["excluded_non_operating"] == 0

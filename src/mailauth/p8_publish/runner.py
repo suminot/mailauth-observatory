@@ -25,6 +25,7 @@ from ..config import load_yaml
 from ..io import read_parquet
 from ..manifest import RunManifest
 from ..p7_aggregate import BY_SECTOR_FILENAME, OVERALL_FILENAME, PLATFORM_FILENAME
+from ..p7_aggregate.runner import EXCLUDED_FILENAME
 from ..paths import config_path, gold_dir, gold_root, phase_dir
 from . import tiers, vocabulary
 
@@ -131,6 +132,23 @@ def collect_months(months: list[str]) -> tuple[list[dict], list[dict], list[dict
     return overall, sectors, platforms
 
 
+def collect_excluded(month: str | None) -> tuple[list[dict], list[str]]:
+    """その月の、母集団から外した会社の一覧と、gold にあった列。
+
+    gold には cik や業種コードも入っているが、公開するのは
+    `tiers.EXCLUDED_PUBLIC_COLUMNS` だけ。**門は絞る前の列で見る。**
+    """
+    if not month:
+        return [], []
+    frame = read_parquet(gold_dir(month) / EXCLUDED_FILENAME)
+    if frame is None:
+        return [], []
+    columns = [str(c) for c in frame.columns]
+    keep = [c for c in tiers.EXCLUDED_PUBLIC_COLUMNS if c in columns]
+    records = [{**r, "measured_month": month} for r in frame_to_records(frame[keep])]
+    return records, columns
+
+
 def lint_pages(site_dir: Path) -> tuple[list[str], list[str]]:
     """公開ページの語彙を検査する。
 
@@ -211,6 +229,17 @@ def run(
                 raise PublishBlockedError(
                     f"{name} に第1層で公開できない列がある: {bad}。"
                     "個社特定情報は第2層（認証の内側）にしか置けない"
+                )
+
+        # -- 門1b: 外した会社の一覧に測定値が混ざっていないか ----------------
+        # 社名を出すのはここだけの例外。**列を固定し、それ以外があれば止める**
+        excluded_list, excluded_columns = collect_excluded(months[-1] if months else None)
+        if excluded_columns:
+            bad = tiers.excluded_list_violations(excluded_columns)
+            if bad:
+                raise PublishBlockedError(
+                    f"母集団から外した会社の一覧に、公開してよい列以外がある: {bad}。"
+                    "**測定値が付いた社名は第2層の領域**で、第1層には出せない"
                 )
 
         # -- 門2: 表現上の規約 -----------------------------------------------
@@ -344,6 +373,7 @@ def run(
             pages_checked=pages,
             tier2_enabled=tier2_requested,
             excluded_by_request=exclusion_registry.to_dict(),
+            excluded_non_operating=len(excluded_list),
             tier2_days_elapsed=decision.days_elapsed,
             formats=list((cfg.get("tier1") or {}).get("formats") or []),
         )
@@ -361,6 +391,7 @@ def run(
                 months=months,
                 cfg=cfg,
                 attribution=manifest.attribution,
+                excluded_list=excluded_list,
                 excluded={
                     "count": len(exclusion_registry.entries),
                     "available": exclusion_registry.available,
@@ -418,6 +449,7 @@ def _write_site_data(
     cfg: dict,
     attribution: list[str],
     excluded: dict | None = None,
+    excluded_list: list[dict] | None = None,
 ) -> list[tuple[Path, int]]:
     """サイトのデータディレクトリに書き出す。
 
@@ -446,6 +478,16 @@ def _write_site_data(
             path = data_dir / f"{name}.csv"
             _write_csv(path, records)
             written.append((path, len(records)))
+
+    # **母集団から外した会社の一覧**（SPAC・ファンド・ETF）。測定値は持たない。
+    # 無い月も空の一覧を書く ── 前の月の一覧が残って読まれないように
+    path = data_dir / "excluded_entities.json"
+    _write_json(path, list(excluded_list or []))
+    written.append((path, len(excluded_list or [])))
+    if "csv" in formats:
+        path = data_dir / "excluded_entities.csv"
+        _write_csv(path, list(excluded_list or []))
+        written.append((path, len(excluded_list or [])))
 
     meta_path = data_dir / "meta.json"
     _write_json(

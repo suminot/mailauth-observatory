@@ -25,6 +25,10 @@ source:
   # **主鍵で当たらなかった分を、弱い鍵で拾い直す。**
   # 衝突は捨て、社名の一致を見る（誤った突合は取り逃がしより悪い）
   wikidata_ticker_query: configs/populations/_sparql/us_ticker_identity.rq
+  # **事業会社でないもの（SPAC・ファンド・ETF）を外す**（運営者の判断、
+  # 2026-10-21）。自前のメール基盤を持たず、運用会社のものを使うため。
+  # 外した会社は名前と理由を公開する。判定は SEC の区分で行う（non_operating.py）
+  exclude_non_operating: true
   enrich:
     - sec_edgar_submissions         # SIC（website はほぼ取れない）
     - wikidata_identity             # official_url と LEI

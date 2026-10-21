@@ -125,6 +125,27 @@ TIER1_FORBIDDEN_COLUMNS = frozenset(
 )
 
 
+#: **母集団から外した会社の一覧で、公開する列。**
+#:
+#: 社名を第1層に出すのはここだけの例外である（運営者の判断、2026-10-21:
+#: 外した社名を明示する）。第2層は「個社名付きの**明細**」── 測定結果に
+#: 社名が付いたもの。この一覧は**測定値を1つも持たない**母集団の定義の一部で、
+#: 第2層には当たらない。
+EXCLUDED_PUBLIC_COLUMNS = ("population_id", "name", "ticker", "exchange", "reason")
+
+
+def excluded_list_violations(columns: list[str]) -> list[str]:
+    """gold の一覧に、決めた列（測定値を持たない）以外が増えていないか。
+
+    **公開用に絞る前の列で見る。** 絞ったあとで見ると、余計な列は絞った時点で
+    消えていて、この門は決して作動しない。**測定値が紛れ込んだら第2層になる**
+    ので、gold に増えた時点で止める。
+    """
+    from ..contracts import EXCLUDED_ENTITY_ARROW_SCHEMA
+
+    return sorted(set(columns) - set(EXCLUDED_ENTITY_ARROW_SCHEMA.names))
+
+
 def tier1_violations(columns: list[str]) -> list[str]:
     """第1層の出力に個社特定情報が混ざっていないか。
 

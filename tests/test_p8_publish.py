@@ -460,3 +460,73 @@ def test_p8_lints_every_page_under_the_site(publish_config):
     checked = set(result["breakdown"]["pages_checked"])
     assert on_disk, "検査対象のページが1つも無い"
     assert on_disk <= checked, f"検査から漏れたページ: {sorted(on_disk - checked)}"
+
+
+# ===========================================================================
+# 母集団から外した会社の一覧（SPAC・ファンド・ETF）
+# ===========================================================================
+
+
+def _write_excluded_gold(month: str = "2026-08", *, extra_column: str | None = None) -> None:
+    import pyarrow as pa
+
+    from mailauth.contracts import EXCLUDED_ENTITY_ARROW_SCHEMA
+
+    schema = EXCLUDED_ENTITY_ARROW_SCHEMA
+    row = {
+        "population_id": POP,
+        "run_id": month,
+        "cik": "0000000001",
+        "ticker": "SPAC",
+        "name": "Example SPAC Corp",
+        "exchange": "NYSE",
+        "sic": "6770",
+        "reason": "spac",
+    }
+    if extra_column:
+        schema = pa.schema([*schema, (extra_column, pa.string())])
+        row[extra_column] = "reject"
+    write_parquet([row], gold_dir(month) / "excluded_entities.parquet", schema)
+
+
+def test_外した会社の一覧を公開する(publish_config):
+    """**外した会社は名前と理由を示す**（運営者の判断、2026-10-21）。"""
+    _write_gold()
+    _write_excluded_gold()
+    result = run_p8(run_id=RUN, config=str(publish_config))
+    assert result["breakdown"]["excluded_non_operating"] == 1
+
+    data = publish_config.parent.parent / "site" / "src" / "data"
+    rows = json.loads((data / "excluded_entities.json").read_text())
+    assert rows == [
+        {
+            "population_id": POP,
+            "name": "Example SPAC Corp",
+            "ticker": "SPAC",
+            "exchange": "NYSE",
+            "reason": "spac",
+            "measured_month": "2026-08",
+        }
+    ]
+    # cik や業種コードは gold にはあるが、公開しない
+    assert "cik" not in rows[0] and "sic" not in rows[0]
+
+
+def test_外した会社の一覧に測定値が混ざったら公開を止める(publish_config):
+    """**測定値が付いた社名は第2層の領域。** gold に列が増えた時点で止める。
+
+    公開用に絞ったあとの列で見ると、余計な列は絞った時点で消えていて
+    門が決して作動しない（最初そう書いていた）。
+    """
+    _write_gold()
+    _write_excluded_gold(extra_column="dmarc_p")
+    with pytest.raises(PublishBlockedError, match="dmarc_p"):
+        run_p8(run_id=RUN, config=str(publish_config))
+
+
+def test_外した会社が無い月は空の一覧を書く(publish_config):
+    """前の実行の一覧がサイトに残って読まれないように。"""
+    _write_gold()
+    run_p8(run_id=RUN, config=str(publish_config))
+    data = publish_config.parent.parent / "site" / "src" / "data"
+    assert json.loads((data / "excluded_entities.json").read_text()) == []

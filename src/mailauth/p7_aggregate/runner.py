@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any
 
 from ..contracts import (
+    EXCLUDED_ENTITY_ARROW_SCHEMA,
+    EXCLUDED_ENTITY_SORT_KEYS,
     STATS_BY_SECTOR_ARROW_SCHEMA,
     STATS_BY_SECTOR_SORT_KEYS,
     STATS_OVERALL_ARROW_SCHEMA,
@@ -41,6 +43,8 @@ PHASE = "p7_aggregate"
 OVERALL_FILENAME = "stats_overall.parquet"
 BY_SECTOR_FILENAME = "stats_by_sector.parquet"
 PLATFORM_FILENAME = "stats_platform.parquet"
+#: 母集団から外した事業会社でないもの（名前と理由）。P1 の出力をそのまま写す
+EXCLUDED_FILENAME = "excluded_entities.parquet"
 AGGREGATOR_VERSION = "1.0.0"
 
 #: 現況の分母に入れる企業の状態。delisted（上場廃止）は入れない
@@ -352,6 +356,17 @@ def run(
         suppressed_total = 0
         deltas: dict[str, dict] = {}
 
+        # **母集団から外した事業会社でないもの。** 測定値は持たない。
+        # 名前と理由を gold に写して公開する（運営者の判断、2026-10-21）
+        excluded_frame = read_parquet(
+            phase_output(run_id, "p1_population", EXCLUDED_FILENAME)
+        )
+        excluded_rows = _rows(excluded_frame)
+        excluded_count: dict[str, int] = {}
+        for row in excluded_rows:
+            pid = str(row.get("population_id") or "")
+            excluded_count[pid] = excluded_count.get(pid, 0) + 1
+
         for population_id in sorted(population_entities):
             members = population_entities[population_id]
             pop_rows = by_population.get(population_id, [])
@@ -363,6 +378,8 @@ def run(
                 total_entities=len(members),
                 spec_version=SpecVersion.RFC7489,
             )
+
+            stats.excluded_non_operating = excluded_count.get(population_id, 0)
 
             d = delta_mod.compute(
                 [f for f in facts if str(f.get("entity_id")) in members],
@@ -512,6 +529,19 @@ def run(
                 sort_keys=STATS_PLATFORM_SORT_KEYS,
                 metadata=meta,
             )
+            if excluded_frame is not None:
+                write_parquet(
+                    _merge_other_populations(
+                        excluded_rows,
+                        target / EXCLUDED_FILENAME,
+                        manifest,
+                        what="excluded_entities",
+                    ),
+                    target / EXCLUDED_FILENAME,
+                    EXCLUDED_ENTITY_ARROW_SCHEMA,
+                    sort_keys=EXCLUDED_ENTITY_SORT_KEYS,
+                    metadata=meta,
+                )
             # gold は out_dir の外（リポジトリ直下の gold/）に置くので絶対パスで記録する
             manifest.add_output(str(target / OVERALL_FILENAME), records=n1)
             manifest.add_output(str(target / BY_SECTOR_FILENAME), records=n2)
