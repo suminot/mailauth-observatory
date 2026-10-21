@@ -77,6 +77,17 @@ def test_normalize_houjin_bangou(raw, expected):
         ("a.b.c.example.org", "example.org"),
         ("localhost", None),
         ("", None),
+        # **手で並べた一覧に無かった国の区分。** 2026-10-21 の全数実行で
+        # `com.ar` / `com.my` / `co.il` が会社のドメインとして付いていた
+        ("www.irsa.com.ar", "irsa.com.ar"),
+        ("www.wf.com.my", "wf.com.my"),
+        ("ir.wearable.co.il", "wearable.co.il"),
+        ("www.asur.com.mx", "asur.com.mx"),
+        # **ホストそのものが公開接尾辞なら、登録ドメインは無い**
+        ("com.ar", None),
+        ("co.jp", None),
+        # PSL の PRIVATE 節: github.io の下は利用者ごとに別の持ち主
+        ("acme.github.io", "acme.github.io"),
     ],
 )
 def test_etld_plus_one(host, expected):

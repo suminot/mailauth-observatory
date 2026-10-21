@@ -1094,17 +1094,47 @@ def _run_sec(
 
         reader = AnnualReportWebsites(client)
         missing = [e for e in entities if not e.official_domain]
+        found: list[tuple[Any, str, str]] = []
         for entity in missing:
             website = reader.website_for(annual_reports.get(entity.cik or ""))
             domain = domain_from_url(website) if website else None
             if domain:
-                entity.official_url = website
-                entity.official_domain = domain
+                found.append((entity, website, domain))
+
+        # **複数社の報告書に同じドメインが書かれていたら、社名と合う会社にだけ
+        # 残す。** 同じ企業グループ（brookfield.com）なら正しいが、IR 代行や
+        # 運用会社のドメインが紛れ込むこともある（2026-10-21 の全数実行で
+        # 14 ドメイン・42 社）。辞書（THIRD_PARTY）に無いものもここで止まる
+        from collections import Counter
+
+        from .annual_report import name_matches_domain
+
+        uses = Counter(domain for _, _, domain in found)
+        shared_dropped: dict[str, list[str]] = {}
+        for entity, website, domain in found:
+            if uses[domain] > 1 and not name_matches_domain(entity.name, domain):
+                shared_dropped.setdefault(domain, []).append(entity.entity_id)
+                continue
+            entity.official_url = website
+            entity.official_domain = domain
         annual_stats = {
             **reader.stats.to_dict(),
             "missing_before": len(missing),
+            "shared_dropped": sum(len(v) for v in shared_dropped.values()),
+            "shared_dropped_domains": sorted(shared_dropped)[:20],
             "still_missing": sum(1 for e in entities if not e.official_domain),
         }
+        if shared_dropped:
+            manifest.add_warning(
+                "SEC_ANNUAL_REPORT_SHARED_DOMAIN",
+                count=sum(len(v) for v in shared_dropped.values()),
+                sample=sorted(shared_dropped)[:5],
+                message=(
+                    "複数社の年次報告書に同じドメインが書かれていて、社名とも合わない"
+                    "ので使わなかった。**IR 代行や運用会社のドメインである可能性が"
+                    "高い。** 第三者と分かったら annual_report.THIRD_PARTY に足す"
+                ),
+            )
         if reader.stats.fetch_failed:
             manifest.add_warning(
                 "ENRICH_FAILED_SEC_ANNUAL_REPORT",

@@ -17,9 +17,11 @@ import pytest
 
 from mailauth.p1_population import run as run_p1
 from mailauth.p1_population.annual_report import (
+    EXTRACTOR_VERSION,
     AnnualReport,
     AnnualReportWebsites,
     latest_annual_report,
+    name_matches_domain,
     pick_domain,
     stated_domains,
 )
@@ -50,6 +52,8 @@ def _domains(text: str) -> dict[str, int]:
             "example.com",
         ),
         ("The Company's website is www.tenn.gr and", "tenn.gr"),
+        # 手で並べた一覧に無い国の区分（公開接尾辞リストで決める）
+        ("Our website is www.irsa.com.ar.", "irsa.com.ar"),
         ("Our corporate website is located at sweetgreen.com.", "sweetgreen.com"),
         # 日本の子会社などで2段の公開接尾辞を持つもの
         ("Our website is www.example.co.jp.", "example.co.jp"),
@@ -347,3 +351,99 @@ def test_起点の無い企業だけを年次報告書で埋める(monkeypatch, 
     stats = result["breakdown"]["sec_annual_report"]
     assert (stats["missing_before"], stats["found"], stats["not_stated"]) == (2, 1, 1)
     assert stats["still_missing"] == 1
+
+
+def test_its_website_は読まない():
+    """「its」は直前の別の会社を指すことがある。
+
+    2026-10-21 の全数実行で、ビットコイン ETF に指数提供会社の
+    `cfbenchmarks.com` が付いていた。
+    """
+    text = (
+        "The index is calculated by Acme Benchmarks. "
+        "Information is on its website at www.acmebench.com."
+    )
+    assert _domains(text) == {}
+
+
+@pytest.mark.parametrize(
+    ("name", "domain", "expected"),
+    [
+        ("Brookfield Infrastructure Corp", "brookfield.com", True),
+        ("TEEKAY TANKERS LTD.", "teekay.com", True),
+        ("M3-Brigade Acquisition VI Corp", "m3-brigade.com", True),
+        # 共用されていた第三者のドメイン
+        ("Velos Acquisition I Corp.", "m3-brigade.com", False),
+        ("VisionWave Holdings, Inc.", "authid.ai", False),
+        ("United States Natural Gas Fund, LP", "uscfinvestments.com", False),
+        # 「Holdings」「Group」のような誰にでも付く語では当てない
+        ("Acme Holdings Inc", "holdings.com", False),
+    ],
+)
+def test_社名とドメイン名の突き合わせ(name, domain, expected):
+    assert name_matches_domain(name, domain) is expected
+
+
+def test_読み方が変わったらキャッシュを読み直す(tmp_path):
+    """古い読み方の結果を黙って使い続けない。"""
+    report = _report()
+    client = _FakeClient(tmp_path, {report.url: "Our website is www.acme.com."})
+    path = client.cache_dir / "annual_website" / f"{report.accession}.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps({"domain": "stale.com", "extractor_version": EXTRACTOR_VERSION - 1})
+    )
+    reader = AnnualReportWebsites(client)
+    assert reader.website_for(report) == "https://www.acme.com"
+    assert reader.stats.stale_cache == 1
+    assert json.loads(path.read_text())["extractor_version"] == EXTRACTOR_VERSION
+
+
+def test_複数社に書かれたドメインは社名と合う会社にだけ残す(monkeypatch, tmp_path):
+    """同じ企業グループなら残し、IR 代行や運用会社なら残さない。"""
+    from mailauth.p1_population import sec_edgar, wikidata
+    from mailauth.p1_population.sec_edgar import ListedRow, SecFacts
+
+    rows = [
+        ListedRow(cik="0000000001", name="Brookfield Infra Corp", ticker="BIC", exchange="NYSE"),
+        ListedRow(cik="0000000002", name="Brookfield Wealth Ltd", ticker="BNT", exchange="NYSE"),
+        ListedRow(cik="0000000003", name="Alpha Bio Inc", ticker="ALB", exchange="NYSE"),
+        ListedRow(cik="0000000004", name="Beta Health Corp", ticker="BTH", exchange="NYSE"),
+    ]
+    pages = {
+        _report(1).url: "Our website is www.brookfield.com.",
+        _report(2).url: "Our website is www.brookfield.com.",
+        # 2社が同じ IR 代行のドメインを書いている（辞書には無い）
+        _report(3).url: "Our website is alphabio.irhost-example.com.",
+        _report(4).url: "Our website is betahealth.irhost-example.com.",
+    }
+
+    class _Client(_FakeClient):
+        def __init__(self, *a, **k):
+            super().__init__(tmp_path, pages)
+            self.stats = sec_edgar.SecStats()
+
+        def facts_for_cik(self, cik):
+            return SecFacts(cik=cik, annual_report=_report(int(cik)))
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(sec_edgar, "SecEdgarClient", lambda *a, **k: _Client())
+    monkeypatch.setattr(sec_edgar, "load_exchange_listing", lambda c, exchanges: (rows, {}))
+    monkeypatch.setattr(wikidata, "fetch_cik_identity", lambda q: ({}, {}))
+    monkeypatch.setattr(
+        wikidata, "fetch_identity", lambda *a, **k: ({}, {"key_count": 0, "unusable_keys": 0})
+    )
+
+    result = run_p1(config=CONFIG, run_id=RUN, offline=False)
+
+    from mailauth.io import read_parquet
+
+    df = read_parquet(phase_output(RUN, "p1_population", "entities.parquet")).set_index("cik")
+    assert df.loc["0000000001", "official_domain"] == "brookfield.com"
+    assert df.loc["0000000002", "official_domain"] == "brookfield.com"
+    assert df.loc[["0000000003", "0000000004"], "official_domain"].isna().all()
+    codes = {w["code"] for w in result["warnings"]}
+    assert "SEC_ANNUAL_REPORT_SHARED_DOMAIN" in codes
+    assert result["breakdown"]["sec_annual_report"]["shared_dropped"] == 2
