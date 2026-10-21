@@ -41,9 +41,17 @@ ARCHIVE_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/{docume
 #: 前のほうに来る。10-K は丸ごとだと 10 MB を超えることがある
 MAX_BYTES = 4_000_000
 
+#: 本文の読み方を変えたら上げる。キャッシュに書いた結果は、版が違えば読み直す
+#: ── 古い読み方の結果を黙って使い続けないため
+EXTRACTOR_VERSION = 2
+
 #: 「自社の」サイトであることを示す書き方。**ここが所有の根拠になる。**
+#:
+#: **「its website」は読まない。** 「its」は直前に出てきた別の会社を指すことが
+#: ある。2026-10-21 の全数実行で、ビットコイン ETF に指数提供会社の
+#: `cfbenchmarks.com` が付いていた（「CF Benchmarks … its website」）
 _SELF_PHRASE = re.compile(
-    r"\b(?:our|the\s+company[’']?s|its)\s+"
+    r"\b(?:our|the\s+company[’']?s)\s+"
     r"(?:corporate\s+|internet\s+|investor\s+relations\s+|principal\s+)?"
     r"(?:website|web\s+site|internet\s+(?:website|site|address)|home\s*page)"
     r"(?:\s+address)?",
@@ -89,6 +97,10 @@ THIRD_PARTY = frozenset(
         "youtube.com",
         "sedar.com",
         "sedarplus.ca",
+        # 2026-10-21 の全数実行で見つかった IR 代行・指数提供会社
+        "investorroom.com",
+        "irpass.com",
+        "cfbenchmarks.com",
     }
 )
 
@@ -122,6 +134,8 @@ class AnnualReportStats:
     fetched: int = 0
     cache_hit: int = 0
     fetch_failed: int = 0
+    #: 読み方が変わったので読み直したキャッシュ
+    stale_cache: int = 0
     found: int = 0
     #: 読めたが「自社の」サイトの記述が無かった
     not_stated: int = 0
@@ -137,6 +151,7 @@ class AnnualReportStats:
             "fetched": self.fetched,
             "cache_hit": self.cache_hit,
             "fetch_failed": self.fetch_failed,
+            "stale_cache": self.stale_cache,
             "found": self.found,
             "not_stated": self.not_stated,
             "third_party_dropped": self.third_party_dropped,
@@ -242,6 +257,34 @@ def pick_domain(found: Counter[str]) -> str | None:
     return next(d for d, n in found.items() if n == best)
 
 
+#: 社名とドメイン名を突き合わせるときに見ない語（どの会社にも付く）
+_NAME_STOPWORDS = frozenset(
+    {
+        "inc", "corp", "corporation", "company", "holdings", "holding", "group",
+        "ltd", "limited", "plc", "the", "and", "international", "technologies",
+        "technology", "global", "partners", "trust", "fund", "acquisition",
+    }
+)
+
+
+def name_matches_domain(name: str | None, domain: str | None) -> bool:
+    """ドメイン名（最初のラベル）に社名の語が入っているか。
+
+    **複数社に共用されていたドメインを、どの会社に残すか**を決めるのに使う。
+    `brookfield.com` は Brookfield の各社に残し、IR 代行のドメインは
+    どの会社にも残さない。広く当てすぎないよう、3文字以上の語だけを見る。
+    """
+    if not name or not domain:
+        return False
+    label = domain.split(".")[0].replace("-", "").lower()
+    tokens = [
+        t
+        for t in re.split(r"[^a-z0-9]+", name.lower())
+        if len(t) >= 3 and t not in _NAME_STOPWORDS
+    ]
+    return any(t in label or (len(label) >= 4 and label in t) for t in tokens)
+
+
 class AnnualReportWebsites:
     """年次報告書から公式サイトを取る。結果は受付番号で持ち越す。
 
@@ -271,6 +314,10 @@ class AnnualReportWebsites:
                 cached = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 cached = None
+        if cached is not None and cached.get("extractor_version") != EXTRACTOR_VERSION:
+            # 読み方が変わった。古い結果は使わない
+            cached = None
+            self.stats.stale_cache += 1
         if cached is not None:
             self.stats.cache_hit += 1
             domain = cached.get("domain")
@@ -300,6 +347,7 @@ class AnnualReportWebsites:
                         "filing_date": report.filing_date,
                         "domain": domain,
                         "host": host,
+                        "extractor_version": EXTRACTOR_VERSION,
                         "counts": dict(found),
                         "third_party_dropped": dropped,
                     },

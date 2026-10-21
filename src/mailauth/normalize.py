@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from functools import lru_cache
 from urllib.parse import urlparse
 
 #: 法人格語。NFKC 正規化のあとに前後どちらの位置でも落とす。
@@ -112,18 +113,15 @@ def normalize_url(url: str | None) -> str | None:
     return s
 
 
-#: eTLD+1 を求めるにあたり、2ラベルで1つの実効TLDになるもの。
-#: 本格的な PSL は P3/P5 で導入する。P1 で必要なのは official_url の
-#: 正規化だけなので、日本と主要国の一般的な形だけを見る。
-_MULTI_LABEL_SUFFIXES = {
-    "co.jp", "or.jp", "ne.jp", "ac.jp", "ad.jp", "ed.jp", "go.jp", "gr.jp", "lg.jp",
-    "co.uk", "org.uk", "ac.uk", "gov.uk",
-    "com.au", "net.au", "org.au",
-    "com.cn", "net.cn", "org.cn",
-    "co.kr", "or.kr",
-    "com.br", "com.mx", "com.sg", "com.hk", "com.tw", "co.in", "co.th", "co.id",
-    "com.tr", "co.nz", "co.za",
-}
+@lru_cache(maxsize=1)
+def _psl():
+    """公開接尾辞リスト（PSL）。読み込みが重いのでプロセス内で1回だけ。
+
+    パッケージに同梱された一覧を使う（ネットワークには出ない）。
+    """
+    from publicsuffixlist import PublicSuffixList
+
+    return PublicSuffixList()
 
 
 def normalize_hostname(host: str | None) -> str | None:
@@ -142,20 +140,24 @@ def normalize_hostname(host: str | None) -> str | None:
 
 
 def etld_plus_one(host: str) -> str | None:
-    """ホスト名を eTLD+1 に丸める。
+    """ホスト名を eTLD+1（登録ドメイン）に丸める。
 
-    PSL を丸ごと持たない簡易実装。P1 の official_domain 用。
-    ドメイン同定の本番（P2/P3）では publicsuffix2 等に差し替えること。
+    **公開接尾辞リスト（PSL）で決める。** 以前は「co.jp」「com.au」など
+    30ほどを手で並べた簡易版で、一覧に無い国の区分を取りこぼしていた。
+    2026-10-21、米国の年次報告書から読んだ `www.irsa.com.ar` が `com.ar` に、
+    `www.wf.com.my` が `com.my` に丸められていた ── **国の区分そのものを
+    その会社のドメインとして測るところだった。**
+
+    ホストがそれ自体公開接尾辞（`com.ar` や `co.jp`）なら None を返す。
+    PSL の PRIVATE 節も使う（`x.github.io` は `github.io` ではなく
+    `x.github.io` が登録単位）。
     """
     if not host:
         return None
     h = host.strip().lower().rstrip(".")
     if not h or "." not in h:
         return None
-    labels = h.split(".")
-    if len(labels) >= 3 and ".".join(labels[-2:]) in _MULTI_LABEL_SUFFIXES:
-        return ".".join(labels[-3:])
-    return ".".join(labels[-2:])
+    return _psl().privatesuffix(h) or None
 
 
 def domain_from_url(url: str | None) -> str | None:
