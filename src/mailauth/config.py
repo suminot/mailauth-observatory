@@ -123,6 +123,10 @@ class SourceConfig(_Cfg):
     market_filter: MarketFilterConfig = Field(default_factory=MarketFilterConfig)
     enrich: list[str] = Field(default_factory=list)
     industry: IndustryConfig = Field(default_factory=IndustryConfig)
+    #: **事業会社でないもの（SPAC・ファンド・ETF）を母集団から外す。**
+    #: 自前のメール基盤を持たず、運用会社やスポンサーのものを使うため
+    #: （運営者の判断、2026-10-21）。外した会社は名前と理由を公開する
+    exclude_non_operating: bool = False
 
 
 class RefreshConfig(_Cfg):

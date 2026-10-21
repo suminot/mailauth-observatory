@@ -790,6 +790,9 @@ class StatsOverall(_Model):
     #: （2026-09 の国内では 3,818 社のうち約半分に起点が無かった）。
     #: 原則5 ──「取れなかった」と「無かった」は別である
     entities_with_domains: int = 0
+    #: **母集団から外した、事業会社でないもの**（SPAC・ファンド・ETF）。
+    #: `total_entities` には入っていない。名前と理由は excluded_entities に
+    excluded_non_operating: int = 0
 
     # 企業数ベースとドメインベースの両方を必ず出す（DESIGN.md P7 受け入れ基準）
     spf_adopted_entities: int = 0
@@ -875,6 +878,7 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("total_domains", pa.int32()),
     ("observed_domains", pa.int32()),
     ("entities_with_domains", pa.int32()),
+    ("excluded_non_operating", pa.int32()),
     ("spf_adopted_entities", pa.int32()),
     ("spf_adopted_domains", pa.int32()),
     ("dmarc_adopted_entities", pa.int32()),
@@ -1010,6 +1014,24 @@ STATS_PLATFORM_ARROW_SCHEMA = pa.schema(
 )
 
 STATS_PLATFORM_SORT_KEYS = ["population_id", "layer", "vendor"]
+
+#: 母集団から外した、事業会社でないもの（SPAC・ファンド・ETF）。
+#: **測定値は1つも持たない**（名前と外した理由だけ）。P1 が書き、P7 が gold に
+#: 写し、P8 が公開する（運営者の判断、2026-10-21: 外した社名を明示する）
+EXCLUDED_ENTITY_ARROW_SCHEMA = pa.schema(
+    [
+        ("population_id", pa.string()),
+        ("run_id", pa.string()),
+        ("cik", pa.string()),
+        ("ticker", pa.string()),
+        ("name", pa.string()),
+        ("exchange", pa.string()),
+        ("sic", pa.string()),
+        ("reason", pa.string()),
+    ]
+)
+
+EXCLUDED_ENTITY_SORT_KEYS = ["population_id", "reason", "name"]
 
 #: n<MIN_CELL_SIZE のベンダーを束ねる先。**個別のベンダー名は出さない**
 #:

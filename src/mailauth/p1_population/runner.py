@@ -17,7 +17,14 @@ from typing import Any
 import pandas as pd
 
 from ..config import PopulationConfig
-from ..contracts import ENTITY_ARROW_SCHEMA, ENTITY_SORT_KEYS, Entity, EntityStatus
+from ..contracts import (
+    ENTITY_ARROW_SCHEMA,
+    ENTITY_SORT_KEYS,
+    EXCLUDED_ENTITY_ARROW_SCHEMA,
+    EXCLUDED_ENTITY_SORT_KEYS,
+    Entity,
+    EntityStatus,
+)
 from ..io import read_parquet, records_to_frame, write_parquet
 from ..manifest import RunManifest, config_hash
 from ..normalize import (
@@ -34,6 +41,8 @@ from .industry import IndustryMapper
 
 PHASE = "p1_population"
 OUTPUT_FILENAME = "entities.parquet"
+#: 母集団から外した事業会社でないもの（名前と理由）。P7 が gold に写す
+EXCLUDED_FILENAME = "excluded_entities.parquet"
 
 
 class PopulationNotImplementedError(NotImplementedError):
@@ -505,7 +514,11 @@ def _from_parquet(value: Any) -> Any:
 
 
 def _diff_with_previous(
-    entities: list[Entity], run_id: str, manifest: RunManifest
+    entities: list[Entity],
+    run_id: str,
+    manifest: RunManifest,
+    *,
+    excluded_ciks: set[str] | frozenset[str] = frozenset(),
 ) -> list[Entity]:
     """前月と突合して first_seen / last_seen / 消滅を埋める。
 
@@ -564,6 +577,9 @@ def _diff_with_previous(
     delisted: list[Entity] = []
     for eid, before in prev.items():
         if eid in current_ids:
+            continue
+        # **外したのであって、上場廃止ではない**（事業会社でないもの）
+        if str(before.get("cik") or "") in excluded_ciks:
             continue
         row = {k: _from_parquet(before.get(k)) for k in ENTITY_ARROW_SCHEMA.names}
         row["run_id"] = run_id
@@ -1011,11 +1027,13 @@ def _run_sec(
     )
     annual_reports: dict[str, Any] = {}
     releases: dict[str, list[str]] = {}
+    forms_by_cik: dict[str, frozenset[str]] = {}
     if client is not None and wants_submissions and not dry_run:
         for row in rows:
             facts = client.facts_for_cik(row.cik)
             annual_reports[row.cik] = facts.annual_report
             releases[row.cik] = list(getattr(facts, "releases", None) or [])
+            forms_by_cik[row.cik] = frozenset(getattr(facts, "forms", None) or ())
             if facts.website and not row.website:
                 row.website = facts.website
             if facts.sic and not row.sic:
@@ -1028,6 +1046,53 @@ def _run_sec(
                 "「サイトが無い」のではなく「引いていない」（原則5）"
             ),
         )
+
+    # **事業会社でないもの（SPAC・ファンド・ETF）を外す**（運営者の判断、
+    # 2026-10-21）。自前のメール基盤を持たず、残すと「起点なし」として率を
+    # 下げるか、運用会社のドメインに数十社が寄る。外した会社は名前と理由を
+    # 記録し、公開する（P7 → gold → P8）
+    excluded_rows: list[tuple[Any, str]] = []
+    if getattr(cfg.source, "exclude_non_operating", False):
+        if forms_by_cik:
+            from .non_operating import classify
+
+            kept = []
+            for row in rows:
+                reason = classify(row.sic, forms_by_cik.get(row.cik), row.name)
+                if reason:
+                    excluded_rows.append((row, reason))
+                else:
+                    kept.append(row)
+            rows = kept
+            by_reason: dict[str, int] = {}
+            for _, reason in excluded_rows:
+                by_reason[reason] = by_reason.get(reason, 0) + 1
+            manifest.set_breakdown(
+                non_operating_excluded={
+                    "total": len(excluded_rows),
+                    **dict(sorted(by_reason.items())),
+                }
+            )
+            if excluded_rows:
+                manifest.add_warning(
+                    "NON_OPERATING_EXCLUDED",
+                    count=len(excluded_rows),
+                    sample=[r.name for r, _ in excluded_rows[:5]],
+                    message=(
+                        "事業会社でないもの（SPAC・ファンド・ETF）を母集団から外した。"
+                        "**「測れなかった」ではなく「測らないと決めた」**。名前と理由は "
+                        f"{EXCLUDED_FILENAME} に残し、公開する"
+                    ),
+                )
+        else:
+            # 届出の様式が無いと判定できない。**判定しなかったことを黙らない**
+            manifest.add_warning(
+                "NON_OPERATING_NOT_CLASSIFIED",
+                message=(
+                    "submissions を引いていないため、事業会社でないものを見分けて"
+                    "いない。SPAC・ファンド・ETF が母集団に残っている（原則5）"
+                ),
+            )
 
     # 公式サイトと LEI は Wikidata（CC0）から1クエリで補う。
     # SEC の website 欄は実測でほぼ空だった（原則5 の観点では
@@ -1253,7 +1318,12 @@ def _run_sec(
             e.first_seen_month = e.first_seen_month or this_month
             e.last_seen_month = this_month
     else:
-        entities = _diff_with_previous(entities, run_id, manifest)
+        entities = _diff_with_previous(
+            entities,
+            run_id,
+            manifest,
+            excluded_ciks={row.cik for row, _ in excluded_rows},
+        )
 
     active = [e for e in entities if e.status != EntityStatus.DELISTED]
     manifest.counts.success = len(active)
@@ -1276,5 +1346,26 @@ def _run_sec(
             },
         )
         manifest.add_output(OUTPUT_FILENAME, records=n)
+        if excluded_rows or getattr(cfg.source, "exclude_non_operating", False):
+            n_ex = write_parquet(
+                [
+                    {
+                        "population_id": cfg.id,
+                        "run_id": run_id,
+                        "cik": row.cik,
+                        "ticker": row.ticker,
+                        "name": row.name,
+                        "exchange": row.exchange,
+                        "sic": row.sic,
+                        "reason": reason,
+                    }
+                    for row, reason in excluded_rows
+                ],
+                out_dir / EXCLUDED_FILENAME,
+                EXCLUDED_ENTITY_ARROW_SCHEMA,
+                sort_keys=EXCLUDED_ENTITY_SORT_KEYS,
+                metadata={"mailauth.phase": PHASE, "mailauth.run_id": run_id},
+            )
+            manifest.add_output(EXCLUDED_FILENAME, records=n_ex)
 
     return manifest.to_dict()

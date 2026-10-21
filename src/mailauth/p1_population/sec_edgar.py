@@ -65,6 +65,8 @@ class SecFacts:
     annual_report: Any = None
     #: 新しい順の 8-K / 6-K の受付番号（`press_release.py`）
     releases: list[str] = field(default_factory=list)
+    #: 最近の届出の様式。事業会社かどうかの判定に使う（`non_operating.py`）
+    forms: frozenset[str] = frozenset()
 
 
 @dataclass
@@ -231,6 +233,8 @@ class SecEdgarClient:
         from .press_release import recent_releases
 
         facts.releases = recent_releases(payload)
+        recent = (payload.get("filings") or {}).get("recent") or {}
+        facts.forms = frozenset(str(f) for f in recent.get("form") or [] if f)
         return facts
 
 

@@ -64,6 +64,59 @@ DNS の応答が SERVFAIL や タイムアウトだった場合、それは「�
 それでも見つからない企業が残ります。**推測で埋めることはしません** ──
 別の会社のドメインを測ってしまう方が、測れないことよりも重い間違いだからです。
 
+## 母集団から外した企業
+
+米国の母集団からは、**事業会社でないもの**を外しています。これらは社員や
+メールサーバーを持たず、運用会社やスポンサーのメール基盤を使うのが普通です。
+残すと、公式サイトが見つからずに「起点なし」として率を下げるか、運用会社の
+ドメインに数十社が寄って**1つの設定が数十の「企業」として数えられる**ためです。
+
+判定は SEC 自身の区分で行い、原則として社名の語だけでは決めていません
+（「Trust」は銀行や不動産投資信託にも付きます）。
+
+| 区分 | 判定 |
+|---|---|
+| SPAC（買収目的の会社） | SEC の業種コード 6770、または名称が「〇〇 Acquisition Corp」（SEC が買収予定先の業種コードを付けていることがあるため） |
+| 商品・暗号資産の上場信託 | 業種コード 6221 で、名称が ETF / Trust / Fund |
+| ロイヤルティ信託・仕組み債の信託 | 業種コード 6189（資産担保証券）、または 6792 で名称に Trust がある |
+| 投資信託・ETF・クローズドエンド型ファンド | 投資会社としての届出（N-CSR・N-PORT・N-2 など）を出し、10-K / 10-Q / 20-F を出していない |
+
+事業開発会社（BDC）は 10-K を出す会社なので外していません。
+
+**外したのは「測らないと決めた」分で、「測れなかった」分ではありません。**
+総括の「企業 N 社」には入っていません。外した会社は名前と理由を下に挙げています
+（測定値は付けていません）。
+
+```js
+const excludedEntities = FileAttachment("data/excluded_entities.json").json();
+```
+
+```js
+{
+  const labels = {
+    spac: "SPAC（買収目的の会社）",
+    commodity_trust: "商品・暗号資産の上場信託",
+    registered_fund: "投資信託・ETF・クローズドエンド型ファンド",
+    passive_trust: "ロイヤルティ信託・仕組み債の信託",
+  };
+  const rows = (excludedEntities ?? []).map((r) => ({...r, 区分: labels[r.reason] ?? r.reason}));
+  if (!rows.length) {
+    display(html`<p>この月に外した企業はありません。</p>`);
+  } else {
+    const counts = d3.rollups(rows, (v) => v.length, (r) => r.区分);
+    display(html`<ul>${counts.map(([k, n]) => html`<li>${k}: ${n.toLocaleString()} 社</li>`)}</ul>`);
+    display(html`<details><summary>外した企業の一覧（${rows.length.toLocaleString()} 社、${rows[0].measured_month}）</summary>${
+      Inputs.table(rows, {
+        columns: ["name", "ticker", "exchange", "区分"],
+        header: {name: "社名", ticker: "ティッカー", exchange: "取引所"},
+        sort: "name",
+        rows: 20,
+      })
+    }</details>`);
+  }
+}
+```
+
 ## 計測対象から外した分がある
 
 計測対象から外すと決めたドメインには、以降 DNS の問い合わせを行いません。**「除外した」は「観測できなかった」
