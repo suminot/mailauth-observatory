@@ -68,7 +68,11 @@ government company registry (gBizINFO) and Wikidata. For US companies that
 Wikidata lacks, the site is read from the annual report filed with the SEC
 (10-K / 20-F / 40-F), **only where the company itself states "our website is
 …"**. Other URLs in the document (the SEC, auditors, business partners) are
-not used. Some companies are still left without one. **No guesses are made** — measuring another company's domain by
+not used. For companies whose annual report does not state one, the "About"
+section and contacts in their press releases (8-K / 6-K) are read, and **only
+a domain matching the company name** is used (contacts are often investor
+relations agencies). Only the domain part of email addresses is used; the
+addresses themselves are not stored. Some companies are still left without one. **No guesses are made** — measuring another company's domain by
 mistake is a worse error than not measuring at all.
 
 ## Some domains are excluded from measurement
@@ -178,7 +182,7 @@ as `example.com`) and widens from there.
 
 | Route | What it is |
 |---|---|
-| Official site | the official URL from government registries, Wikidata and US annual reports (as stated by the company) |
+| Official site | the official URL from government registries, Wikidata, and US annual reports and press releases (as stated by the company) |
 | CT logs | names appearing in Certificate Transparency logs |
 | SPF `redirect=` | where SPF is delegated |
 | SPF `include:` | own subdomains the record has been split across |

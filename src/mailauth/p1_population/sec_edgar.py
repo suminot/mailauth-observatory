@@ -63,6 +63,8 @@ class SecFacts:
     #: 最新の年次報告書（10-K / 20-F / 40-F）。website 欄が空なので、
     #: 本文から公式サイトを読むのに使う（`annual_report.py`）
     annual_report: Any = None
+    #: 新しい順の 8-K / 6-K の受付番号（`press_release.py`）
+    releases: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -226,6 +228,9 @@ class SecEdgarClient:
         from .annual_report import latest_annual_report
 
         facts.annual_report = latest_annual_report(cik, payload)
+        from .press_release import recent_releases
+
+        facts.releases = recent_releases(payload)
         return facts
 
 
