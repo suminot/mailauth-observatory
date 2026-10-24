@@ -106,10 +106,10 @@
 | `linkclub.jp` | 1 | 1 | `mx.linkclub.jp` |
 | `mag2.com` | 1 | 1 | `letitbe.mag2.com` |
 | `mail.anp` | 1 | 1 | `mail.anp` |
+| `mailsystems.net` | 1 | 1 | `vs.mailsystems.net` |
 | `mei.ne.jp` | 1 | 1 | `mh2.mei.ne.jp` |
 | `mgx.jp` | 1 | 1 | `www14066.mx.mgx.jp` |
 | `netindex.sakura.ne.jp` | 1 | 1 | `netindex.sakura.ne.jp` |
-| `nifcloud.com` | 1 | 1 | `mx.bizmail.nifcloud.com` |
 
 ## 調査済み・同定できなかったもの（2 件）
 
