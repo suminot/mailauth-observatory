@@ -1634,8 +1634,9 @@ def test_工程の出力が時間切れを生き延びる():
     assert restore, "工程の出力を持ち越していない"
     assert restore["with"]["path"].strip() == f"data/runs/{run_id}"
     assert run_id in restore["with"]["key"], "鍵が月で区切られていない"
-    assert f"runs-{run_id}-" in restore["with"]["restore-keys"], (
-        "**月を跨いで復元している。** 別の月の出力が混ざる"
+    pop = "${{ steps.run.outputs.pop }}"
+    assert f"runs-{pop}-{run_id}-" in restore["with"]["restore-keys"], (
+        "**月や母集団を跨いで復元している。** 別の月・別の母集団の出力が混ざる"
     )
 
     saves = [n for n in by_name if n.startswith("工程の出力を保存")]
@@ -1992,6 +1993,29 @@ def test_P4_はジョブの上限より先に自分で止まる():
     assert gate.index("p4_incomplete") < gate.index("git add gold"), (
         "止まったかどうかを見る前に gold を add している"
     )
+
+
+def test_工程の出力のキャッシュは母集団と月で分ける():
+    """**月だけで区切ると、同じ月の別の母集団の出力が復元される。**
+
+    2026-10 に米国を回したあと国内を同じ月で回すと、米国の P1〜P4 の出力が
+    戻り、P4 は米国の bronze を「測り終えた」と読み、P5 は米国のドメインまで
+    読む。
+    """
+    text = (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(encoding="utf-8")
+    keys = [
+        line.strip()
+        for step in _monthly_steps()
+        for field in ("key", "restore-keys")
+        for line in str((step.get("with") or {}).get(field, "")).splitlines()
+        if line.strip().startswith("runs-")
+    ]
+    assert len(keys) >= 4, f"工程の出力のキャッシュが見つからない: {keys}"
+    for key in keys:
+        assert key.startswith("runs-${{ steps.run.outputs.pop }}-${{ steps.run.outputs.id }}-"), (
+            f"母集団で分けていない: {key}"
+        )
+    assert "pop=" in text, "母集団の名前を出力していない"
 
 
 def test_変更履歴の書き出し先が全部コミットされる():

@@ -121,6 +121,9 @@ jobs:
           if [ -z "$RUN_ID" ]; then RUN_ID=$(date -u +%Y-%m); fi
           echo "id=$RUN_ID" >> "$GITHUB_OUTPUT"
           echo "run_id=$RUN_ID"
+          # 工程の出力のキャッシュを母集団で分ける（下の「工程の出力を復元」）
+          POP=$(basename "${{ github.event.inputs.population || 'configs/populations/jp-all-listed.yaml' }}" .yaml)
+          echo "pop=$POP" >> "$GITHUB_OUTPUT"
           # P4 の持ち時間をここから数える（下の「P4 DNS計測」）
           echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
 
@@ -193,14 +196,19 @@ jobs:
       #
       # 復元できれば P4 は `--resume` で続きから測れる。**キャッシュは
       # 月で区切る**（run_id が YYYY-MM なので、別の月は別の鍵になる）。
+      #
+      # **母集団でも分ける。** 月だけで区切っていると、2026-10 に米国を
+      # 回したあとで国内を同じ月で回したとき、米国の P1〜P4 の出力が
+      # 復元される（P4 は米国の bronze を「測り終えた」と読み、P5 は
+      # 米国のドメインまで読む）
       - name: 工程の出力を復元
         id: runs_cache
         uses: actions/cache/restore@v4
         with:
           path: data/runs/${{ steps.run.outputs.id }}
-          key: runs-${{ steps.run.outputs.id }}-${{ github.run_id }}
+          key: runs-${{ steps.run.outputs.pop }}-${{ steps.run.outputs.id }}-${{ github.run_id }}
           restore-keys: |
-            runs-${{ steps.run.outputs.id }}-
+            runs-${{ steps.run.outputs.pop }}-${{ steps.run.outputs.id }}-
 
       # **何を持って始めたのかが、終わるまで分からない。**
       #
@@ -345,7 +353,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: data/runs/${{ steps.run.outputs.id }}
-          key: runs-${{ steps.run.outputs.id }}-${{ github.run_id }}-p3
+          key: runs-${{ steps.run.outputs.pop }}-${{ steps.run.outputs.id }}-${{ github.run_id }}-p3
 
       # **--resume を既定にする。** bronze は不変・追記のみなので、
       # 付けずに流し直すと同じドメインを二重に測る（相手の DNS に無駄な
@@ -379,7 +387,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: data/runs/${{ steps.run.outputs.id }}
-          key: runs-${{ steps.run.outputs.id }}-${{ github.run_id }}-p4
+          key: runs-${{ steps.run.outputs.pop }}-${{ steps.run.outputs.id }}-${{ github.run_id }}-p4
 
       - name: P5 パース
         continue-on-error: true
