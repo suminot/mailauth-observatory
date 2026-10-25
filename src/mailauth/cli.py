@@ -198,6 +198,16 @@ def p4_measure(
             ),
         ),
     ] = False,
+    max_minutes: Annotated[
+        float | None,
+        typer.Option(
+            "--max-minutes",
+            help=(
+                "持ち時間（分）。過ぎたら新しいドメインに手を付けずに止まり、manifest を書く。"
+                "続きは --resume で測る"
+            ),
+        ),
+    ] = None,
 ) -> None:
     """P4 DNS計測 ── メール認証レコードを取得し bronze に生保存。"""
     from .p4_measure import MissingInputError, UnknownBackendError
@@ -212,6 +222,7 @@ def p4_measure(
             limit=limit,
             dry_run=dry_run,
             resume=resume,
+            max_minutes=max_minutes,
         )
     except (MissingInputError, UnknownBackendError) as exc:
         typer.secho(str(exc), fg="red", err=True)

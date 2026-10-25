@@ -121,6 +121,8 @@ jobs:
           if [ -z "$RUN_ID" ]; then RUN_ID=$(date -u +%Y-%m); fi
           echo "id=$RUN_ID" >> "$GITHUB_OUTPUT"
           echo "run_id=$RUN_ID"
+          # P4 の持ち時間をここから数える（下の「P4 DNS計測」）
+          echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
 
       # 何が足りていて何が足りないかを実行ログの先頭に出す。**鍵の不足は
       # P1 が落ちてから気付くのでは遅い**（工程ごとに continue-on-error に
@@ -349,9 +351,25 @@ jobs:
       # 付けずに流し直すと同じドメインを二重に測る（相手の DNS に無駄な
       # 負荷をかけ、件数の意味も壊れる）。続きが無ければ警告が出るだけで、
       # 最初から測る。
+      #
+      # **ジョブの上限より先に、自分で止まる。** 外から殺されると P4 の
+      # manifest が残らず、時間切れや投げ直しがどれだけあったかが分からない
+      # （2026-10 の米国計測で、遅い理由を確かめられなかった）。後ろの工程と
+      # 成果物の保存にも時間を残す。止まった分は次の実行が --resume で測る
       - name: P4 DNS計測
         continue-on-error: true
-        run: mailauth p4-measure --run "${{ steps.run.outputs.id }}" --resume
+        env:
+          # 上の timeout-minutes と同じ値にする（検査で突き合わせている）
+          JOB_TIMEOUT_MINUTES: 330
+          # P5〜P8・成果物の保存・コミットに残す分
+          RESERVE_MINUTES: 40
+        run: |
+          elapsed=$(( ($(date +%s) - JOB_STARTED) / 60 ))
+          budget=$(( JOB_TIMEOUT_MINUTES - RESERVE_MINUTES - elapsed ))
+          if [ "$budget" -lt 5 ]; then budget=5; fi
+          echo "P4 の持ち時間: ${budget} 分（経過 ${elapsed} 分）"
+          mailauth p4-measure --run "${{ steps.run.outputs.id }}" --resume \
+            --max-minutes "$budget"
 
       # **一番高くつく工程の直後に確保する。** P4 は 2,153 ドメインで
       # 35分前後かかる見込みで、途中で殺されてもここまでの bronze は残る。
@@ -517,13 +535,24 @@ jobs:
           # **公開しない理由は2つあり、別物である。** limit は「その数字が
           # 母集団を代表していない」、publish=no は「数字は正しいが、出すかを
           # まだ決めていない」。どちらも gold は入れないが、次にすることが違う。
+          # **P4 が持ち時間で止まった月の gold は、分母が揃っていない。**
+          # 測れた分だけの率を「米国上場企業の率」として出さない
+          P4M="data/runs/${{ steps.run.outputs.id }}/p4_measure/_manifest.json"
+          p4_incomplete=""
+          if [ -f "$P4M" ] && jq -e '[.warnings[].code] | index("STOPPED_AT_TIME_BUDGET")' "$P4M" >/dev/null; then
+            p4_incomplete=1
+          fi
           if [ -n "${{ github.event.inputs.limit }}" ] \
-             || [ "${{ github.event.inputs.publish }}" = "no" ]; then
+             || [ "${{ github.event.inputs.publish }}" = "no" ] \
+             || [ -n "$p4_incomplete" ]; then
             git add runs site/src/changelog.md site/src/en/changelog.md || true
             {
               echo "### gold はコミットしていない"
               echo
-              if [ -n "${{ github.event.inputs.limit }}" ]; then
+              if [ -n "$p4_incomplete" ]; then
+                echo "P4 が持ち時間で止まり、測っていないドメインが残っているため、"
+                echo "公開データセットには入れていない。同じ run_id を start_from: p4 で流すと続きから測る。"
+              elif [ -n "${{ github.event.inputs.limit }}" ]; then
                 echo '`--limit ${{ github.event.inputs.limit }}` を指定した動作確認の実行なので、'
                 echo "公開データセットには入れていない。全件を出すには limit を空欄にして回すこと。"
               else

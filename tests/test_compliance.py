@@ -1959,6 +1959,41 @@ def test_時間切れの続きは_P4_から流せる():
     ), "復元のあと、P1 の前に確かめること"
 
 
+def test_P4_はジョブの上限より先に自分で止まる():
+    """**外から殺されると P4 の manifest が残らない。**
+
+    2026-10 の米国計測は P4 の途中でジョブの上限に当たり、時間切れや投げ直しが
+    どれだけあったかを確かめられなかった。上限の値を2か所に書くので、
+    ずれたら（上限だけ延ばした等）ここで止める。
+
+    止まった月の gold は分母が揃っていない。**公開データセットに入れない。**
+    """
+    import yaml
+
+    text = (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(encoding="utf-8")
+    workflow = yaml.safe_load(text)
+    job = workflow["jobs"]["measure"]
+    by_name = {s.get("name"): s for s in job["steps"]}
+
+    p4 = by_name["P4 DNS計測"]
+    assert "--max-minutes" in p4["run"], "P4 に持ち時間を渡していない"
+    assert "--resume" in p4["run"], "続きから測っていない"
+    assert int(p4["env"]["JOB_TIMEOUT_MINUTES"]) == int(job["timeout-minutes"]), (
+        "P4 の持ち時間の計算が、ジョブの上限とずれている"
+    )
+    assert int(p4["env"]["RESERVE_MINUTES"]) >= 20, "後ろの工程に残す時間が短すぎる"
+    assert "JOB_STARTED" in by_name["run_id を決める"]["run"], "経過時間の起点が無い"
+
+    commit = by_name["gold と実行記録をコミット"]["run"]
+    assert "STOPPED_AT_TIME_BUDGET" in commit, (
+        "P4 が途中で止まった月の gold を、公開データセットに入れてしまう"
+    )
+    gate = commit[commit.index("STOPPED_AT_TIME_BUDGET") :]
+    assert gate.index("p4_incomplete") < gate.index("git add gold"), (
+        "止まったかどうかを見る前に gold を add している"
+    )
+
+
 def test_変更履歴の書き出し先が全部コミットされる():
     """**片方の言語だけ進むと、両言語が違うことを言う。**
 
