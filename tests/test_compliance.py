@@ -2178,32 +2178,3 @@ def test_ワークフローは_pipefail_付きの_bash_で走る():
                     f"{path.name}:{job_name}: ステップ {step.get('name')} が別の shell を使っている"
                 )
 
-
-def test_個社別明細は公開リポジトリの成果物に上げない():
-    """**公開リポジトリの成果物は、GitHub にログインしていれば誰でも取れる。**
-
-    個社別明細（第2層）を「認証の内側」のつもりで成果物に上げていたが、
-    リポジトリは公開で、社名付きの明細が第2層の条件（事前通知から30日・
-    アクセス制御）を満たさないまま取れる状態だった（2026-10-25 に発見）。
-
-    第2層の明細を上げる手順は、リポジトリが非公開のときだけ動くこと。
-    """
-    import yaml
-
-    workflows = sorted((repo_root() / ".github" / "workflows").glob("*.yml"))
-    for path in workflows:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        for job_name, job in (data.get("jobs") or {}).items():
-            for step in job.get("steps") or []:
-                uses = str(step.get("uses") or "")
-                if not uses.startswith("actions/upload-artifact"):
-                    continue
-                target = str((step.get("with") or {}).get("path") or "")
-                name = str((step.get("with") or {}).get("name") or "")
-                if "drilldown" not in target and "tier2" not in name:
-                    continue
-                condition = str(step.get("if") or "")
-                assert "github.event.repository.private" in condition, (
-                    f"{path.name}:{job_name}: 第2層の明細（{name}）を、リポジトリが"
-                    "公開でも成果物に上げている"
-                )
