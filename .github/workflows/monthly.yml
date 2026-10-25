@@ -54,6 +54,25 @@ on:
         options:
           - "yes"
           - "no"
+      start_from:
+        # **時間切れの続きを、続きから流す。**
+        #
+        # 2026-10 の米国計測（run 40150006097）は P4 の途中でジョブの
+        # 上限（5時間半）に当たった。工程の出力はキャッシュに残っていて
+        # P4 は --resume で続きから測れるのに、**流し直すと P1〜P3 を
+        # 毎回やり直し、それだけで3時間15分を使う。** P4 に残るのは
+        # 2時間ほどで、また同じ所で切れる。
+        #
+        # p4 を選ぶと、復元した P1〜P3 の出力をそのまま使う。**同じ
+        # run_id の流し直しのときだけ使うこと**（別の月の出力は復元され
+        # ないので、下の確認で止まる）。
+        description: "どの工程から流すか。時間切れの続きなら p4"
+        required: false
+        default: p1
+        type: choice
+        options:
+          - p1
+          - p4
 
 concurrency:
   # 同じ run に対して2つ走ると manifest の書き込みが競合し、
@@ -220,7 +239,29 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      # **続きから流すと言ったのに、続きが無い。** 黙って P4 に入ると
+      # 「P3 の出力が無い」で落ちるだけで、理由が読み取りにくい。
+      # ここで止めて理由を書く。continue-on-error にはしない
+      - name: 続きから流せるか確かめる
+        if: github.event.inputs.start_from == 'p4'
+        run: |
+          D="data/runs/${{ steps.run.outputs.id }}"
+          missing=""
+          for phase in p1_population p2_candidates p3_domains; do
+            [ -f "$D/$phase/_manifest.json" ] || missing="$missing $phase"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::start_from=p4 だが、復元した出力に${missing} が無い。p1 から流すこと"
+            exit 1
+          fi
+          {
+            echo "### P1〜P3 は前回の出力を使う（start_from=p4）"
+            echo
+            echo "復元したキャッシュ: \`${{ steps.runs_cache.outputs.cache-matched-key }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: P1 母集団確定
+        if: github.event.inputs.start_from != 'p4'
         continue-on-error: true
         run: |
           mailauth p1-population \
@@ -276,6 +317,7 @@ jobs:
           key: enrich-${{ steps.run.outputs.id }}-${{ github.run_id }}
 
       - name: P2 ドメイン候補生成
+        if: github.event.inputs.start_from != 'p4'
         continue-on-error: true
         run: mailauth p2-candidates --run "${{ steps.run.outputs.id }}"
 
@@ -290,6 +332,7 @@ jobs:
           key: crtsh-${{ steps.run.outputs.id }}-${{ github.run_id }}
 
       - name: P3 メールドメイン確定
+        if: github.event.inputs.start_from != 'p4'
         continue-on-error: true
         run: mailauth p3-domains --run "${{ steps.run.outputs.id }}"
 

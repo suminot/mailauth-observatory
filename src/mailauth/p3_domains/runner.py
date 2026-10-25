@@ -16,7 +16,6 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Iterator
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from ..config import load_yaml
@@ -31,6 +30,7 @@ from ..exclusions import load as load_exclusions
 from ..exclusions import require_available
 from ..io import read_parquet, write_parquet
 from ..manifest import RunManifest, config_hash
+from ..ordered import in_input_order
 from ..paths import config_path, phase_dir, phase_output
 from ..records import (
     find_dmarc_records,
@@ -63,9 +63,9 @@ INPUT_FILENAME = "domain_candidates.parquet"
 #: 2026-09 の国内計測では 2,158ドメインで23分かかっていた
 DEFAULT_CONCURRENCY = 8
 
-#: 何ドメインぶんまとめて待ち合わせるか。同時本数より十分大きくしないと、
-#: 塊の終わりで待ち合わせるたびに並行の利きが落ちる
-PROBE_CHUNK = 64
+#: 返していないドメインを何件まで抱えるか（`ordered.in_input_order`）。
+#: 同時本数より十分大きくしないと、先頭が遅いたびに手が止まる
+PROBE_WINDOW = 512
 
 
 def _probe_in_order(
@@ -79,15 +79,7 @@ def _probe_in_order(
     投げる間隔は `DnsResolver` が全スレッドで共有しているので、
     権威DNSから見た単位時間あたりの本数は直列のときと変わらない。
     """
-    if concurrency <= 1:
-        for key in keys:
-            yield probe(key)
-        return
-
-    with ThreadPoolExecutor(max_workers=concurrency) as pool:
-        for start in range(0, len(keys), PROBE_CHUNK):
-            # map は入力順に返す。完了順ではない
-            yield from pool.map(probe, keys[start : start + PROBE_CHUNK])
+    return in_input_order(probe, keys, concurrency=concurrency, window=PROBE_WINDOW)
 
 
 class MissingInputError(RuntimeError):

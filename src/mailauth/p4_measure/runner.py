@@ -13,7 +13,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
@@ -23,6 +22,7 @@ from ..exclusions import load as load_exclusions
 from ..exclusions import require_available
 from ..io import read_parquet
 from ..manifest import RunManifest, config_hash
+from ..ordered import in_input_order
 from ..paths import bronze_dir, config_path, phase_dir, phase_output
 from ..progress import Progress
 from ..records import find_spf_records, join_txt_strings, spf_includes
@@ -44,21 +44,16 @@ INPUT_PHASE = "p3_domains"
 INPUT_FILENAME = "domains.parquet"
 
 #: 同時に応答を待つドメイン数の既定値。**投げる間隔（qps）とは別のつまみ。**
-#:
-#: 2026-09 の国内計測で、1ドメイン 7.7秒・実効 7.5 qps しか出ていなかった。
-#: 1ドメイン約58本を1本ずつ引いており、**上流への往復（約130ミリ秒）が
-#: そのまま積み上がる。** 設定の `qps: 80` は一度も効いていない。
-#:
-#: 8本だと 8/7.5 ≒ 1.07ドメイン/秒 ＝ 約62 qps で、**設定の上限 80 の内側に
-#: 収まる。** これ以上増やすと qps の方が効きはじめ、速くならずに
-#: 権威DNSへの本数だけが上限に張り付く
-DEFAULT_CONCURRENCY = 8
+#: 理由は configs/measure.yaml の `rate.concurrency` に書いてある
+DEFAULT_CONCURRENCY = 24
 
-#: 何ドメインぶんまとめて待ち合わせるか。**全件を一度に投げない** ──
-#: 1ドメイン約58件の応答を保持するので、30,000ドメインを一度に抱えると
-#: メモリに乗らない。同時本数より十分大きくしないと、塊の終わりで
-#: 待ち合わせるたびに並行の利きが落ちる
-MEASURE_CHUNK = 64
+#: 返していないドメインを何件まで抱えるか（`ordered.in_input_order`）。
+#: 1ドメイン約60件の応答を保持するので、**全件を一度に投げない。**
+#:
+#: 遅いドメインは1件4分前後かかる（2026-10 の米国計測）。その間に
+#: 後ろのドメインを進めておけるだけの幅が要る。上限 80 qps・1ドメイン
+#: 約60本なら1秒に1.3ドメインで、512件はおよそ6分ぶんにあたる
+MEASURE_WINDOW = 512
 
 
 @dataclass
@@ -83,18 +78,7 @@ def _in_input_order(
     見た単位時間あたりの本数は直列のときと変わらない。変わるのは、
     こちらが応答を待っている時間だけである。
     """
-    if concurrency <= 1:
-        # **並行にしない経路を残す。** 注入したバックエンドで測る検査や、
-        # 1件ずつ追いたいときに使う
-        for target in targets:
-            yield measure(target)
-        return
-
-    with ThreadPoolExecutor(max_workers=concurrency) as pool:
-        for start in range(0, len(targets), MEASURE_CHUNK):
-            chunk = targets[start : start + MEASURE_CHUNK]
-            # map は入力順に返す。完了順ではない
-            yield from pool.map(measure, chunk)
+    return in_input_order(measure, targets, concurrency=concurrency, window=MEASURE_WINDOW)
 
 
 class MissingInputError(RuntimeError):

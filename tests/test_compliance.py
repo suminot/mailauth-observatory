@@ -1918,6 +1918,47 @@ def test_復元できたものが実行中に読める():
     )
 
 
+def test_時間切れの続きは_P4_から流せる():
+    """**流し直すたびに P1〜P3 をやり直すと、また同じ所で切れる。**
+
+    2026-10 の米国計測は P4 の途中で時間切れになった。P1〜P3 だけで
+    3時間15分あり、流し直しても P4 に残るのは2時間ほどだった。
+
+    続きから流すときは P1〜P3 を飛ばす。**ただし、飛ばしてよいのは
+    その出力が復元できたときだけ** ── 復元できていないのに飛ばすと、
+    P4 が「入力が無い」で落ちて理由が読み取りにくい。確認は
+    continue-on-error にしない（ここで止まるのが目的）。
+    """
+    import yaml
+
+    workflow = yaml.safe_load(
+        (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(encoding="utf-8")
+    )
+    # yaml は `on` を真偽値として読む
+    inputs = (workflow.get("on") or workflow.get(True))["workflow_dispatch"]["inputs"]
+    assert inputs["start_from"]["default"] == "p1", "既定は最初から流すこと"
+    assert "p4" in inputs["start_from"]["options"]
+
+    steps = workflow["jobs"]["measure"]["steps"]
+    by_name = {s.get("name"): s for s in steps}
+    for name in ("P1 母集団確定", "P2 ドメイン候補生成", "P3 メールドメイン確定"):
+        assert "start_from != 'p4'" in str(by_name[name].get("if", "")), (
+            f"{name} が start_from=p4 でも走る"
+        )
+    for name in ("P4 DNS計測", "P5 パース", "P7 集計"):
+        assert "start_from" not in str(by_name[name].get("if", "")), f"{name} まで飛ばしている"
+
+    check = by_name["続きから流せるか確かめる"]
+    assert "start_from == 'p4'" in str(check.get("if", ""))
+    assert not check.get("continue-on-error"), "確認が落ちても先に進んでしまう"
+    for phase in ("p1_population", "p2_candidates", "p3_domains"):
+        assert phase in check["run"], f"{phase} の出力があるかを見ていない"
+    names = [s.get("name") for s in steps]
+    assert names.index("工程の出力を復元") < names.index("続きから流せるか確かめる") < names.index(
+        "P1 母集団確定"
+    ), "復元のあと、P1 の前に確かめること"
+
+
 def test_変更履歴の書き出し先が全部コミットされる():
     """**片方の言語だけ進むと、両言語が違うことを言う。**
 
