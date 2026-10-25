@@ -694,7 +694,38 @@ IDENTIFIED_MX_HOSTS = [
     ("i1.mailsecurity-nec.jp", InferenceCategory.SECURITY_GATEWAY, "NEC"),
     # 国内版は綴りが違う（tmems-jp / tmes）。既存の規則で拾えていることを固定する
     ("in1.in.tmems-jp.trendmicro.com", InferenceCategory.SECURITY_GATEWAY, "Trend Micro"),
+    # 2026-10-25 に公式資料で確かめて足したもの。**`mxrecord.io` は Mimecast では
+    # なく Cloudflare。** 名前の印象で取り違えかけた
+    ("mailstream-east.mxrecord.io", InferenceCategory.SECURITY_GATEWAY, "Cloudflare"),
+    ("mailstream-central.mxrecord.mx", InferenceCategory.SECURITY_GATEWAY, "Cloudflare"),
+    ("mxa.global.inbound.cf-emailsecurity.net", InferenceCategory.SECURITY_GATEWAY, "Cloudflare"),
+    ("mx-01-eu-west-1.prod.hydra.sophos.com", InferenceCategory.SECURITY_GATEWAY, "Sophos"),
+    ("mx-01.eml100hnd.ctr.sophos.com", InferenceCategory.SECURITY_GATEWAY, "Sophos"),
+    ("vade-mx-fr01.hornetsecurity.com", InferenceCategory.SECURITY_GATEWAY, "Hornetsecurity"),
+    ("mx.zoho.com", InferenceCategory.MAIL_PLATFORM, "Zoho"),
+    (
+        "inbound-smtp.ap-northeast-1.amazonaws.com",
+        InferenceCategory.MAIL_PLATFORM,
+        "Amazon Web Services",
+    ),
+    ("mx.sendgrid.net", InferenceCategory.MAIL_PLATFORM, "Twilio"),
 ]
+
+
+def test_mxrecord_io_is_not_mimecast(rules):
+    """**名前の印象で同定しない。** `mxrecord.io` は Cloudflare Email Security。"""
+    drafts = build_drafts(_fact(mx_hosts=["mailstream-west.mxrecord.io"], mx_present=True), rules)
+    assert "Mimecast" not in {d.vendor for d in drafts}
+
+
+def test_google_verification_mx_is_a_placeholder(rules):
+    """Google Workspace の確認用 MX も、M365 の仮 MX と同じく第3の状態。"""
+    drafts = build_drafts(
+        _fact(mx_hosts=["xv3xsim.mx-verification.google.com"], mx_present=True), rules
+    )
+    google = next(d for d in drafts if d.vendor == "Google")
+    assert google.undetectable_reason == UndetectableReason.TENANT_PLACEHOLDER_MX
+    assert "gws-mx-03" in google.rule_ids
 
 
 @pytest.mark.parametrize("host,category,vendor", IDENTIFIED_MX_HOSTS)
