@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any
@@ -64,6 +66,10 @@ class _Measured:
     answers: list[tuple[Any, Any]]
     control_responded: bool
     dkim_hit: bool
+    #: 予定した問い合わせを最後まで投げたか。持ち時間で止まったときだけ偽になる。
+    #: **途中までのドメインは書かない** ── 書くと再開で「測り終えた」と数えられ、
+    #: 残りの問い合わせが永久に欠ける（原則5）
+    complete: bool = True
 
 
 def _in_input_order(
@@ -144,6 +150,7 @@ def run(
     tier: str | None = None,
     concurrency: int | None = None,
     resume: bool = False,
+    max_minutes: float | None = None,
 ) -> dict[str, Any]:
     """P4 を実行し manifest の内容を返す。
 
@@ -154,7 +161,16 @@ def run(
     bronze を読み、最後まで書けたドメインを飛ばす。既定で有効にしないのは、
     bronze が不変・追記のみである以上、**「続き」と「測り直し」は別の意図**
     だからである（黙って続きにすると、測り直したいときに測り直せない）。
+
+    `max_minutes` を過ぎたら**新しいドメインに手を付けずに止まる。** 外から
+    殺されると manifest が残らず、どれだけ時間切れや投げ直しがあったかが
+    分からない（2026-10 の米国計測で、遅い理由を確かめられなかった）。
+    自分で止まれば manifest を書き、次は `resume` で続きから測れる。
     """
+    stop_at = time.monotonic() + max_minutes * 60 if max_minutes else None
+    #: 止まると決めたら立てる。**作業中のドメインも、次の1本を投げずに抜ける**
+    #: ── 待たないと、遅いドメインが終わるまで工程が終わらない
+    stopping = threading.Event()
     measure_cfg = load_measure_config()
     rate = measure_cfg.get("rate", {})
     # **投げる間隔（qps）とは別のつまみ。** 応答待ちだけを重ねる。
@@ -180,6 +196,7 @@ def run(
             "dry_run": dry_run,
             "tier": tier,
             "resume": resume,
+            "max_minutes": max_minutes,
         },
     ) as manifest:
         frame = read_parquet(domains_path)
@@ -343,6 +360,8 @@ def run(
             mx_values: list[str] = []
             spf_inc: list[str] = []
             for query in pre:
+                if stopping.is_set():
+                    return _Measured(domain, out, False, False, complete=False)
                 answer = backend.query(query)
                 out.append((query, answer))
                 if query.purpose == QueryPurpose.MX and answer.record_present:
@@ -380,6 +399,8 @@ def run(
             control_responded = False
             dkim_hit = False
             for query in plan:
+                if stopping.is_set():
+                    return _Measured(domain, out, False, False, complete=False)
                 answer = backend.query(query)
                 out.append((query, answer))
                 if query.purpose == QueryPurpose.DKIM_CONTROL and answer.record_present:
@@ -389,8 +410,13 @@ def run(
 
             return _Measured(domain, out, control_responded, dkim_hit)
 
+        processed = 0
         with BronzeWriter(bronze_dir(run_id), method) as writer:
             for result in _in_input_order(measure_one, targets, concurrency):
+                if not result.complete:
+                    # 持ち時間で止まった。**測り終えたドメインだけ書く**。
+                    # まだ始まっていないドメインは1本も投げずに返ってくる
+                    continue
                 queries_before = queries_written
                 for query, answer in result.answers:
                     raw = to_raw_response(
@@ -436,6 +462,14 @@ def run(
                 writer.checkpoint()
 
                 tracker.tick(クエリ=queries_written - queries_before)
+                processed += 1
+
+                # **止めても、最後まで受け取る。** 窓の中には測り終えて
+                # 順番待ちのドメインがあり、ここで抜けると捨てることになる。
+                # 作業中のものは次の1本を投げずに、未着手のものは1本も
+                # 投げずに返ってくる
+                if stop_at is not None and time.monotonic() >= stop_at:
+                    stopping.set()
 
         tracker.finish()
 
@@ -470,7 +504,22 @@ def run(
         # **ドメイン単位に揃える。** input も success も failed も同じ単位で、
         # 足し合わせると input に戻る（原則4）
         manifest.counts.success = fully_observed + partially_observed
-        manifest.counts.skipped = len(already)
+        #: 持ち時間で止まって、この実行では手を付けなかったドメイン。
+        #: **「失敗」ではなく「まだ測っていない」** ── 次の --resume で測る
+        not_reached = len(targets) - processed
+        manifest.counts.skipped = len(already) + not_reached
+        if not_reached:
+            manifest.add_warning(
+                "STOPPED_AT_TIME_BUDGET",
+                count=not_reached,
+                message=(
+                    f"持ち時間（{max_minutes} 分）に達したため、{not_reached} ドメインを"
+                    "測らずに止めた。**「観測できなかった」ではなく「まだ測っていない」**。"
+                    "同じ run_id で --resume を付けて流すと続きから測る"
+                ),
+            )
+            # **この run の分母はまだ揃っていない。** 成功とは言わない
+            manifest.force_status("partial")
         manifest.set_breakdown(
             domains={
                 "planned": planned,
@@ -480,6 +529,7 @@ def run(
                 "partially_observed": partially_observed,
                 "none_observed": none_observed,
                 "carried_over": len(already),
+                "not_reached": not_reached,
             },
             by_rcode=dict(sorted(by_rcode.items())),
             by_purpose=dict(sorted(by_purpose.items())),

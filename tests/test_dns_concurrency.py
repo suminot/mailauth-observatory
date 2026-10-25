@@ -429,3 +429,76 @@ def test_同時本数は1を下回らない(tmp_path, monkeypatch):
     run_p4(run_id=RUN, backend=backend, concurrency=0)
     assert backend.max_in_flight == 1
     assert pd is not None  # 読み込みの確認（parquet 経由で読んでいる）
+
+
+# --------------------------------------------------------------------------
+# 持ち時間で自分から止まる（2026-10 の米国計測）
+# --------------------------------------------------------------------------
+
+
+def _queries_by_domain(run_id: str) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for path in iter_bronze_files(bronze_dir(run_id)):
+        for record in read_bronze(path):
+            out[record["domain"]] = out.get(record["domain"], 0) + 1
+    return out
+
+
+def test_持ち時間で止まり_記録を残す(tmp_path, monkeypatch):
+    """**外から殺されると manifest が残らない。** 自分で止まって書く。
+
+    2026-10 の米国計測は P4 の途中でジョブの上限に当たり、時間切れや
+    投げ直しがどれだけあったかが分からないまま終わった。
+    """
+    monkeypatch.setenv("MAILAUTH_DATA_ROOT", str(tmp_path))
+    _write_domains(tmp_path, 40)
+    result = run_p4(
+        run_id=RUN, backend=_SlowBackend(delay=0.01), concurrency=4, max_minutes=0.15 / 60
+    )
+
+    codes = {w["code"] for w in result["warnings"]}
+    assert "STOPPED_AT_TIME_BUDGET" in codes
+    assert result["status"] == "partial", "分母が揃っていないのに成功と言っている"
+    domains = result["breakdown"]["domains"]
+    assert 0 < domains["not_reached"] < 40
+    counts = result["counts"]
+    # 原則4：測ったもの・失敗・手を付けなかったものを足すと入力に戻る
+    assert counts["success"] + counts["failed"] + counts["skipped"] == counts["input"] == 40
+
+
+def test_止まったときに途中までのドメインを書かない(tmp_path, monkeypatch):
+    """**途中までのドメインを書くと、再開で「測り終えた」と数えられる。**
+
+    書いたドメインは、どれも予定した問い合わせを全部持っていること。
+    """
+    monkeypatch.setenv("MAILAUTH_DATA_ROOT", str(tmp_path))
+    _write_domains(tmp_path, 40)
+    run_p4(run_id=RUN, backend=_SlowBackend(delay=0.01), concurrency=4, max_minutes=0.15 / 60)
+    per_domain = _queries_by_domain(RUN)
+    assert per_domain, "1件も書いていない"
+    assert len(set(per_domain.values())) == 1, (
+        f"問い合わせの本数がドメインで違う（途中までのドメインを書いている）: {per_domain}"
+    )
+
+
+def test_止まったあと続きから測ると全部そろう(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAILAUTH_DATA_ROOT", str(tmp_path))
+    domains = _write_domains(tmp_path, 40)
+    first = run_p4(
+        run_id=RUN, backend=_SlowBackend(delay=0.01), concurrency=4, max_minutes=0.15 / 60
+    )
+    assert first["breakdown"]["domains"]["not_reached"] > 0
+    second = run_p4(run_id=RUN, backend=_SlowBackend(delay=0), concurrency=4, resume=True)
+    assert "STOPPED_AT_TIME_BUDGET" not in {w["code"] for w in second["warnings"]}
+    per_domain = _queries_by_domain(RUN)
+    assert sorted(per_domain) == sorted(domains)
+    assert len(set(per_domain.values())) == 1, "二重に測ったドメインがある"
+
+
+def test_持ち時間を決めなければ止まらない(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAILAUTH_DATA_ROOT", str(tmp_path))
+    _write_domains(tmp_path, 8)
+    result = run_p4(run_id=RUN, backend=_SlowBackend(delay=0), concurrency=4)
+    assert "STOPPED_AT_TIME_BUDGET" not in {w["code"] for w in result["warnings"]}
+    assert result["breakdown"]["domains"]["not_reached"] == 0
+    assert result["status"] == "success"
