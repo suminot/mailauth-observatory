@@ -267,7 +267,7 @@ def test_並行にしても集計が変わらない(tmp_path, monkeypatch):
 
 
 #: 共有状態に触ってよい関数。**ここ以外に錠の無い経路を作らない。**
-_SHARED_STATE_METHODS = ("_cache_get", "_cache_put", "_bump")
+_SHARED_STATE_METHODS = ("_cache_get", "_cache_put", "_bump", "_note_error")
 
 
 def test_リゾルバの共有状態は出入口が絞られている():

@@ -542,6 +542,7 @@ def run(
             l2_provider_hits=dict(sorted(selectors.provider_hits.items())),
             backend={"method": method, "version": getattr(backend, "version", "unknown")},
             resolver=getattr(backend, "stats", {}),
+            resolver_errors=list(getattr(backend, "error_samples", [])),
         )
 
         if wildcard_domains:

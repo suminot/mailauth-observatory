@@ -32,3 +32,7 @@ class DnspythonBackend:
     @property
     def stats(self) -> dict[str, int]:
         return self.resolver.stats
+
+    @property
+    def error_samples(self) -> list[str]:
+        return self.resolver.error_samples

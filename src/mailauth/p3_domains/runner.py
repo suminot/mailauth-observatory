@@ -372,6 +372,7 @@ def run(
             entities_with_no_confirmed_sample=without_confirmed[:5],
             failed_probes=failed_probes,
             resolver=getattr(resolver, "stats", {}),
+            resolver_errors=list(getattr(resolver, "error_samples", [])),
             null_mx_domains=sum(1 for d in domains if d.null_mx),
             spf_hard_deny_domains=sum(1 for d in domains if d.spf_hard_deny),
             # **apex とサブドメインを混ぜて数えない**（BACKLOG 14）。
