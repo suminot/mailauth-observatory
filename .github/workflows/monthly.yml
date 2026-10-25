@@ -373,22 +373,22 @@ jobs:
       # `p8-publish` の第2層は事前通知から最低30日とアクセス制御が揃う
       # まで出せない。`site/` と `gold/` には書かない（コード側が拒む）。
       #
-      # **成果物には上げない（リポジトリが公開のあいだは）。** ここには以前
-      # 「成果物は GitHub の認証の内側 ── リポジトリの権限を持つ人しか
-      # 取れない」と書いていたが、**誤りだった。** 公開リポジトリの成果物は
-      # GitHub にログインしている人なら誰でも取れる（GitHub の公式資料、
-      # 2026-10-25 に確認）。社名付きの明細が、第2層の条件を満たさないまま
-      # 30日間取れる状態になっていた。
+      # **成果物は、GitHub にログインしている人なら誰でも取れる**（公開
+      # リポジトリのため。GitHub の公式資料、2026-10-25 に確認）。以前ここに
+      # 「リポジトリの権限を持つ人しか取れない」と書いていたが、誤りだった。
       #
-      # 明細そのものはランナーの中で作る（作れることの確認として）。上げるのは
-      # リポジトリが非公開のときだけ。
+      # **それを承知で上げる**（運営者の判断、2026-10-25）。明細の中身は
+      # DNS など誰でも引ける公開情報（OSINT）から作ったもので、成果物に
+      # 置いても新たに秘密が漏れるわけではない。**公開サイトの第2層とは
+      # 別の話である** ── 第2層の条件（事前通知から30日・アクセス制御）は
+      # 公開サイトに個社名付きで出すときの条件で、こちらは変わらない。
       - name: 個社別明細を作る（社外秘）
         if: always()
         continue-on-error: true
         run: mailauth drilldown --run "${{ steps.run.outputs.id }}"
 
-      - name: 個社別明細を成果物にする（社外秘・非公開リポジトリのときだけ）
-        if: ${{ always() && github.event.repository.private }}
+      - name: 個社別明細を成果物にする
+        if: always()
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
@@ -414,6 +414,20 @@ jobs:
           path: |
             gold/month=${{ steps.run.outputs.id }}/
             site/src/data/
+          if-no-files-found: warn
+          retention-days: 30
+
+      # **全工程の記録（manifest）を成果物にする。** 辞書を育てる材料
+      # （自社でない rua 宛先、共用ドメインなど）は P2 の記録の中にしかなく、
+      # これまでは Actions のキャッシュに閉じ込められて取り出せなかった。
+      # 中身は公開情報から作ったもの（上の明細と同じ判断）
+      - name: 全工程の記録を成果物にする
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: manifests-${{ steps.run.outputs.id }}
+          path: data/runs/${{ steps.run.outputs.id }}/*/_manifest.json
           if-no-files-found: warn
           retention-days: 30
 
