@@ -317,18 +317,18 @@ def test_リゾルバの共有状態は出入口が絞られている():
 
 
 @pytest.mark.parametrize(
-    "module, chunk_name",
+    "module, window_name",
     [
-        ("mailauth.p4_measure.runner", "MEASURE_CHUNK"),
-        ("mailauth.p3_domains.runner", "PROBE_CHUNK"),
+        ("mailauth.p4_measure.runner", "MEASURE_WINDOW"),
+        ("mailauth.p3_domains.runner", "PROBE_WINDOW"),
     ],
 )
-def test_塊の大きさが同時本数より十分に大きい(module, chunk_name):
-    """塊の終わりで待ち合わせるので、同時本数と同程度だと並行が利かない。"""
+def test_窓の幅が同時本数より十分に大きい(module, window_name):
+    """先頭が遅いと窓の幅までしか先に進めない。同時本数と同程度だと並行が利かない。"""
     import importlib
 
     mod = importlib.import_module(module)
-    assert getattr(mod, chunk_name) >= mod.DEFAULT_CONCURRENCY * 4
+    assert getattr(mod, window_name) >= mod.DEFAULT_CONCURRENCY * 4
 
 
 @pytest.mark.parametrize(
@@ -356,8 +356,60 @@ def test_工程が並行取得を使っている(module, func):
         f"{module} の run() が {func} を呼んでいない。"
         "仕組みだけ残して直列に戻すと、結果は同じで遅いだけになる"
     )
-    assert "ThreadPoolExecutor" in inspect.getsource(mod), (
-        f"{module} に待ち合わせの仕組みが無い"
+    assert "in_input_order(" in inspect.getsource(getattr(mod, func)), (
+        f"{module}.{func} が共通の並行取得（ordered.in_input_order）を使っていない"
+    )
+
+
+def test_遅い1件が後ろの件を止めない():
+    """**塊で区切って待ち合わせない。**（2026-10 の米国計測 P4）
+
+    塊で区切ると、塊の中の遅い1件が終わるまで次の塊が始まらない。
+    ここでは「遅い1件」が、**自分より後ろ（次の塊にあたる位置）の件が
+    始まるまで終わらない**ようにしてある。塊で待ち合わせる実装だと
+    後ろの件は始まらず、遅い1件は待ちきれずに時間切れになる。
+    """
+    from mailauth.ordered import in_input_order
+
+    later_started = threading.Event()
+    timed_out: list[int] = []
+
+    def work(i: int) -> int:
+        if i == 7:
+            # 窓 8 の最後。塊で区切るなら、ここが塊の終わり
+            if not later_started.wait(timeout=2.0):
+                timed_out.append(i)
+        elif i == 12:
+            later_started.set()
+        return i
+
+    out = list(in_input_order(work, range(16), concurrency=2, window=8))
+    assert out == list(range(16)), "入力順に返していない"
+    assert not timed_out, "遅い1件が終わるまで、後ろの件が始まらなかった（塊で待ち合わせている）"
+
+
+def test_返していない件数は窓を超えない():
+    """**全件を一度に投げない。** P4 は1件あたり約60件の応答を抱える。"""
+    from mailauth.ordered import in_input_order
+
+    lock = threading.Lock()
+    started: list[int] = []
+    seen_by_head: list[int] = []
+
+    def work(i: int) -> int:
+        with lock:
+            started.append(i)
+        if i == 0:
+            # 先頭が止まっている間に、後ろがどこまで始まるか
+            time.sleep(0.3)
+            with lock:
+                seen_by_head.append(len(started))
+        return i
+
+    out = list(in_input_order(work, range(40), concurrency=4, window=10))
+    assert out == list(range(40))
+    assert seen_by_head[0] <= 10, (
+        f"先頭が返る前に {seen_by_head[0]} 件始まっている（窓は 10）"
     )
 
 
