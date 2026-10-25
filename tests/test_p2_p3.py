@@ -238,6 +238,82 @@ def test_p2_is_idempotent(seeded_run):
     assert path.read_bytes() == first
 
 
+class _SlowResolver(StaticResolver):
+    """応答に時間がかかる固定応答リゾルバ。同時に何本待っていたかを数える。"""
+
+    def __init__(self, answers, delay: float = 0.05) -> None:
+        import threading
+
+        super().__init__(answers)
+        self.delay = delay
+        self.lock = threading.Lock()
+        self.in_flight = 0
+        self.max_in_flight = 0
+
+    def query(self, name, rtype):
+        import time
+
+        with self.lock:
+            self.in_flight += 1
+            self.max_in_flight = max(self.max_in_flight, self.in_flight)
+        try:
+            time.sleep(self.delay)
+            with self.lock:
+                return super().query(name, rtype)
+        finally:
+            with self.lock:
+                self.in_flight -= 1
+
+
+def _p2_config(tmp_path, concurrency: int) -> str:
+    import yaml
+
+    from mailauth import paths
+
+    base = yaml.safe_load(
+        (paths.repo_root() / "configs/candidates.yaml").read_text(encoding="utf-8")
+    )
+    base["resolver"]["concurrency"] = concurrency
+    cfg = tmp_path / f"candidates-{concurrency}.yaml"
+    cfg.write_text(yaml.safe_dump(base, allow_unicode=True), encoding="utf-8")
+    return str(cfg)
+
+
+def test_p2_起点のDNSは応答待ちを重ねる(seeded_run, tmp_path):
+    """**1社ずつ引くと往復が積み上がる。**
+
+    2026-10 の米国計測で P2 は2時間10分かかり、crt.sh が即座に返って
+    いたのに1社1.5秒かかっていた。1社2本の DNS を1本ずつ引いていた。
+    """
+    resolver = _SlowResolver(ANSWERS)
+    run_p2(run_id=RUN, resolver=resolver, ct_source=CT, config=_p2_config(tmp_path, 4))
+    assert resolver.max_in_flight > 1, "起点の DNS を1本ずつしか引いていない"
+
+
+def test_p2_並行でも問い合わせと候補が変わらない(seeded_run, tmp_path):
+    """**先に引いた応答を使うこと。** 使わずに引き直すと、本数が倍になる。"""
+    from collections import Counter
+
+    path = phase_output(RUN, "p2_candidates", "domain_candidates.parquet")
+
+    serial = _SlowResolver(ANSWERS, delay=0)
+    run_p2(run_id=RUN, resolver=serial, ct_source=CT, config=_p2_config(tmp_path, 1))
+    serial_out = pd.read_parquet(path)
+
+    parallel = _SlowResolver(ANSWERS, delay=0)
+    run_p2(run_id=RUN, resolver=parallel, ct_source=CT, config=_p2_config(tmp_path, 4))
+    parallel_out = pd.read_parquet(path)
+
+    assert Counter(parallel.calls) == Counter(serial.calls)
+    seeds = set(SEED_DOMAINS.values())
+    dup = [k for k, n in Counter(parallel.calls).items() if n > 1 and k[0] in seeds]
+    assert not dup, f"先に引いた応答を使わず、引き直している: {dup}"
+    pd.testing.assert_frame_equal(
+        serial_out.drop(columns=["run_id"], errors="ignore"),
+        parallel_out.drop(columns=["run_id"], errors="ignore"),
+    )
+
+
 def test_p2_dry_run_writes_nothing(seeded_run):
     result = _run_p2(dry_run=True)
     assert result["outputs"] == []
