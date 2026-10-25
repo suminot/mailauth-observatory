@@ -5,7 +5,7 @@
 #
 # 国内ベンダーの固定ホスト名は未解決事項の筆頭（DESIGN.md 第11章 #1）。
 # 運用コンソール画面5の「未知 MX ホスト頻度順リスト」から帰納的に埋めていく。
-version: 2026-09-29b
+version: 2026-10-25
 category: security_gateway
 
 rules:
@@ -48,6 +48,46 @@ rules:
     match:
       record: MX
       pattern: '\.mimecast\.com\.?$|\.mimecast\.co\.za\.?$'
+    confidence: high
+    layer: inbound_gateway
+
+  # **`mxrecord.io` は Mimecast ではない。** 名前の印象で Mimecast と
+  # 思い込みかけたが、Cloudflare の公式資料で地域別 MX として載っている
+  # （2026-10-25 に確認。米国 mailstream-east / -west.mxrecord.io、
+  # mailstream-central.mxrecord.mx、EU mailstream-eu1.mxrecord.io、
+  # インド mailstream-bom / -india-primary / -asia.mxrecord.mx、
+  # 豪州 mailstream-syd / -australia-primary.area1.cloudflare.net）
+  - id: cloudflare-emailsec-mx-01
+    vendor: Cloudflare
+    product: Cloudflare Email Security (旧 Area 1)
+    match:
+      record: MX
+      pattern: '\.cf-emailsecurity\.net\.?$|^mailstream-[a-z0-9-]+\.(mxrecord\.(io|mx)|area1\.cloudflare\.net)\.?$'
+    confidence: high
+    layer: inbound_gateway
+    source: developers.cloudflare.com/cloudflare-one/email-security/setup/pre-delivery-deployment/prerequisites/cisco-mx/
+
+  # 地域別の固定ホスト名（Sophos の公式資料、2026-10-25 に確認）。
+  # 米国・ドイツ・アイルランドは `*.prod.hydra.sophos.com`、
+  # 日本・カナダ・豪州などは `mx-0[12].eml100<地域>.ctr.sophos.com`
+  - id: sophos-mx-01
+    vendor: Sophos
+    product: Sophos Email
+    match:
+      record: MX
+      pattern: '\.prod\.hydra\.sophos\.com\.?$|^mx-0[12]\.eml\d+[a-z]+\.ctr\.sophos\.com\.?$'
+    confidence: high
+    layer: inbound_gateway
+    source: docs.sophos.com/central/customer/help/en-us/ManageYourProducts/EmailSecurity/EmailDomainInfo/
+
+  # 旧 Vade（2024 年に Hornetsecurity が買収、2025 年に名称を統合）の
+  # `vade-mx-*` と、現行の `mx01`〜`mx04` の両方が hornetsecurity.com の下にある
+  - id: hornetsecurity-mx-01
+    vendor: Hornetsecurity
+    product: Hornetsecurity Secure Email Gateway (旧 Vade を含む)
+    match:
+      record: MX
+      pattern: '\.hornetsecurity\.com\.?$'
     confidence: high
     layer: inbound_gateway
 

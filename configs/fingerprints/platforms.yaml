@@ -3,7 +3,7 @@
 # 証拠の強さ: DKIM_CNAME >= MX > SPF_INCLUDE > VERIFICATION_TXT（DESIGN.md P3/P6）
 # ゲートウェイ型製品が MX を握っていても、SPF include / DKIM CNAME から
 # 背後の実基盤を別カテゴリとして残すこと（原則2。単一ベンダーに丸めない）。
-version: 2026-09-29b
+version: 2026-10-25
 category: mail_platform
 
 rules:
@@ -105,6 +105,18 @@ rules:
       pattern: '^smtp\.google\.com\.?$'
     confidence: high
 
+  - id: gws-mx-03
+    vendor: Google
+    match:
+      # ドメインを Google Workspace に登録したときの**確認用 MX**。
+      # 優先度 15 以上で置き、メールは別の MX に流れる（2026-09 の実データに2件）
+      record: MX
+      pattern: '\.mx-verification\.google\.com\.?$'
+    confidence: low
+    # **一致しても「使っている」ことにはならない。** m365-mx-04 と同じ扱い
+    undetectable_reason: tenant_placeholder_mx
+    note: Google Workspace にドメイン登録済み。**受信はそこではない**
+
   - id: gws-spf-01
     vendor: Google
     product: Google Workspace
@@ -112,6 +124,37 @@ rules:
       record: SPF_INCLUDE
       pattern: '^_spf\.google\.com$'
     confidence: high
+
+  # Zoho の公式資料（2026-10-25 に確認）。データセンターごとに TLD が変わる
+  - id: zoho-mx-01
+    vendor: Zoho
+    product: Zoho Mail
+    match:
+      record: MX
+      pattern: '^mx\d*\.(zoho\.(com|eu|in|jp|sa|com\.au|com\.cn)|zohocloud\.ca)\.?$'
+    confidence: high
+    source: www.zoho.com/mail/help/adminconsole/configure-email-delivery.html
+
+  # **アプリが受け取るための受信口**であって、業務メールの基盤とは性格が違う。
+  # ただ「受信がそこで行われている」ことは事実なので、確度を下げて基盤に入れる
+  - id: ses-mx-01
+    vendor: Amazon Web Services
+    product: Amazon SES (受信)
+    match:
+      record: MX
+      # AWS の公式資料: `inbound-smtp.<リージョン>.amazonaws.com`
+      pattern: '^inbound-smtp\.[a-z0-9-]+\.amazonaws\.com\.?$'
+    confidence: medium
+    source: docs.aws.amazon.com/ses/latest/dg/receiving-email-mx-record.html
+
+  - id: sendgrid-mx-01
+    vendor: Twilio
+    product: SendGrid (Inbound Parse)
+    match:
+      record: MX
+      pattern: '^mx\.sendgrid\.net\.?$'
+    confidence: medium
+    note: 受信したメールをアプリに渡す仕組み。業務メールの基盤とは限らない
 
   - id: cybermail-mx-01
     vendor: サイバーソリューションズ
