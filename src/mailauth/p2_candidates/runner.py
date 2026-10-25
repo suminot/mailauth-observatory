@@ -43,6 +43,7 @@ from ..exclusions import load as load_exclusions
 from ..io import read_parquet, write_parquet
 from ..manifest import RunManifest, config_hash
 from ..normalize import etld_plus_one, normalize_hostname
+from ..ordered import in_input_order
 from ..paths import cache_root, config_path, month_date, phase_dir, phase_output
 from ..progress import Progress
 from ..records import (
@@ -53,7 +54,7 @@ from ..records import (
     spf_includes,
     spf_redirect,
 )
-from ..resolver import DnsResolver, Resolver, shuffled
+from ..resolver import DnsAnswer, DnsResolver, Resolver, shuffled
 
 #: CT ログを何社ぶんまとめて先回りして取るか。
 #:
@@ -62,6 +63,17 @@ from ..resolver import DnsResolver, Resolver, shuffled
 #: 取りすぎは最大1塊ぶんで済む。同時本数（既定4）より十分大きくしないと、
 #: 塊の終わりで待ち合わせるたびに並行の利きが落ちる
 PREFETCH_CHUNK = 64
+
+#: 起点ドメインの DNS（SPF と _dmarc）を同時に何本待つか。**qps とは別のつまみ。**
+#:
+#: 2026-10 の米国計測で P2 は2時間10分かかり、そのほとんどがここだった。
+#: crt.sh は落ちていて即座に返っていたのに、1社1.5秒かかっていた ──
+#: 1社2本を1本ずつ引いており、往復がそのまま積み上がっていた。
+#: P3 と同じ設定（`resolver.concurrency`）を読む
+DNS_DEFAULT_CONCURRENCY = 8
+
+#: 返していない問い合わせを何本まで抱えるか（`ordered.in_input_order`）
+DNS_WINDOW = 256
 
 PHASE = "p2_candidates"
 OUTPUT_FILENAME = "domain_candidates.parquet"
@@ -252,14 +264,23 @@ def _discover_from_dns(
     vendor_hits: dict[str, int],
     unaligned_rua: dict[str, set[str]],
     use_include: bool = False,
+    answers: dict[tuple[str, str], DnsAnswer] | None = None,
 ) -> None:
     """SPF redirect / include と DMARC rua から候補を足す。
 
     どちらも DNS 由来なので、確度判定では「独立した裏付け」に数えない
     （configs/candidates.yaml の confidence.independent_methods）。
+
+    `answers` は先回りして引いた応答（`_dns_queries` と同じ鍵）。
+    あればそれを使い、**同じ名前を2回引かない。**
     """
+
+    def ask(name: str, rtype: str) -> DnsAnswer:
+        hit = (answers or {}).get((name, rtype))
+        return hit if hit is not None else resolver.query(name, rtype)
+
     if use_redirect or use_include:
-        txt = resolver.query(apex, "TXT")
+        txt = ask(apex, "TXT")
         if txt.observed and txt.record_present:
             records = [join_txt_strings(c) for c in txt.txt_strings] or txt.values
             for record in find_spf_records(records):
@@ -281,7 +302,7 @@ def _discover_from_dns(
                         )
 
     if use_rua:
-        dmarc = resolver.query(f"_dmarc.{apex}", "TXT")
+        dmarc = ask(f"_dmarc.{apex}", "TXT")
         if dmarc.observed and dmarc.record_present:
             records = [join_txt_strings(c) for c in dmarc.txt_strings] or dmarc.values
             for record in find_dmarc_records(records):
@@ -311,6 +332,35 @@ def _discover_from_dns(
                         unaligned_rua.setdefault(etld_plus_one(domain) or domain, set()).add(apex)
                         continue
                     collector.add(domain, DiscoveryMethod.DMARC_RUA, f"rua of {apex}")
+
+
+def _dns_queries(apex: str, *, spf: bool, rua: bool) -> list[tuple[str, str]]:
+    """`_discover_from_dns` が1つの起点で引く問い合わせ。**名前の組み立てを揃える。**"""
+    queries = []
+    if spf:
+        queries.append((apex, "TXT"))
+    if rua:
+        queries.append((f"_dmarc.{apex}", "TXT"))
+    return queries
+
+
+def _prefetch_dns(
+    resolver: Resolver, queries: list[tuple[str, str]], concurrency: int
+) -> dict[tuple[str, str], DnsAnswer]:
+    """起点ドメインの DNS を、応答待ちだけ重ねて先に引く。
+
+    投げる間隔は `DnsResolver` が全スレッドで共有しているので、
+    1秒あたりに投げる本数は直列のときと変わらない。
+    """
+    return dict(
+        zip(
+            queries,
+            in_input_order(
+                lambda q: resolver.query(*q), queries, concurrency=concurrency, window=DNS_WINDOW
+            ),
+            strict=True,
+        )
+    )
 
 
 def run(
@@ -529,6 +579,11 @@ def run(
             return None
 
         ct_ready: dict[str, CtResult] = {}
+        # 起点ドメインの DNS を先回りして引いた応答。CT と同じく塊ごとに取る
+        dns_ready: dict[tuple[str, str], DnsAnswer] = {}
+        dns_concurrency = max(int(res_cfg.get("concurrency", DNS_DEFAULT_CONCURRENCY)), 1)
+        use_spf = bool(discovery.get("spf_redirect")) or bool(discovery.get("spf_include"))
+        use_rua = bool(discovery.get("dmarc_rua"))
         ct_tracker: Progress | None = None
         # 既に取りにいった起点ドメイン。**持株会社などで同じ起点が別の塊に
         # 現れる。** 塊ごとの重複排除では取りこぼすので、全体でも覚えておく。
@@ -642,6 +697,7 @@ def run(
                     vendor_hits,
                     unaligned_rua,
                     use_include=bool(discovery.get("spf_include")),
+                    answers=dns_ready,
                 )
 
             # **組織名から拾ったドメインも起点として扱う。** ここを通さないと
@@ -675,6 +731,16 @@ def run(
                 # 企業が別の塊に現れたときに取り直しになる（キャッシュには
                 # 当たるが、進捗の件数が合わなくなる）
                 ct_ready.update(ct_source.prefetch(wanted, on_result=_note_ct))
+            # **起点の DNS も先回りする。** 1社ずつ引くと往復が積み上がる。
+            # 取りすぎは CT と同じく最大1塊ぶん（候補総数の上限で止まったとき）
+            dns_wanted = [
+                q
+                for seed in dict.fromkeys(d for d in (_seed(i) for i in chunk) if d)
+                for q in _dns_queries(seed, spf=use_spf, rua=use_rua)
+                if q not in dns_ready
+            ]
+            if dns_wanted:
+                dns_ready.update(_prefetch_dns(resolver, dns_wanted, dns_concurrency))
             for idx in chunk:
                 _process(idx)
                 if total >= total_limit:
