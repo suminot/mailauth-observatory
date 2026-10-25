@@ -72,6 +72,10 @@ class Resolver(Protocol):
 TERMINAL_RCODES = {"NOERROR", "NXDOMAIN", "NODATA"}
 
 
+#: 残す見本の数。全部残すと manifest が膨らむ
+ERROR_SAMPLES = 5
+
+
 class DnsResolver:
     """dnspython による実装。キャッシュとレート制御つき。
 
@@ -132,6 +136,10 @@ class DnsResolver:
             "tcp_fallback": 0,
             "tcp_failed": 0,
         }
+        #: 引けなかった理由の見本（文言が違うものを先頭から数件）。**件数だけでは
+        #: 直し方が決まらない** ── 2026-10 の米国計測では P2/P3 の約1割が
+        #: `ERROR` で落ちたが、何のエラーかが manifest に残っていなかった
+        self.error_samples: list[str] = []
 
     def _throttle(self) -> None:
         """次の1本を投げてよい時刻まで待つ。**全スレッドで1つの間隔。**
@@ -176,6 +184,13 @@ class DnsResolver:
         """統計を数える。**加算が競合すると原則4の数字が狂う。**"""
         with self._state_lock:
             self.stats[key] = self.stats.get(key, 0) + n
+
+    def _note_error(self, rcode: str, error: str | None) -> None:
+        """引けなかった理由の見本を残す。文言が違うものを先頭から数件だけ。"""
+        sample = f"{rcode}: {error}" if error else rcode
+        with self._state_lock:
+            if len(self.error_samples) < ERROR_SAMPLES and sample not in self.error_samples:
+                self.error_samples.append(sample)
 
     def query(self, name: str, rtype: str) -> DnsAnswer:
         key = (name.rstrip(".").lower(), rtype.upper())
@@ -227,6 +242,7 @@ class DnsResolver:
                         except (dns.exception.DNSException, OSError) as exc:
                             self._bump("tcp_failed")
                             self._bump("failures")
+                            self._note_error("TRUNCATED_TCP_UNAVAILABLE", str(exc)[:200])
                             return DnsAnswer(
                                 name=name,
                                 rtype=rtype,
@@ -254,6 +270,7 @@ class DnsResolver:
                 break
 
         self._bump("failures")
+        self._note_error(last_rcode, last_error)
         return DnsAnswer(
             name=name,
             rtype=rtype,

@@ -960,6 +960,7 @@ def run(
                 else {"requests": 0, "note": "この CT ソースは応答時間を測らない"}
             ),
             resolver=getattr(resolver, "stats", {}),
+            resolver_errors=list(getattr(resolver, "error_samples", [])),
             shared_domains=len(shared),
             # rua が第三者サービスを指していた件数。P6 の dmarc_vendor 推定の材料
             dmarc_report_vendors=dict(sorted(vendor_hits.items())),

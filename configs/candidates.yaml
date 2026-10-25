@@ -168,7 +168,18 @@ limits:
 
 resolver:
   # P2/P3 の軽量問い合わせ用。本格計測（P4）の設定は measure.yaml
-  nameservers: []          # 空ならシステム既定
+  # **P4 と同じ公開リゾルバを使う**（configs/measure.yaml の resolver.upstream）。
+  #
+  # 以前は空（＝システム既定）だった。GitHub Actions のランナーではこれが
+  # 手元の中継（systemd-resolved）になり、2026-10 の米国計測では P2 の
+  # 12,933本中1,595本、P3 の 18,626本中1,612本が `ERROR` で引けなかった。
+  # 同じ実行で公開リゾルバを使う P4 は投げ直しも失敗も0だった。**P3 で
+  # 引けなかったドメインは measured にならず、1,646ドメインが分母から
+  # 消えていた**（confirmed の無い企業が 39.9%）
+  nameservers:
+    - 8.8.8.8
+    - 1.1.1.1
+    - 9.9.9.9
   timeout_sec: 5
   retries: 2
   qps: 20

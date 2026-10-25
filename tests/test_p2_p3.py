@@ -1586,3 +1586,58 @@ def test_候補総数の上限で打ち切った_run_からも_gold_を作らな
     data["warnings"].append({"code": "CANDIDATE_LIMIT_REACHED", "message": "x"})
     path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     assert truncated_by(RUN) == "CANDIDATE_LIMIT_REACHED"
+
+
+def test_引けなかった理由の見本を残す(monkeypatch):
+    """**件数だけでは直し方が決まらない。**
+
+    2026-10 の米国計測で P2/P3 の約1割が `ERROR` で落ちたが、何のエラーかが
+    manifest に残っていなかった。
+    """
+    import dns.exception
+
+    from mailauth import resolver as resolver_mod
+
+    def broken(*a, **k):
+        raise dns.exception.FormError("DNS message is malformed")
+
+    monkeypatch.setattr(resolver_mod.dns.query, "udp", broken)
+    monkeypatch.setattr(resolver_mod.time, "sleep", lambda s: None)
+    r = resolver_mod.DnsResolver(nameservers=["203.0.113.1"], qps=0, retries=1)
+    for i in range(resolver_mod.ERROR_SAMPLES + 3):
+        assert r.query(f"n{i}.example", "MX").rcode == "ERROR"
+    assert r.error_samples == ["ERROR: FormError: DNS message is malformed"], (
+        "同じ文言は1件にまとめる"
+    )
+
+
+def test_P2_P3_は_P4_と同じ公開リゾルバを使う():
+    """**システム既定のリゾルバに任せない。**
+
+    GitHub Actions のランナーでは手元の中継になり、2026-10 の米国計測で
+    P3 の1,646ドメインが `ERROR` で引けず、分母から消えた。同じ実行で
+    公開リゾルバを使う P4 は失敗0だった。
+    """
+    from mailauth.config import load_measure_config, load_yaml
+
+    candidates = load_yaml("configs/candidates.yaml")["resolver"]["nameservers"]
+    measure = load_measure_config()["resolver"]["upstream"]
+    assert candidates, "空だとシステム既定のリゾルバになる"
+    assert [str(x) for x in candidates] == [str(x) for x in measure]
+
+
+def test_P2_P3_の記録に引けなかった理由が載る(seeded_run, monkeypatch):
+    import dns.exception
+
+    from mailauth import resolver as resolver_mod
+
+    def broken(*a, **k):
+        raise dns.exception.FormError("DNS message is malformed")
+
+    monkeypatch.setattr(resolver_mod.dns.query, "udp", broken)
+    monkeypatch.setattr(resolver_mod.time, "sleep", lambda s: None)
+    r = resolver_mod.DnsResolver(nameservers=["203.0.113.1"], qps=0, retries=0)
+    p2 = run_p2(run_id=RUN, resolver=r, ct_source=CT)
+    assert p2["breakdown"]["resolver_errors"], "P2 の記録に理由が無い"
+    p3 = run_p3(run_id=RUN, resolver=r)
+    assert p3["breakdown"]["resolver_errors"], "P3 の記録に理由が無い"
