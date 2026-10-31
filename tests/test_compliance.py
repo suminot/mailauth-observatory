@@ -1995,6 +1995,34 @@ def test_P4_はジョブの上限より先に自分で止まる():
     )
 
 
+def test_前の月より小さい劣化した月は公開せず_変更履歴にも載せない():
+    """**crt.sh が落ちていて前の月より分母が小さい月は公開しない**（運営者の判断、
+    2026-10-31。BACKLOG 10）。
+
+    公開しない月は変更履歴にも載せない。変更履歴は手元の gold から作るので、
+    2026-10 の米国計測を publish=no で回したとき「2026-10」が載っていた。
+    """
+    import yaml
+
+    workflow = yaml.safe_load(
+        (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(encoding="utf-8")
+    )
+    by_name = {s.get("name"): s for s in workflow["jobs"]["measure"]["steps"]}
+    commit = by_name["gold と実行記録をコミット"]["run"]
+
+    assert "GOLD_BELOW_PREVIOUS_MONTH" in commit, "P7 の印を読んでいない"
+    assert commit.index("below_previous=1") < commit.index("git add gold"), (
+        "印を見る前に gold を add している"
+    )
+    assert '|| [ -n "$below_previous" ]; then' in commit, "公開しない条件に入っていない"
+    # 公開しない側の分岐では、変更履歴を add しない（作り直した分を捨てる）
+    branch = commit[commit.index('|| [ -n "$below_previous" ]; then') : commit.index("else\n")]
+    assert "changelog.md" not in branch.split("git checkout --")[0], (
+        "公開しない月を変更履歴に載せてしまう"
+    )
+    assert "git checkout -- site/src/changelog.md site/src/en/changelog.md" in branch
+
+
 def test_工程の出力のキャッシュは母集団と月で分ける():
     """**月だけで区切ると、同じ月の別の母集団の出力が復元される。**
 
