@@ -709,7 +709,48 @@ IDENTIFIED_MX_HOSTS = [
         "Amazon Web Services",
     ),
     ("mx.sendgrid.net", InferenceCategory.MAIL_PLATFORM, "Twilio"),
+    # 2026-10-31：米国の初回通し計測の作業リストから、公式資料で確かめて足した
+    ("sidusspace-com.mail.protection.office365.us", InferenceCategory.MAIL_PLATFORM, "Microsoft"),
+    (
+        "zepp-com.mail.protection.partner.outlook.cn",
+        InferenceCategory.MAIL_PLATFORM,
+        "Microsoft",
+    ),
+    ("mxbiz1.qq.com", InferenceCategory.MAIL_PLATFORM, "Tencent"),
+    ("mx3.qiye.aliyun.com", InferenceCategory.MAIL_PLATFORM, "Alibaba Cloud"),
+    ("mxw.mxhichina.com", InferenceCategory.MAIL_PLATFORM, "Alibaba Cloud"),
+    ("mx2.feishu.cn", InferenceCategory.MAIL_PLATFORM, "Lark"),
+    ("hzmx01.mxmail.netease.com", InferenceCategory.MAIL_PLATFORM, "NetEase"),
+    ("mailstore1.secureserver.net", InferenceCategory.MAIL_PLATFORM, "GoDaddy"),
+    ("mx1.emailsrvr.com", InferenceCategory.MAIL_PLATFORM, "Rackspace"),
+    ("west.smtp.mx.exch082.serverdata.net", InferenceCategory.MAIL_PLATFORM, "Intermedia"),
+    ("mx003.netsol.xion.oxcs.net", InferenceCategory.MAIL_PLATFORM, "Network Solutions"),
+    ("mx01b.pp-tp.com", InferenceCategory.SECURITY_GATEWAY, "Proofpoint"),
+    ("je-smtp-inbound-1.mimecast-offshore.com", InferenceCategory.SECURITY_GATEWAY, "Mimecast"),
+    ("us4-smtp-mx1.titanhq.com", InferenceCategory.SECURITY_GATEWAY, "TitanHQ"),
+    ("cloud8.spamtitan.com", InferenceCategory.SECURITY_GATEWAY, "TitanHQ"),
+    ("primary.us.etp.fireeyegov.com", InferenceCategory.SECURITY_GATEWAY, "Trellix"),
+    ("mx2.mtaroutes.com", InferenceCategory.SECURITY_GATEWAY, "N-able"),
 ]
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        # 資料に無い NetEase のホスト。`.mxmail.netease.com` 全体に広げると
+        # 個人向け 163 メールのホストも拾う
+        "qiye163mx01.mxmail.netease.com",
+        # 公式資料で確かめられなかったもの。**名前の印象で同定しない**
+        "mx1.smtp.goog",
+        "mxa-00336402.gslb.gpphosted.com",
+        "alpinereit-com.mx1.arsmtp.com",
+    ],
+)
+def test_資料で確かめていないホストは同定しない(rules, host):
+    drafts = build_drafts(_fact(mx_hosts=[host], mx_present=True), rules)
+    assert not [d for d in drafts if d.category != InferenceCategory.DMARC_VENDOR], (
+        f"{host} を公式資料なしに同定している"
+    )
 
 
 def test_mxrecord_io_is_not_mimecast(rules):
