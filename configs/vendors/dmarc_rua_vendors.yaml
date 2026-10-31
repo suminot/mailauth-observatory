@@ -5,7 +5,7 @@
 #
 # 国内ベンダーの rua 宛先は dmarc25.jp（TwoFive）以外ほぼ未確認
 # （DESIGN.md 第11章 未解決事項 #6）。実測で埋める。
-version: 2026-08-01
+version: 2026-10-31
 category: dmarc_vendor
 
 rules:
@@ -22,8 +22,9 @@ rules:
     vendor: Valimail
     match:
       record: DMARC_RUA_DOMAIN
-      pattern: '(^|\.)valimail\.com$|(^|\.)dmarc-reports\.valimail\.com$'
+      pattern: '(^|\.)valimail\.com$|(^|\.)vali\.email$'
     confidence: high
+    source: support.valimail.com/en/articles/8466367-pointing-a-dmarc-record-to-valimail
 
   - id: rua-dmarcian-01
     vendor: dmarcian
@@ -52,15 +53,20 @@ rules:
     product: DMARC Analyzer
     match:
       record: DMARC_RUA_DOMAIN
-      pattern: '(^|\.)dmarc-analyzer\.com$|(^|\.)mimecast\.com$'
+      # 2026-08 の版はハイフン入り（dmarc-analyzer.com）で、一度も当たらなかった。
+      # Mimecast の資料が使うのはハイフンなしの dmarcanalyzer.com だけ
+      pattern: '(^|\.)dmarcanalyzer\.com$|(^|\.)mimecast\.com$'
     confidence: high
+    source: mimecastsupport.zendesk.com/hc/en-us/articles/55507549336595
 
   - id: rua-easydmarc-01
     vendor: EasyDMARC
     match:
       record: DMARC_RUA_DOMAIN
-      pattern: '(^|\.)easydmarc\.com$|(^|\.)report\.easydmarc\.com$'
+      # データの置き場所ごとに .us / .eu / .asia がある
+      pattern: '(^|\.)easydmarc\.(com|us|eu|asia)$'
     confidence: high
+    source: support.easydmarc.com/knowledge-base/data-hosting-locations
 
   - id: rua-urirportal-01
     vendor: URIports
@@ -74,8 +80,10 @@ rules:
     product: DMARC Digests
     match:
       record: DMARC_RUA_DOMAIN
-      pattern: '(^|\.)dmarc\.postmarkapp\.com$'
+      # 旧形式が dmarc.postmarkapp.com、今の形式が inbound.dmarcdigests.com
+      pattern: '(^|\.)dmarc\.postmarkapp\.com$|(^|\.)dmarcdigests\.com$'
     confidence: high
+    source: dmarcdigests.zendesk.com/hc/en-us/articles/19508378090780-What-is-a-reporting-address
 
   # 実測で確認したもの（2026-08、日本の上場企業17社）。
   # sony.co.jp と fastretailing.com の rua が rua.powerdmarc.com を指していた
@@ -85,6 +93,121 @@ rules:
       record: DMARC_RUA_DOMAIN
       pattern: '(^|\.)powerdmarc\.com$'
     confidence: high
+
+  # ---------------------------------------------------------------------------
+  # 2026-10 の米国計測で多かった rua 宛先（P2 の記録）のうち、**ベンダー自身の
+  # 資料に rua の例が載っているもの**だけ（2026-10-31 に確認）。
+  # 宛先の件数は米国 2026-10 のもの（同じ宛先を指すドメインの数）。
+  # ---------------------------------------------------------------------------
+
+  # 153件
+  - id: rua-cloudflare-01
+    vendor: Cloudflare
+    product: DMARC Management
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)dmarc-reports\.cloudflare\.net$'
+    confidence: high
+    source: developers.cloudflare.com/api/resources/email_auth/subresources/dmarc_reports/methods/edit
+
+  # 100件
+  - id: rua-mxtoolbox-01
+    vendor: MxToolbox
+    product: Delivery Center
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)dmarc-report\.com$'
+    confidence: high
+    source: knowledgebase.mxtoolbox.com/home/dmarc-integration
+
+  # 74件。redsift.cloud は資料に無いので入れない
+  - id: rua-redsift-01
+    vendor: Red Sift
+    product: OnDMARC
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)ondmarc\.com$'
+    confidence: high
+    source: redsift.com/guides/email-protocol-configuration-guide/learn-more-about-dmarc
+
+  # 68件
+  - id: rua-barracuda-01
+    vendor: Barracuda
+    product: Domain Fraud Protection
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)dmarc\.barracudanetworks\.com$'
+    confidence: high
+    source: campus.barracuda.com/doc/170688553
+
+  # 62件。GoDaddy は登録事業者・ホスティング。メールとあわせてレポートを受ける
+  # 機能で、DMARC 専業のベンダーではない
+  - id: rua-godaddy-01
+    vendor: GoDaddy
+    product: Email DMARC
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)onsecureserver\.net$'
+    confidence: high
+    source: godaddy.com/help/set-up-dkim-or-dmarc-records-for-my-email-40810
+
+  # 36件。Brevo は送信サービス（ESP）。送信ドメインの認証設定で勧める宛先で、
+  # DMARC 専業のベンダーではない
+  - id: rua-brevo-01
+    vendor: Brevo
+    product: Domain authentication
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)dmarc\.brevo\.com$'
+    confidence: high
+    source: help.brevo.com/hc/en-us/articles/12163873383186
+
+  # 35件
+  - id: rua-dmarcly-01
+    vendor: DMARCLY
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)dmarcly\.com$'
+    confidence: high
+    source: dmarcly.com/blog/how-to-add-multiple-reporting-email-addresses-to-dmarc-record
+
+  # 13件。資料はスペイン語版にだけあった
+  - id: rua-sendmarc-01
+    vendor: Sendmarc
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)sdmarc\.net$'
+    confidence: high
+    source: help.sendmarc.com/es/instrucciones-para-desvincular-sendmarc
+
+  # 9件
+  - id: rua-mailhardener-01
+    vendor: Mailhardener
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)mailhardener\.com$'
+    confidence: high
+    source: mailhardener.com/kb/dmarc
+
+  # 8件
+  - id: rua-inky-01
+    vendor: INKY
+    product: DMARC Monitoring
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)inkydmarc\.com$'
+    confidence: high
+    source: inkyops.atlassian.net/wiki/spaces/AG2/pages/2252046350
+
+  # 2件
+  - id: rua-glockapps-01
+    vendor: GlockApps
+    product: DMARC Analytics
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)glockapps\.com$'
+    confidence: high
+    source: glockapps.zendesk.com/hc/en-us/articles/4412836477851
 
 # 実測で見つかったが**ベンダー名を確認できていない** rua 宛先。
 #
@@ -103,3 +226,20 @@ unidentified_rua_domains:
   - domain: teams.ms
     observed_for: [ajinomoto.com]
     note: 宛先は 471eb9b4.ajinomoto.com@jp.teams.ms。ローカル部に顧客ドメインを含む
+  # 以下は米国 2026-10。ベンダー自身の資料に rua の例が見つからなかった
+  # （2026-10-31。販売店・第三者の記事や、他社の DMARC レコードには出てくる）
+  - domain: mimecastdmarcanalyzer.com
+    note: Mimecast の資料に無い。mimecast.com 自身のレコードには出てくる
+  - domain: cp-dmarc.com
+    note: Check Point（Avanan）の例は販売店（SonicWall）の資料にだけある
+  - domain: redsift.cloud
+  - domain: everest.email
+  - domain: 250ok.net
+  - domain: returnpath.net
+  - domain: dmarcadvisor.com
+  - domain: netcraft.com
+  - domain: ironscales.com
+  - domain: inboxmonster.com
+  - domain: dmarcinput.com
+  - domain: emailanalyst.com
+  - domain: emailfraudprotect.email
