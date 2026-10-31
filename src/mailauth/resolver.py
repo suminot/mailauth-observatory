@@ -131,6 +131,8 @@ class DnsResolver:
             "queries": 0,
             "cache_hits": 0,
             "retries": 0,
+            #: 一時的失敗で次のリゾルバに移った回数（待たない）
+            "failovers": 0,
             "failures": 0,
             # DESIGN.md P4 が要求するメトリクス
             "tcp_fallback": 0,
@@ -209,17 +211,32 @@ class DnsResolver:
           NOERROR(answers=0/NODATA) -> observed=true,  record_present=false  リトライ不要
           NXDOMAIN                  -> observed=true,  record_present=false
           TC=1                      -> TCP で再問い合わせ
-          SERVFAIL/REFUSED/TIMEOUT  -> backoff してリトライ、尽きたら次のリゾルバ
+          SERVFAIL/REFUSED/TIMEOUT  -> すぐ次のリゾルバへ。全部だめなら backoff して
+                                       もう一巡（retries 回まで）
           全リゾルバ枯渇             -> observed=false, record_present=null
+
+        **待つのは一巡したあとだけにする。** 以前は1台目に backoff（1・3・9秒）
+        を挟んで投げ直し尽くしてから2台目に移っていた。2026-10-31 の米国計測
+        （run 41188787298）では投げ直しが 37,517 本（全体の34%）あり、P4 は
+        1ドメイン 11 秒かかって持ち時間で止まった。一時的に詰まっているのは
+        たいてい1台で、残りの2台はすぐ答える。投げる総数の上限
+        （(retries+1) × リゾルバ数）は変わらず、待つ時間の上限は3分の1になる。
         """
         started = time.monotonic()
         rdtype = dns.rdatatype.from_text(rtype)
         last_error: str | None = None
         last_rcode = "TIMEOUT"
 
-        for nameserver in self.nameservers or ["127.0.0.1"]:
-            attempt = 0
-            while True:
+        nameservers = self.nameservers or ["127.0.0.1"]
+        for attempt in range(self.retries + 1):
+            if attempt:
+                # 全リゾルバが一時的失敗を返した。少し待ってからもう一巡
+                delay = self.backoff[min(attempt - 1, len(self.backoff) - 1)]
+                self._bump("retries")
+                time.sleep(delay)
+            for index, nameserver in enumerate(nameservers):
+                if index:
+                    self._bump("failovers")
                 self._throttle()
                 self._bump("queries")
                 query = dns.message.make_query(name, rdtype, want_dnssec=self.want_dnssec)
@@ -260,14 +277,7 @@ class DnsResolver:
                         name, rtype, rdtype, resp, started, used_tcp=used_tcp
                     )
 
-                # ここに来たのは一時的失敗。リトライするか次のリゾルバへ
-                if attempt < self.retries:
-                    delay = self.backoff[min(attempt, len(self.backoff) - 1)]
-                    attempt += 1
-                    self._bump("retries")
-                    time.sleep(delay)
-                    continue
-                break
+                # ここに来たのは一時的失敗。待たずに次のリゾルバへ
 
         self._bump("failures")
         self._note_error(last_rcode, last_error)

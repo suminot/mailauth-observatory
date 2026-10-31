@@ -378,9 +378,7 @@ def test_p3_requires_p2_output(seeded_run):
     ],
 )
 def test_classify_confidence(mx, spf_aligned, dkim, dmarc, independent, hard_deny, expected):
-    assert (
-        classify_confidence(mx, spf_aligned, dkim, dmarc, independent, hard_deny) == expected
-    )
+    assert classify_confidence(mx, spf_aligned, dkim, dmarc, independent, hard_deny) == expected
 
 
 def test_classify_role():
@@ -565,9 +563,7 @@ def test_truncated_response_falls_back_to_tcp(monkeypatch):
     truncated.flags |= dns.flags.TC
 
     full = dns.message.make_response(dns.message.make_query("big.example", "TXT"))
-    full.answer.append(
-        dns.rrset.from_text("big.example.", 300, "IN", "TXT", '"v=spf1 -all"')
-    )
+    full.answer.append(dns.rrset.from_text("big.example.", 300, "IN", "TXT", '"v=spf1 -all"'))
 
     calls = {"udp": 0, "tcp": 0}
 
@@ -728,9 +724,7 @@ class _CountingCtTransport:
         import httpx as _httpx
 
         self.calls += 1
-        return _httpx.Response(
-            200, json=[{"name_value": "\n".join(self._names)}]
-        )
+        return _httpx.Response(200, json=[{"name_value": "\n".join(self._names)}])
 
 
 def _ct_client(tmp_path, month, transport):
@@ -893,9 +887,7 @@ def test_a_dns_only_domain_shared_by_two_entities_is_dropped(seeded_run):
     shared = "esp-example.net"
     answers = {}
     for company in ("sample-info.co.jp", "sample-motor.co.jp"):
-        answers[(company, "TXT")] = make_answer(
-            company, "TXT", [f"v=spf1 redirect=_spf.{shared}"]
-        )
+        answers[(company, "TXT")] = make_answer(company, "TXT", [f"v=spf1 redirect=_spf.{shared}"])
     result = run_p2(run_id=RUN, resolver=StaticResolver(answers), ct_source=CT)
 
     assert shared not in set(candidates()["domain"])
@@ -1070,9 +1062,7 @@ def test_ct進捗の取得件数はキャッシュ命中を数えない(seeded_r
     lines = _ct_progress_lines(seeded_run, capsys)
     last = lines[-1]
     fields = dict(
-        part.split("=", 1)
-        for part in last.split("（")[-1].rstrip("）").split()
-        if "=" in part
+        part.split("=", 1) for part in last.split("（")[-1].rstrip("）").split() if "=" in part
     )
     got = int(fields["取得"])
     cached = int(fields["キャッシュ"])
@@ -1533,9 +1523,7 @@ def test_小さい標本の見込みでは止めない(seeded_run, tmp_path, mon
     path = tmp_path / "candidates-patient.yaml"
     path.write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding="utf-8")
 
-    out = run_p2(
-        run_id=RUN, resolver=StaticResolver(ANSWERS), ct_source=CT, config=str(path)
-    )
+    out = run_p2(run_id=RUN, resolver=StaticResolver(ANSWERS), ct_source=CT, config=str(path))
     codes = [w["code"] for w in out["warnings"]]
     # 全部済んでいるので「残り0社でやめた」とも言わない
     assert "PHASE_BUDGET_EXCEEDED" not in codes, codes
@@ -1641,3 +1629,60 @@ def test_P2_P3_の記録に引けなかった理由が載る(seeded_run, monkeyp
     assert p2["breakdown"]["resolver_errors"], "P2 の記録に理由が無い"
     p3 = run_p3(run_id=RUN, resolver=r)
     assert p3["breakdown"]["resolver_errors"], "P3 の記録に理由が無い"
+
+
+def test_時間切れのときは待たずに次のリゾルバに移る(monkeypatch):
+    """**待つのは全リゾルバが一巡してだめだったときだけ。**
+
+    2026-10-31 の米国計測で、P4 の投げ直しが 34% あり、1台目に 1・3・9 秒
+    待ってから2台目に移っていたため持ち時間で止まった。
+    """
+    import dns.exception
+    import dns.message
+
+    from mailauth import resolver as resolver_mod
+
+    ok = dns.message.make_response(dns.message.make_query("a.example", "MX"))
+    asked: list[str] = []
+
+    def udp(query, nameserver, **kw):
+        asked.append(nameserver)
+        if nameserver == "203.0.113.1":
+            raise dns.exception.Timeout
+        return ok
+
+    slept: list[float] = []
+    monkeypatch.setattr(resolver_mod.dns.query, "udp", udp)
+    monkeypatch.setattr(resolver_mod.time, "sleep", slept.append)
+    r = resolver_mod.DnsResolver(
+        nameservers=["203.0.113.1", "203.0.113.2"], qps=0, retries=3, backoff=(1, 3, 9)
+    )
+    answer = r.query("a.example", "MX")
+    assert answer.observed is True
+    assert asked == ["203.0.113.1", "203.0.113.2"]
+    assert slept == [], "1台目の時間切れで待っている"
+    assert (r.stats["failovers"], r.stats["retries"]) == (1, 0)
+
+
+def test_全リゾルバがだめなら待ってもう一巡し_投げる総数は変わらない(monkeypatch):
+    import dns.exception
+
+    from mailauth import resolver as resolver_mod
+
+    asked: list[str] = []
+
+    def udp(query, nameserver, **kw):
+        asked.append(nameserver)
+        raise dns.exception.Timeout
+
+    slept: list[float] = []
+    monkeypatch.setattr(resolver_mod.dns.query, "udp", udp)
+    monkeypatch.setattr(resolver_mod.time, "sleep", slept.append)
+    r = resolver_mod.DnsResolver(nameservers=["a", "b", "c"], qps=0, retries=3, backoff=(1, 3, 9))
+    answer = r.query("x.example", "MX")
+    assert answer.observed is False and answer.rcode == "TIMEOUT"
+    # 以前と同じ (retries+1) × リゾルバ数 = 12 本。待つのは巡の間の3回だけ
+    assert asked == ["a", "b", "c"] * 4
+    assert slept == [1, 3, 9]
+    assert r.stats["retries"] == 3
+    assert r.stats["failures"] == 1
