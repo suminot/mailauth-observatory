@@ -16,7 +16,7 @@ from typing import Any
 
 import pandas as pd
 
-from ..config import PopulationConfig
+from ..config import PopulationConfig, credential
 from ..contracts import (
     ENTITY_ARROW_SCHEMA,
     ENTITY_SORT_KEYS,
@@ -307,12 +307,124 @@ def _apply_enrichment(
                 continue
             _fill_missing_urls_from_wikidata(entities, cfg, manifest)
 
+        elif name == "co_jp_homepage":
+            _fill_from_co_jp_homepage(entities, manifest, limit=limit, offline=offline)
+
         else:
             manifest.add_warning(
                 "ENRICH_UNKNOWN",
                 sample=[name],
                 message=f"未知の enrich 指定のためスキップした: {name}",
             )
+
+
+def _fill_from_co_jp_homepage(
+    entities: list[Entity],
+    manifest: RunManifest,
+    *,
+    limit: int | None = None,
+    offline: bool = False,
+    guesser=None,
+) -> None:
+    """**まだ空欄の企業だけ**、英字社名から .co.jp を推測してサイトで確かめる。
+
+    gBizINFO と Wikidata のあとに置く。既にある値は上書きしない。
+    `guesser` を渡せるのは検査のため（ネットワークに出ない）。
+    """
+    missing = [e for e in entities if not e.official_domain]
+    if limit:
+        missing = missing[:limit]
+    if not missing:
+        manifest.set_breakdown(co_jp_homepage={"attempted": 0})
+        return
+    if guesser is None:
+        if offline:
+            manifest.add_warning(
+                "ENRICH_SKIPPED_CO_JP_HOMEPAGE",
+                message=(
+                    "offline のため .co.jp の推測をしていない。"
+                    "**「無い」のではなく「引いていない」**"
+                ),
+            )
+            return
+        contact = credential("MAILAUTH_CONTACT_EMAIL")
+        if not contact:
+            # **連絡先を名乗らずに他社のサイトを読まない**（SEC と同じ作法）
+            manifest.add_warning(
+                "ENRICH_SKIPPED_CO_JP_HOMEPAGE",
+                message=(
+                    "MAILAUTH_CONTACT_EMAIL が無いため .co.jp の推測をしていない。"
+                    "企業のサイトを読むので、連絡先つきの User-Agent を付ける"
+                ),
+            )
+            return
+        guesser = _live_co_jp_guesser(contact)
+
+    filled = 0
+    for entity in missing:
+        domain = guesser.domain_for(entity.name, entity.name_en)
+        if domain:
+            entity.official_url = f"https://{domain}/"
+            entity.official_domain = domain
+            filled += 1
+    manifest.set_breakdown(
+        co_jp_homepage={
+            **guesser.stats.to_dict(),
+            "missing_before": len(missing),
+            "filled": filled,
+            "still_missing": sum(1 for e in entities if not e.official_domain),
+        }
+    )
+
+
+def _live_co_jp_guesser(contact: str):
+    """実際に DNS とサイトを引く推測器。公開リゾルバと連絡先つき UA を使う。"""
+    import time
+
+    import httpx
+
+    from ..config import load_yaml
+    from ..resolver import DnsResolver
+    from .co_jp_guess import MAX_BYTES, CoJpGuesser
+
+    res_cfg = load_yaml("configs/candidates.yaml").get("resolver", {})
+    resolver = DnsResolver(
+        nameservers=res_cfg.get("nameservers") or None,
+        timeout=float(res_cfg.get("timeout_sec", 5)),
+        retries=int(res_cfg.get("retries", 2)),
+        qps=float(res_cfg.get("qps", 20)),
+    )
+    client = httpx.Client(
+        timeout=15,
+        follow_redirects=True,
+        headers={"User-Agent": f"mailauth-observatory/0.1 ({contact})"},
+    )
+    last = [0.0]
+
+    def exists(name: str) -> bool:
+        answer = resolver.query(name, "NS")
+        return bool(answer.observed and answer.record_present)
+
+    def fetch(url: str) -> str | None:
+        # **1秒に2本まで。** 相手は上場企業の公式サイトで、1社あたり数本しか読まない
+        wait = 0.5 - (time.monotonic() - last[0])
+        if wait > 0:
+            time.sleep(wait)
+        last[0] = time.monotonic()
+        try:
+            with client.stream("GET", url) as resp:
+                if resp.status_code >= 400:
+                    return None
+                body = b""
+                for chunk in resp.iter_bytes():
+                    body += chunk
+                    if len(body) >= MAX_BYTES:
+                        break
+                return body.decode(resp.encoding or "utf-8", errors="replace")
+        except httpx.HTTPError:
+            return None
+
+    return CoJpGuesser(exists=exists, fetch=fetch)
 
 
 def _fill_missing_urls_from_wikidata(

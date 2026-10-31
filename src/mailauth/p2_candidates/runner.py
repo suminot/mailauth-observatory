@@ -657,7 +657,7 @@ def run(
                         ct_org_stats["nothing_found"] += 1
 
             if discovery.get("official_url") and official:
-                collector.add(official, DiscoveryMethod.OFFICIAL_URL, "P1 gBizINFO company_url")
+                collector.add(official, DiscoveryMethod.OFFICIAL_URL, "P1 official_url")
 
             if discovery.get("manual"):
                 for domain, note in manual.get(entity_id, []):

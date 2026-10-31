@@ -108,6 +108,9 @@ OFFICIAL_URL_SOURCES: dict[str, str | None] = {
     # SEC の年次報告書。連絡先は一次ソース（sec_edgar）の側で既に要る
     "sec_annual_report": None,
     "sec_press_release": None,
+    # 企業のサイトを読むので連絡先つきの User-Agent を付ける。連絡先が無ければ
+    # この経路だけ飛ばす（警告を出す）ので、必須にはしない
+    "co_jp_homepage": None,
 }
 
 #: 母集団の一次ソースが**無いと取れない**鍵。
