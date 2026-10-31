@@ -930,14 +930,14 @@ def _p2_warns(*codes: str) -> None:
     )
 
 
-def _existing_gold(population_id: str, total_domains: int) -> None:
+def _existing_gold(population_id: str, total_domains: int, month: str = "2026-08") -> None:
     from mailauth.contracts import STATS_OVERALL_ARROW_SCHEMA, STATS_OVERALL_SORT_KEYS
 
-    row = _gold_row(population_id, month="2026-08", observed=total_domains)
+    row = _gold_row(population_id, month=month, observed=total_domains)
     row["total_domains"] = total_domains
     write_parquet(
         [row],
-        gold_dir("2026-08") / "stats_overall.parquet",
+        gold_dir(month) / "stats_overall.parquet",
         STATS_OVERALL_ARROW_SCHEMA,
         sort_keys=STATS_OVERALL_SORT_KEYS,
     )
@@ -1011,6 +1011,55 @@ def test_相手が落ちていても_他の母集団の分母とは比べない(
     overall = _gold("stats_overall.parquet")
     assert sorted(overall["population_id"]) == [POP, "us-all-listed"]
     assert "GOLD_FROM_DEGRADED_RUN" in _codes(result)
+
+
+def test_相手が落ちていて前の月より小さいなら_公開しない印を付ける():
+    """**新しい月は「既にある gold」が無いので、上の判定に掛からない。**
+
+    crt.sh が何週間も落ちていると、CT 由来の候補が無いまま次の月が公開され、
+    前月比に「減った」が出る（運営者の判断で公開しない、2026-10-31）。
+    gold は書く ── 数字は成果物で見られる。止めるのはワークフローのコミット。
+    """
+    ids = _write_entities({"1": 8, "2": 6})
+    _write_facts(ids)
+    _existing_gold(POP, total_domains=20, month="2026-06")
+    _existing_gold(POP, total_domains=18, month="2026-07")
+    _p2_warns("CT_UPSTREAM_UNAVAILABLE")
+
+    result = run_p7(run_id=RUN)
+    warning = next(w for w in result["warnings"] if w["code"] == "GOLD_BELOW_PREVIOUS_MONTH")
+    # **前にある月のうち、いちばん新しい月と比べる**
+    assert "18 → 14" in warning["message"] and "2026-07" in warning["message"]
+    assert _gold("stats_overall.parquet").iloc[0]["total_domains"] == 14
+
+
+def test_前の月より小さくても_相手が落ちていなければ印を付けない():
+    """**減ったこと自体は誤りではない**（上場廃止もある）。"""
+    ids = _write_entities({"1": 8, "2": 6})
+    _write_facts(ids)
+    _existing_gold(POP, total_domains=20, month="2026-07")
+    _p2_warns()
+
+    assert "GOLD_BELOW_PREVIOUS_MONTH" not in _codes(run_p7(run_id=RUN))
+
+
+def test_相手が落ちていても_前の月以上なら印を付けない():
+    ids = _write_entities({"1": 8, "2": 6})
+    _write_facts(ids)
+    _existing_gold(POP, total_domains=14, month="2026-07")
+    _p2_warns("CT_UPSTREAM_UNAVAILABLE")
+
+    assert "GOLD_BELOW_PREVIOUS_MONTH" not in _codes(run_p7(run_id=RUN))
+
+
+def test_前の月と比べるのは同じ母集団だけ_後の月とは比べない():
+    ids = _write_entities({"1": 8, "2": 6})
+    _write_facts(ids)
+    _existing_gold("us-all-listed", total_domains=6000, month="2026-07")
+    _existing_gold(POP, total_domains=99, month="2026-09")
+    _p2_warns("CT_UPSTREAM_UNAVAILABLE")
+
+    assert "GOLD_BELOW_PREVIOUS_MONTH" not in _codes(run_p7(run_id=RUN))
 
 
 # --------------------------------------------------------------------------

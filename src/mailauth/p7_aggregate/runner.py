@@ -33,7 +33,7 @@ from ..contracts import (
 )
 from ..io import read_parquet, write_parquet
 from ..manifest import RunManifest
-from ..paths import gold_dir, month_date, phase_dir, phase_output, previous_run_id
+from ..paths import gold_dir, gold_root, month_date, phase_dir, phase_output, previous_run_id
 from . import delta as delta_mod
 from . import platform as platform_mod
 from . import suppress
@@ -119,6 +119,29 @@ def shrinking_populations(new_rows: list[dict], existing_path: Path) -> list[str
         if pop in before and new is not None and int(new) < before[pop]:
             out.append(f"{pop}（{before[pop]:,} → {int(new):,} ドメイン）")
     return out
+
+
+def previous_month_overall(month: str) -> Path | None:
+    """`month` より前で、いちばん新しい月の gold の全体統計。無ければ None。
+
+    **前月ではなく「前にある月」と比べる。** 公開しなかった月は gold に
+    無いので、2026-11 の比較相手は 2026-09 になりうる。
+    """
+    import re
+
+    root = gold_root()
+    if not root.is_dir():
+        return None
+    pattern = re.compile(r"^month=(\d{4}-\d{2})$")
+    earlier = sorted(
+        m.group(1)
+        for d in root.iterdir()
+        if d.is_dir()
+        and (m := pattern.match(d.name))
+        and m.group(1) < month
+        and (d / OVERALL_FILENAME).is_file()
+    )
+    return gold_dir(earlier[-1]) / OVERALL_FILENAME if earlier else None
 
 
 def truncated_by(run_id: str) -> str | None:
@@ -488,6 +511,31 @@ def run(
                         "あった分だけである"
                     ),
                 )
+                # **前の月より小さいなら、公開しない**（運営者の判断、2026-10-31。
+                # BACKLOG 10）。gold は書く ── 数字は成果物で見られる。公開を
+                # 止めるのはワークフローのコミットで、この警告を読んで決める。
+                #
+                # 新しい月はいつも「既にある gold」が無いので、上の判定に
+                # 掛からない。crt.sh が何週間も落ちていると、CT 由来の候補が
+                # 無いまま次の月が公開され、前月比に「減った」が出る
+                previous = previous_month_overall(target.name.removeprefix("month="))
+                below = (
+                    shrinking_populations(_rows_for_write(overall_rows), previous)
+                    if previous is not None
+                    else []
+                )
+                if below:
+                    manifest.add_warning(
+                        "GOLD_BELOW_PREVIOUS_MONTH",
+                        count=len(below),
+                        sample=below,
+                        message=(
+                            f"P2 は相手が落ちていた（{degraded}）うえ、前の月"
+                            f"（{previous.parent.name.removeprefix('month=')}）より分母が"
+                            "小さい: " + "、".join(below) + "。**公開しない**（数字は"
+                            "成果物で見られる）。相手が戻ってから同じ run_id で流し直す"
+                        ),
+                    )
             meta = {
                 "mailauth.phase": PHASE,
                 "mailauth.run_id": run_id,

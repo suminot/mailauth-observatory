@@ -550,14 +550,31 @@ jobs:
           if [ -f "$P4M" ] && jq -e '[.warnings[].code] | index("STOPPED_AT_TIME_BUDGET")' "$P4M" >/dev/null; then
             p4_incomplete=1
           fi
+          # **crt.sh が落ちていて、前の月より分母が小さい月も公開しない**
+          # （運営者の判断、2026-10-31。BACKLOG 10）。P7 が印を付ける
+          P7M="data/runs/${{ steps.run.outputs.id }}/p7_aggregate/_manifest.json"
+          below_previous=""
+          if [ -f "$P7M" ] && jq -e '[.warnings[].code] | index("GOLD_BELOW_PREVIOUS_MONTH")' "$P7M" >/dev/null; then
+            below_previous=1
+          fi
           if [ -n "${{ github.event.inputs.limit }}" ] \
              || [ "${{ github.event.inputs.publish }}" = "no" ] \
-             || [ -n "$p4_incomplete" ]; then
-            git add runs site/src/changelog.md site/src/en/changelog.md || true
+             || [ -n "$p4_incomplete" ] \
+             || [ -n "$below_previous" ]; then
+            git add runs || true
+            # **公開しない月を、変更履歴にも載せない。** 変更履歴は手元の gold
+            # から作るので、コミットしない月まで「2026-10」として並ぶ
+            # （2026-10 の米国計測を publish=no で回したとき実際に載った）。
+            # 作り直した分は捨てる。未ステージで残すと下の rebase も詰まる
+            git checkout -- site/src/changelog.md site/src/en/changelog.md 2>/dev/null || true
             {
               echo "### gold はコミットしていない"
               echo
-              if [ -n "$p4_incomplete" ]; then
+              if [ -n "$below_previous" ]; then
+                echo "crt.sh が落ちていて、前の月より分母（ドメイン数）が小さいため、"
+                echo "公開データセットには入れていない（P7 の警告 GOLD_BELOW_PREVIOUS_MONTH）。"
+                echo "**数字は成果物 \`gold-\` から読める。** crt.sh が戻ってから同じ run_id で流し直すこと。"
+              elif [ -n "$p4_incomplete" ]; then
                 echo "P4 が持ち時間で止まり、測っていないドメインが残っているため、"
                 echo "公開データセットには入れていない。同じ run_id を start_from: p4 で流すと続きから測る。"
               elif [ -n "${{ github.event.inputs.limit }}" ]; then
