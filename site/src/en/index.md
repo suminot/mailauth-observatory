@@ -7,7 +7,7 @@ footer: This site measures conformance to published standards and is not an over
 
 <div class="subtitle">Monthly observation of email authentication</div>
 
-Each month, the publicly available DNS records of listed companies in Japan
+Each month, the publicly available DNS records of listed companies in Japan and the United States
 are observed for email authentication (SPF, DKIM, DMARC) and the protocols
 around it. **This site measures conformance to published standards and is not
 an overall security assessment.**
