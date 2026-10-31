@@ -613,6 +613,32 @@ def test_p5_dry_run_writes_nothing():
     assert not phase_output(RUN, "p5_parse", "facts.parquet").exists()
 
 
+def test_p5_いまの_P3_が測らないドメインを_facts_に入れない():
+    """**同じ run の bronze には、前の試行の残りが混ざりうる。**
+
+    2026-10 の米国計測では、P3 を流し直したあとも前の P3 が測ったドメインが
+    bronze に残った。facts に入れると、その企業は古いドメインでも数えられる。
+    """
+    from mailauth.io import read_parquet
+
+    _write_domains()
+    run_p4(run_id=RUN, backend=FakeBackend())
+    # P3 を流し直した。parked はもう計測対象ではない（候補としては残っている）
+    frame = read_parquet(phase_output(RUN, "p3_domains", "domains.parquet"))
+    rows = [
+        {**r, "is_measured": r["domain"] != "parked.example.jp"}
+        for r in frame.to_dict("records")
+    ]
+    write_parquet(rows, phase_output(RUN, "p3_domains", "domains.parquet"), DOMAIN_ARROW_SCHEMA)
+
+    result = run_p5(run_id=RUN, resolver=StaticResolver(ANSWERS))
+    assert list(facts().index) == ["d:1"]
+    warning = next(
+        w for w in result["warnings"] if w["code"] == "BRONZE_OUTSIDE_MEASURED_SET"
+    )
+    assert warning["sample"] == ["parked.example.jp"]
+
+
 def test_p5_spec_version_is_set_on_every_fact():
     """DESIGN.md 第9章「spec_version が全 fact に付与されている」。"""
     _write_domains()

@@ -385,15 +385,40 @@ def run(
         #: domain -> apex か。**分母は apex で閉じている**（BACKLOG 14）。
         #: P3 が決めたものを引き継ぐ。ここで名前から作り直さない
         apex_by_domain: dict[str, bool] = {}
+        #: いまの P3 が計測対象にしているドメイン。**facts はここに閉じる**
+        measured_names: set[str] = set()
         if domains_frame is not None:
             for _, row in domains_frame.iterrows():
                 name = str(row["domain"])
                 ids[name] = (str(row["domain_id"]), str(row["entity_id"]))
+                flag = row.get("is_measured")
+                if flag is not None and flag == flag and bool(flag):
+                    measured_names.add(name)
                 value = row.get("is_apex")
                 apex_by_domain[name] = True if value is None or value != value else bool(value)
 
         grouped = group_bronze_by_domain(records)
         domain_names = sorted(grouped)
+        # **同じ run の bronze には、前の試行の残りが混ざりうる。** bronze は
+        # 追記のみで、P4 は --resume で前の試行の分を持ち越す。そのあいだに
+        # P3 を流し直すと（2026-10 の米国計測でリゾルバを直したとき）、前の
+        # P3 が測ったが今の P3 は測らないドメインが bronze に残る。facts に
+        # 入れると、その企業は古いドメインでも数えられる（原則4：分母は P3 の
+        # 計測対象で閉じる）
+        if domains_frame is not None:
+            outside = [d for d in domain_names if d not in measured_names]
+            if outside:
+                domain_names = [d for d in domain_names if d in measured_names]
+                manifest.add_warning(
+                    "BRONZE_OUTSIDE_MEASURED_SET",
+                    count=len(outside),
+                    sample=outside[:5],
+                    message=(
+                        "同じ run の bronze に、いまの P3 が計測対象にしていないドメインが"
+                        "あった（前の試行の残り）。facts に入れていない"
+                    ),
+                )
+                manifest.set_breakdown(bronze_outside_measured_set=len(outside))
         if limit:
             domain_names = domain_names[:limit]
 
