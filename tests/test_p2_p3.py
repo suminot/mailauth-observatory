@@ -1686,3 +1686,111 @@ def test_全リゾルバがだめなら待ってもう一巡し_投げる総数�
     assert slept == [1, 3, 9]
     assert r.stats["retries"] == 3
     assert r.stats["failures"] == 1
+
+
+class _LoopbackDns:
+    """127.0.0.1 で答える DNS。**外には出ない。** 送信元ポートを覚える。
+
+    `late` に入れた名前には、問い合わせ側が時間切れにしたあとで答える
+    （使い回すソケットに、前の問い合わせへの応答が遅れて届く状況）。
+    """
+
+    def __init__(self, late: set[str] | None = None, delay: float = 0.3):
+        import socket
+        import threading
+
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.bind(("127.0.0.1", 0))
+        self.port = self.sock.getsockname()[1]
+        self.late = late or set()
+        self.delay = delay
+        self.source_ports: list[int] = []
+        self._timers: list = []
+        self._stop = False
+        self._thread = threading.Thread(target=self._serve, daemon=True)
+        self._thread.start()
+
+    def _serve(self):
+        import threading
+
+        import dns.message
+
+        self.sock.settimeout(0.1)
+        while not self._stop:
+            try:
+                wire, addr = self.sock.recvfrom(4096)
+            except OSError:
+                continue
+            self.source_ports.append(addr[1])
+            q = dns.message.from_wire(wire)
+            resp = dns.message.make_response(q).to_wire()
+            name = q.question[0].name.to_text().rstrip(".")
+            if name in self.late:
+                timer = threading.Timer(self.delay, self._send_late, (resp, addr))
+                self._timers.append(timer)
+                timer.start()
+            else:
+                self.sock.sendto(resp, addr)
+
+    def _send_late(self, resp, addr):
+        try:
+            self.sock.sendto(resp, addr)
+        except OSError:
+            pass
+
+    def close(self):
+        self._stop = True
+        for timer in self._timers:
+            timer.join(timeout=2)
+        self._thread.join(timeout=2)
+        self.sock.close()
+
+
+def _loopback_resolver(server, monkeypatch, **kw):
+    from mailauth import resolver as resolver_mod
+
+    real_udp = resolver_mod.dns.query.udp
+
+    def udp(q, where, **k):
+        return real_udp(q, where, port=server.port, **k)
+
+    monkeypatch.setattr(resolver_mod.dns.query, "udp", udp)
+    monkeypatch.setattr(resolver_mod.time, "sleep", lambda s: None)
+    return resolver_mod.DnsResolver(nameservers=["127.0.0.1"], qps=0, cache=False, **kw)
+
+
+def test_UDP_のソケットは使い回し_決まった本数ごとに開き直す(monkeypatch):
+    """**1本ごとに送信元ポートを変えない。** 2026-10-31 の米国計測で問い合わせの
+    34〜47% が時間切れになった。外側の NAT の対応表があふれた、という見立て。
+    """
+    from mailauth import resolver as resolver_mod
+
+    server = _LoopbackDns()
+    try:
+        r = _loopback_resolver(server, monkeypatch, retries=0)
+        n = resolver_mod.UDP_SOCKET_REUSE + 5
+        for i in range(n):
+            assert r.query(f"n{i}.example", "MX").observed
+        r.close()
+    finally:
+        server.close()
+    assert len(server.source_ports) == n
+    assert len(set(server.source_ports)) == 2, "使い回していない、または開き直していない"
+
+
+def test_遅れて届いた前の応答を今の答えと取り違えない(monkeypatch):
+    server = _LoopbackDns(late={"slow.example"}, delay=0.3)
+    try:
+        r = _loopback_resolver(server, monkeypatch, retries=0, timeout=0.1)
+        first = r.query("slow.example", "MX")
+        import time as _t
+
+        _t.sleep(0.4)  # 遅れた応答がソケットに届くのを待つ
+        second = r.query("fast.example", "MX")
+        r.close()
+    finally:
+        server.close()
+    assert first.rcode == "TIMEOUT"
+    assert second.observed is True
+    assert second.name == "fast.example"
+    assert r.stats["timeouts@127.0.0.1"] == 1

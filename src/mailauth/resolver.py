@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import random
+import socket
 import threading
 import time
 from dataclasses import dataclass, field
@@ -74,6 +75,20 @@ TERMINAL_RCODES = {"NOERROR", "NXDOMAIN", "NODATA"}
 
 #: 残す見本の数。全部残すと manifest が膨らむ
 ERROR_SAMPLES = 5
+
+#: 1本の UDP ソケットで投げる問い合わせの数。**1本ごとに開き直さない。**
+#:
+#: 2026-10-31 の米国計測（run 41188787298 / 41211984604）で、P4 の問い合わせの
+#: 34〜47% が時間切れになり、投げ直すとほぼ必ず返った。TCP への切り替えは
+#: 一度も失敗していない。dnspython は既定で1本ごとに新しいソケット（新しい
+#: 送信元ポート）を開くので、24本並行・数時間で同じ宛先（公開リゾルバの
+#: 53番）への UDP の流れが十万を超える。ランナーの外側の NAT は UDP の流れを
+#: 数分覚えているので、対応表があふれると落ちる、という見立てである。
+#:
+#: スレッドごとに1本を使い回し、この本数ごとに開き直す（送信元ポートを
+#: 固定し続けない。偽の応答を当てられにくくするため）。遅れて届いた前の
+#: 問い合わせへの応答は ID が合わないので読み捨てる（ignore_errors）
+UDP_SOCKET_REUSE = 100
 
 
 class DnsResolver:
@@ -142,6 +157,34 @@ class DnsResolver:
         #: 直し方が決まらない** ── 2026-10 の米国計測では P2/P3 の約1割が
         #: `ERROR` で落ちたが、何のエラーかが manifest に残っていなかった
         self.error_samples: list[str] = []
+        #: スレッドごとの UDP ソケット（UDP_SOCKET_REUSE 本ごとに開き直す）
+        self._local = threading.local()
+        self._sockets: list[socket.socket] = []
+
+    def _udp_socket(self, nameserver: str) -> socket.socket:
+        """このスレッドの UDP ソケットを返す。使い切ったら開き直す。"""
+        family = socket.AF_INET6 if ":" in nameserver else socket.AF_INET
+        socks = getattr(self._local, "socks", None)
+        if socks is None:
+            socks = self._local.socks = {}
+        entry = socks.get(family)
+        if entry is None or entry[1] >= UDP_SOCKET_REUSE:
+            if entry is not None:
+                entry[0].close()
+            entry = [dns.query.make_socket(family, socket.SOCK_DGRAM), 0]
+            socks[family] = entry
+            with self._state_lock:
+                self._sockets = [x for x in self._sockets if x.fileno() != -1]
+                self._sockets.append(entry[0])
+        entry[1] += 1
+        return entry[0]
+
+    def close(self) -> None:
+        """開いている UDP ソケットをすべて閉じる。"""
+        with self._state_lock:
+            for sock in self._sockets:
+                sock.close()
+            self._sockets = []
 
     def _throttle(self) -> None:
         """次の1本を投げてよい時刻まで待つ。**全スレッドで1つの間隔。**
@@ -241,9 +284,21 @@ class DnsResolver:
                 self._bump("queries")
                 query = dns.message.make_query(name, rdtype, want_dnssec=self.want_dnssec)
                 try:
-                    resp = dns.query.udp(query, nameserver, timeout=self.timeout)
+                    resp = dns.query.udp(
+                        query,
+                        nameserver,
+                        timeout=self.timeout,
+                        sock=self._udp_socket(nameserver),
+                        # 使い回すソケットには、時間切れにした前の問い合わせへの
+                        # 応答や、別のリゾルバからの応答が遅れて届く。読み捨てる
+                        ignore_unexpected=True,
+                        ignore_errors=True,
+                    )
                 except dns.exception.Timeout as exc:
                     last_rcode, last_error = "TIMEOUT", str(exc)[:200]
+                    # どのリゾルバで詰まったかを残す。1台に偏るなら相手側、
+                    # 全部に出るならこちらの経路の問題
+                    self._bump(f"timeouts@{nameserver}")
                 except OSError as exc:
                     last_rcode, last_error = "NETWORK", str(exc)[:200]
                 except dns.exception.DNSException as exc:
