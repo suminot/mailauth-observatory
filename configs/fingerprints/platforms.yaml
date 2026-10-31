@@ -3,7 +3,7 @@
 # 証拠の強さ: DKIM_CNAME >= MX > SPF_INCLUDE > VERIFICATION_TXT（DESIGN.md P3/P6）
 # ゲートウェイ型製品が MX を握っていても、SPF include / DKIM CNAME から
 # 背後の実基盤を別カテゴリとして残すこと（原則2。単一ベンダーに丸めない）。
-version: 2026-10-25
+version: 2026-10-31
 category: mail_platform
 
 rules:
@@ -341,3 +341,102 @@ rules:
       ホスト名の active-w は Active! world の綴り。**同社は前段製品
       Active! gate SS も出しており**、SPF の IP レンジはクオリティアの
       本家と一致する（別ベンダーとして二重に数えないこと）
+
+  # ---- 2026-10-31：米国の初回通し計測の作業リストから、公式資料で確かめて足した ----
+  # **公式資料で確かめられなかったものは入れていない**（smtp.goog、gpphosted.com、
+  # arsmtp.com、psmtp.com）。SiteGround は資料のホスト名（mx10.antispam.…）と
+  # 実データ（mx10.mailspamprotection.com）が違うので入れていない
+
+  - id: m365-mx-05
+    vendor: Microsoft
+    product: Microsoft 365 GCC High
+    match:
+      record: MX
+      pattern: '\.mail\.protection\.office365\.us\.?$'
+    confidence: high
+    source: https://learn.microsoft.com/en-us/microsoft-365/enterprise/dns-records-for-office-365-gcc-high
+
+  - id: m365-mx-06
+    vendor: Microsoft
+    product: Microsoft 365（21Vianet 運営）
+    match:
+      record: MX
+      pattern: '\.mail\.protection\.partner\.outlook\.cn\.?$'
+    confidence: high
+    # MX の設定手順ではなく Exchange Online の接続先一覧に載っている
+    source: https://learn.microsoft.com/en-us/microsoft-365/enterprise/urls-and-ip-address-ranges-21vianet
+
+  - id: tencent-mx-01
+    vendor: Tencent
+    product: 腾讯企业邮（Exmail）
+    match:
+      record: MX
+      pattern: '^mxbiz[12]\.qq\.com\.?$'
+    confidence: high
+    source: https://open.work.weixin.qq.com/help2/pc/15333
+
+  - id: alibaba-mx-01
+    vendor: Alibaba Cloud
+    product: 阿里邮箱
+    match:
+      record: MX
+      pattern: '^mx[1-3]\.qiye\.aliyun\.com\.?$|^mx[nw]\.mxhichina\.com\.?$'
+    confidence: high
+    source: https://help.aliyun.com/en/document_detail/36710.html
+
+  - id: lark-mx-02
+    vendor: Lark
+    product: 飛書（Feishu、中国版の Lark）
+    match:
+      record: MX
+      pattern: '^mx[1-3]\.feishu\.cn\.?$'
+    confidence: high
+    source: https://www.feishu.cn/hc/zh-CN/articles/360049067888
+
+  - id: netease-mx-01
+    vendor: NetEase
+    product: 网易企业邮箱
+    match:
+      record: MX
+      # **広く取らない。** `.mxmail.netease.com` 全体にすると個人向け 163 メールの
+      # ホストも拾う。資料にあるのは hzmx01 / hzmx02 だけで、実データの
+      # qiye163mx01 は資料に無いので入れていない
+      pattern: '^hzmx0[12]\.mxmail\.netease\.com\.?$'
+    confidence: high
+    source: https://office.163.com/helpCenter/mail/d/1892497169465356290.html
+
+  - id: godaddy-mx-01
+    vendor: GoDaddy
+    product: Professional Email（Titan）
+    match:
+      record: MX
+      pattern: '^(smtp|mailstore1)\.secureserver\.net\.?$'
+    confidence: high
+    source: https://www.godaddy.com/help/what-are-my-dns-settings-for-professional-email-powered-by-titan-42767
+
+  - id: rackspace-mx-01
+    vendor: Rackspace
+    product: Rackspace Email
+    match:
+      record: MX
+      pattern: '^mx[12]\.emailsrvr\.com\.?$'
+    confidence: high
+    source: https://docs.rackspace.com/docs/dns-record-definitions
+
+  - id: intermedia-mx-01
+    vendor: Intermedia
+    product: Hosted Exchange
+    match:
+      record: MX
+      pattern: '^(east|west)\.smtp\.mx\.exch\d+\.serverdata\.net\.?$'
+    confidence: high
+    source: https://support.intermedia.com/app/articles/detail/a_id/14374
+
+  - id: netsol-mx-01
+    vendor: Network Solutions
+    product: Cloud Mail（Open-Xchange）
+    match:
+      record: MX
+      pattern: '^mx00[1-4]\.netsol\.xion\.oxcs\.net\.?$'
+    confidence: high
+    source: https://www.networksolutions.com/help/article/cloud-mail-dns-settings

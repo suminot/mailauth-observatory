@@ -5,7 +5,7 @@
 #
 # 国内ベンダーの固定ホスト名は未解決事項の筆頭（DESIGN.md 第11章 #1）。
 # 運用コンソール画面5の「未知 MX ホスト頻度順リスト」から帰納的に埋めていく。
-version: 2026-10-25
+version: 2026-10-31
 category: security_gateway
 
 rules:
@@ -366,6 +366,60 @@ rules:
       pattern: '\.mailsecurity-nec\.jp\.?$'
     confidence: medium
     layer: inbound_gateway
+
+  # ---- 2026-10-31：米国の初回通し計測の作業リストから、公式資料で確かめて足した ----
+
+  - id: pp-mx-04
+    vendor: Proofpoint
+    match:
+      # Hornetsecurity（Proofpoint の傘下）の資料に「Proofpoint の MX は
+      # 'pp-tp' で見分けられる」とある。**製品名は書かれていない**ので
+      # product は空けておく。Essentials（ppe-hosted.com）とは別物
+      record: MX
+      pattern: '\.pp-tp\.com\.?$'
+    confidence: medium
+    layer: inbound_gateway
+    source: https://support.hornetsecurity.com/hc/en-us/articles/15123377800593
+
+  - id: mimecast-mx-02
+    vendor: Mimecast
+    product: Mimecast Email Security（Offshore／ジャージー）
+    match:
+      record: MX
+      pattern: '^je-smtp-inbound-[12]\.mimecast-offshore\.com\.?$'
+    confidence: high
+    layer: inbound_gateway
+    source: https://mimecastsupport.zendesk.com/hc/en-us/articles/34000417366675
+
+  - id: titanhq-mx-01
+    vendor: TitanHQ
+    product: SpamTitan Cloud
+    match:
+      record: MX
+      pattern: '^[a-z0-9]+-smtp-mx[12]\.titanhq\.com\.?$|^cloud[0-9a-z]+\.spamtitan\.com\.?$'
+    confidence: high
+    layer: inbound_gateway
+    source: https://support.titanhq.com/en/56392-change-your-mx-records.html
+
+  - id: trellix-mx-02
+    vendor: Trellix
+    product: Trellix Email Security – Cloud（米国政府向け）
+    match:
+      record: MX
+      pattern: '^(primary|alt[1-3])\.us\.etp\.fireeyegov\.com\.?$'
+    confidence: high
+    layer: inbound_gateway
+    source: https://docs-be.trellix.com/bundle/etp_iggmail_2022-1_pdf/raw/resource/enus/ETP_IGGmail_2022.1_pdf.pdf
+
+  - id: nable-mx-01
+    vendor: N-able
+    product: Mail Assure
+    match:
+      record: MX
+      pattern: '^mx[1-4](-(eu|us|uk|au|ca|za))?\.mtaroutes\.com\.?$'
+    confidence: high
+    layer: inbound_gateway
+    source: https://documentation.n-able.com/mail-assure/userguide/Content/B_Admin%20Level/domains/mx-records.htm
 
 # DNS に痕跡を残さない製品（DESIGN.md P6「API連携型製品という構造的盲点」）
 # 「検出されなかった＝使っていない」ではないことを出力とレポートに明示する。
