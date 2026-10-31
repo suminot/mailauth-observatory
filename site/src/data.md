@@ -15,7 +15,6 @@ import { table } from "./components/table.js";
 ようにしてあります。
 
 ```js
-const months = (meta.months ?? []).slice().reverse();
 const populations = [...new Set(overall.map((d) => d.population_id))];
 ```
 
@@ -26,7 +25,11 @@ const population = view(
 ```
 
 ```js
-const month = view(Inputs.select(months, { label: "月", value: meta.latest_month }));
+// **月は、選んだ母集団に数字がある月だけを並べる。** 全体の最新月を既定に
+// すると、その月を測っていない母集団（2026-10 は米国だけ）で「この月の
+// データはありません」から始まる
+const months = [...new Set(overall.filter((d) => d.population_id === population).map((d) => d.measured_month.slice(0, 7)))].sort().reverse();
+const month = view(Inputs.select(months, { label: "月", value: months[0] }));
 ```
 
 ```js

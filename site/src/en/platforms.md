@@ -33,8 +33,11 @@ const population = view(
 ```
 
 ```js
-const months = (meta.months ?? []).slice().reverse();
-const month = view(Inputs.select(months, { label: "Month", value: meta.latest_month }));
+// **Offer only the months this population was measured in.** Defaulting to
+// the latest month overall opens on "No data" for a population that was not
+// measured that month (2026-10 covers the US only)
+const months = [...new Set(platforms.filter((d) => d.population_id === population).map((d) => d.measured_month.slice(0, 7)))].sort().reverse();
+const month = view(Inputs.select(months, { label: "Month", value: months[0] }));
 ```
 
 ```js

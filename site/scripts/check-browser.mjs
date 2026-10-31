@@ -490,6 +490,28 @@ async function main() {
       `いまの一覧: ${plat.nav.join(" / ")}`
     );
 
+    // -- 開いたままの状態で、数字が出ている ---------------------------------
+    // **月の既定値を全体の最新月にしていた。** 2026-10 に米国だけを測ると、
+    // 国内（母集団の既定値）には 2026-10 が無く、ベンダー・業種・データの
+    // ページが「この月のデータはありません」から始まった。サイトの検査は
+    // それを「秘匿の行が無い」としか言わなかった
+    for (const path of ["platforms", "sectors", "data", "en/platforms", "en/sectors", "en/data"]) {
+      await wide.goto(`${base}/${path}`, { waitUntil: "networkidle" });
+      await wide.waitForTimeout(400);
+      const state = await wide.evaluate(() => {
+        const main = document.querySelector("main");
+        return {
+          rows: main?.querySelectorAll("table tbody tr").length ?? 0,
+          empty: /この月のデータはありません|No data for this month/.test(main?.textContent ?? ""),
+        };
+      });
+      check(
+        `/${path} は開いたままの状態で数字が出ている`,
+        state.rows > 0 && !state.empty,
+        `表の行 ${state.rows}、データなしの表示 ${state.empty}`
+      );
+    }
+
     // **英語側も見る。** 片方しか見ないと壊れ方を見逃す（実際に見逃した）
     await wide.goto(`${base}/en/platforms`, { waitUntil: "networkidle" });
     await wide.waitForTimeout(400);
