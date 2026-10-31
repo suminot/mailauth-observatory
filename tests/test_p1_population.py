@@ -48,6 +48,34 @@ def test_only_listed_companies_are_kept(edinet_sample):
     assert "サンプル非上場株式会社" not in set(df["name"])
 
 
+def test_上場廃止でコードが残っている提出者は入れない(edinet_sample, tmp_path):
+    """**EDINET は上場廃止後も証券コードを消さないことがある。**
+
+    2026-10-31 のコードリストに「非上場」なのにコードを持つ提出者が2社あった。
+    """
+    import csv
+    import io
+
+    text = edinet_sample.read_bytes().decode("cp932")
+    rows = list(csv.reader(io.StringIO(text)))
+    template = next(r for r in rows[2:] if r[11].strip() and r[2] == "上場")
+    gone = list(template)
+    gone[0], gone[2], gone[6], gone[11], gone[12] = (
+        "E99999", "非上場", "サンプル上場廃止株式会社", "99990", "9999999999999",
+    )
+    out = io.StringIO()
+    csv.writer(out, lineterminator="\r\n").writerows([*rows, gone])
+    path = tmp_path / "EdinetcodeDlInfo.csv"
+    path.write_bytes(out.getvalue().encode("cp932"))
+
+    result = run_p1("2026-08", path)
+    df = entities("2026-08")
+    assert "サンプル上場廃止株式会社" not in set(df["name"])
+    assert len(df) == 17, "上場の17社は変わらない"
+    warning = next(w for w in result["warnings"] if w["code"] == "DELISTED_WITH_SECURITIES_CODE")
+    assert warning["count"] == 1
+
+
 def test_securities_code_is_normalized_to_four_digits(edinet_sample):
     run_p1("2026-08", edinet_sample)
     df = entities("2026-08")

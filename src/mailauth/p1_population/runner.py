@@ -764,6 +764,22 @@ def run(
                 f"market_filter.method={mf.method} は未実装です"
             )
         listed = [r for r in rows if normalize_securities_code(r.securities_code)]
+        # **証券コードが残っていても、上場廃止のものは入れない。** EDINET は
+        # 上場廃止後もコードを消さないことがあり、2026-10-31 のコードリストでは
+        # 「非上場」なのにコードを持つ提出者が2社あった（NOK、テクノマセマティカル）。
+        # 列が空のときは判断できないので落とさない
+        delisted = [r for r in listed if (r.listing_status or "").strip() == "非上場"]
+        if delisted:
+            listed = [r for r in listed if (r.listing_status or "").strip() != "非上場"]
+            manifest.add_warning(
+                "DELISTED_WITH_SECURITIES_CODE",
+                count=len(delisted),
+                sample=[f"{r.securities_code} {r.name}" for r in delisted[:5]],
+                message=(
+                    "証券コードはあるが、コードリストの上場区分が「非上場」の提出者を"
+                    "母集団に入れていない"
+                ),
+            )
         manifest.counts.skipped += len(rows) - len(listed)
 
         if mf.segment_allowlist:
