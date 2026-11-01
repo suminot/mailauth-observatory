@@ -80,6 +80,10 @@ export default {
     { name: "Change log", path: "/en/changelog" },
   ],
   root: "src",
+  // **Framework 既定の Source Serif 4 も Google から読ませない。** 既定では
+  // fonts.googleapis.com の CSS を全ページに差し込む。同じ書体を
+  // fetch-fonts.mjs が自前で配る
+  globalStylesheets: [],
   theme: "dark",
   // 右の目次は出さない。**左の一覧に、開いているページの節を畳んで見せる。**
   // 同じものが画面の両端にあると、どちらを見ればよいか毎回考えることになる
@@ -92,12 +96,10 @@ export default {
     // 何から組んだか。chrome.js がこれを読んで下端に出す。
     // **取れなければ埋めない** ── 空の meta を置くと「Build 」だけが出る
     (BUILD_REF ? `<meta name="mailauth-build" content="${BUILD_REF}">\n` : "") +
-    '<link rel="preconnect" href="https://fonts.googleapis.com">\n' +
-    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n' +
-    '<link rel="stylesheet" href="https://fonts.googleapis.com/css2' +
-    '?family=Chakra+Petch:wght@500;600;700' +
-    '&family=Noto+Sans+JP:wght@400;500;700' +
-    '&family=JetBrains+Mono:wght@400;700&display=swap">\n' +
+    // **書体は自前で配る**（BACKLOG 11）。Google Fonts を直接読むと、開いた人の
+    // IP が Google に届く。scripts/fetch-fonts.mjs がビルドの前に取ってきて
+    // src/_fonts/fonts.css を置く
+    '<link rel="stylesheet" href="/_fonts/fonts.css">\n' +
     // **絶対パスにする。** 相対にすると /en/ のページでは
     // `/en/styles.css` を探しに行き、ビルドが「import not found」で落ちる
     '<link rel="stylesheet" href="/styles.css">\n' +

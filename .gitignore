@@ -29,3 +29,7 @@ site/src/data/*.json
 site/src/data/*.csv
 
 .DS_Store
+
+# 書体（site/scripts/fetch-fonts.mjs がビルドの前に取ってくる。BACKLOG 11）
+site/src/_fonts/
+site/static/_fonts/

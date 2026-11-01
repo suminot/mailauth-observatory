@@ -624,7 +624,24 @@ apex だけ見ても出てこない。
 
 ---
 
-## 11. フォントの同梱 ── **見積り済み。実装は未着手**
+## 11. フォントの同梱 ── **対応済み（2026-11-01）**
+
+`site/scripts/fetch-fonts.mjs` がビルドの前に Google Fonts の CSS と書体
+ファイルを取ってきて、自前の URL に書き換えて配る。Observable Framework
+既定の Source Serif 4 も同じく自前で配り、`globalStylesheets: []` で
+Framework からは読ませない。CSP は `style-src 'self' 'unsafe-inline';
+font-src 'self'` になった。
+
+- 書体ファイルは 154 件・6.6 MB（いまの Google Fonts は太さの範囲を1つの
+  ファイルで持つので、下の見積り 372 件より少ない）。リポジトリには入れず、
+  ビルドの成果物にだけ入る
+- ライセンス文（OFL 1.1）4件を `/_fonts/OFL-*.txt` に同梱する
+- 1件でも取れなければビルドを落とす（書体が欠けたまま配らない）
+- ブラウザ検査に「外へは1本も出さない」「Noto Sans JP / Chakra Petch が
+  自前で読み込まれている」を足した。書体ファイルを消すと落ちることを
+  確かめた
+
+以下は実装前の見積り。
 
 9 の「Google Fonts の件は閉じていない」の続き。**ヘッダを足しても訪問者の
 IP が Google に渡ることは変わらない。** `Referrer-Policy: no-referrer` を
