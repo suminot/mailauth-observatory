@@ -134,6 +134,32 @@ jobs:
             mailauth ct-backfill --run "${{ steps.run.outputs.id }}" --mark-rerun "$pop"
           done
 
+      # **保存の前に、その間に別の実行が保存した分を混ぜる。** 鍵は
+      # crtsh-<月>-<run_id> で、復元は一番新しいものを取る。補充と月次計測が
+      # 重なると、後から保存した方が先の方の結果（別の母集団の積み残しを
+      # 含む）を消す。ファイルはドメインごとなので和集合で混ぜ、**同じ
+      # ファイルはこの実行の方を残す**
+      - name: CT キャッシュを退避する
+        if: steps.fill.outputs.got != '' && steps.fill.outputs.got != '0'
+        run: |
+          rm -rf /tmp/crtsh-ours
+          if [ -d data/cache/crtsh ]; then mv data/cache/crtsh /tmp/crtsh-ours; fi
+
+      - name: その間に保存された CT キャッシュを復元する
+        if: steps.fill.outputs.got != '' && steps.fill.outputs.got != '0'
+        uses: actions/cache/restore@v4
+        with:
+          path: data/cache/crtsh
+          key: crtsh-${{ steps.run.outputs.id }}-latest-${{ github.run_id }}
+          restore-keys: |
+            crtsh-${{ steps.run.outputs.id }}-
+
+      - name: この実行の CT キャッシュを上から重ねる
+        if: steps.fill.outputs.got != '' && steps.fill.outputs.got != '0'
+        run: |
+          mkdir -p data/cache/crtsh
+          if [ -d /tmp/crtsh-ours ]; then cp -a /tmp/crtsh-ours/. data/cache/crtsh/; fi
+
       - name: CT ログのキャッシュを保存
         if: steps.fill.outputs.got != '' && steps.fill.outputs.got != '0'
         uses: actions/cache/save@v4
