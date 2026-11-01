@@ -550,6 +550,10 @@ class Fact(_Model):
     rua_external: bool | None = None
     rua_authorized: bool | None = None
     rua_domain_unregistered: bool | None = None
+    #: MX の宛先が実在するか（P5 `_mx_reachability`）。断定できたときだけ値が立つ
+    mx_hosts_nxdomain: list[str] = Field(default_factory=list)
+    mx_unreachable: bool | None = None
+    mx_domain_unregistered: bool | None = None
 
     # DKIM（三値表現。原則5の適用）
     dkim_status: str | None = None
@@ -646,6 +650,9 @@ FACT_ARROW_SCHEMA = pa.schema(
         ("rua_external", pa.bool_()),
         ("rua_authorized", pa.bool_()),
         ("rua_domain_unregistered", pa.bool_()),
+        ("mx_hosts_nxdomain", pa.list_(pa.string())),
+        ("mx_unreachable", pa.bool_()),
+        ("mx_domain_unregistered", pa.bool_()),
         ("dkim_status", pa.string()),
         ("dkim_selectors", pa.list_(pa.string())),
         ("dkim_key_bits", pa.list_(pa.int32())),

@@ -131,6 +131,13 @@ def is_self_hosted_mx(fact: dict, host: str) -> bool:
     return (resolve_psl(host) or host) == own
 
 
+def _nxdomain_hosts(fact: dict) -> set[str]:
+    """P5 が「名前が無い」と確定した MX ホスト。"""
+    return {
+        (h or "").strip().rstrip(".").lower() for h in (fact.get("mx_hosts_nxdomain") or [])
+    }
+
+
 def unknown_mx_hosts(
     facts: list[dict], matched_hosts: set[str]
 ) -> list[dict[str, Any]]:
@@ -148,11 +155,16 @@ def unknown_mx_hosts(
     counts: dict[str, int] = defaultdict(int)
     examples: dict[str, list[str]] = defaultdict(list)
     for fact in facts:
+        gone = _nxdomain_hosts(fact)
         for host in fact.get("mx_hosts") or []:
             normalized = (host or "").strip().rstrip(".").lower()
             if not normalized or normalized in matched_hosts:
                 continue
             if is_self_hosted_mx(fact, normalized):
+                continue
+            # **名前の無いホストは製品ではない。** 終わったサービスや綴りの
+            # 誤りで、辞書に足しても何も推定できない（P5 `MX_UNREACHABLE`）
+            if normalized in gone:
                 continue
             key = resolve_psl(normalized) or normalized
             counts[key] += 1
@@ -175,12 +187,17 @@ def unknown_mx_total(facts: list[dict], matched_hosts: set[str]) -> dict[str, in
     """
     counts: dict[str, int] = defaultdict(int)
     self_hosted: dict[str, int] = defaultdict(int)
+    nxdomain: dict[str, int] = defaultdict(int)
     for fact in facts:
+        gone = _nxdomain_hosts(fact)
         for host in fact.get("mx_hosts") or []:
             normalized = (host or "").strip().rstrip(".").lower()
             if not normalized or normalized in matched_hosts:
                 continue
             key = resolve_psl(normalized) or normalized
+            if normalized in gone:
+                nxdomain[key] += 1
+                continue
             # **自社運用は一覧に出さないが、数からは消さない**（原則4）
             if is_self_hosted_mx(fact, normalized):
                 self_hosted[key] += 1
@@ -197,6 +214,9 @@ def unknown_mx_total(facts: list[dict], matched_hosts: set[str]) -> dict[str, in
         # **辞書に足せないので一覧から外した分。** 手付かずではない
         "self_hosted_registered_domains": len(self_hosted),
         "self_hosted_domains": sum(self_hosted.values()),
+        # **名前の無いホストなので一覧から外した分**（製品ではない）
+        "nxdomain_registered_domains": len(nxdomain),
+        "nxdomain_domains": sum(nxdomain.values()),
     }
 
 
@@ -408,6 +428,12 @@ def run(
                         f"ドメイン（{unknown_total['self_hosted_registered_domains']} 社）は"
                         "一覧から外している** ── 辞書に足してもその1社にしか効かない。"
                         if unknown_total["self_hosted_domains"]
+                        else ""
+                    )
+                    + (
+                        f"**名前の無い MX ホスト {unknown_total['nxdomain_domains']} ドメインぶん"
+                        "も外している**（製品ではない。P5 の MX_UNREACHABLE を見ること）。"
+                        if unknown_total["nxdomain_domains"]
                         else ""
                     )
                     + "頻度順の上位を手で辞書に追記すると推定率が上がる"

@@ -10,6 +10,7 @@ bronze には触らない。読むだけ。
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 from collections import defaultdict
 from typing import Any
@@ -217,6 +218,9 @@ def parse_domain(
         out["rua_authorized"] = authorized
         out["rua_domain_unregistered"] = unregistered
 
+    # -- MX の宛先が実在するか ----------------------------------------------
+    out.update(_mx_reachability(hosts if out["mx_present"] else [], resolver))
+
     # -- Organizational Domain の二重解決 ----------------------------------
     org = resolve_org_domain(domain, resolver)
     out.update(
@@ -310,6 +314,111 @@ def parse_domain(
         + mta_sts.notes + tls_rpt.notes + bimi.notes + dane.notes
     )
     return out
+
+
+def _mx_reachability(hosts: list[str], resolver: Resolver | None) -> dict[str, Any]:
+    """MX の宛先が実在するか。**メールが届かない／第三者に取られうる**状態を見る。
+
+    2026-11 の国内の未知 MX を調べていて見つけた。終わったサービス
+    （Sophos Reflexion の `asp.reflexion.net`、Postini の `*.psmtp.com`）や、
+    綴りを誤ったホスト（`alt2.aspmx.l.google.co`）を指したままの MX がある。
+    名前が無い（NXDOMAIN）ホストには配送できない（RFC 5321 §5.1）。
+
+    返すもの（どれも**断定できたときだけ**値を立てる。原則5）
+
+      mx_hosts_nxdomain       名前が無いと確定した MX ホスト
+      mx_unreachable          どの MX ホストにも宛先が無い（NXDOMAIN か、
+                              名前はあるがアドレスが無い）と確定した。
+                              1つでもアドレスがあれば False、引けなかった
+                              ホストが残れば None
+      mx_domain_unregistered  名前の無い MX ホストの登録ドメインが未登録。
+                              **第三者が登録すれば、そのドメイン宛のメールを
+                              受け取れる。** rua の未登録（Hureau et al.,
+                              PAM 2024）と同じ形の主張で、同じ慎重さで扱う
+    """
+    out: dict[str, Any] = {
+        "mx_hosts_nxdomain": [],
+        "mx_unreachable": None,
+        "mx_domain_unregistered": None,
+    }
+    if resolver is None or not hosts:
+        return out
+
+    nxdomain: list[str] = []
+    no_address = 0
+    unknown = 0
+    reachable = 0
+    for host in hosts:
+        name = host.strip().rstrip(".").lower()
+        a = resolver.query(name, "A")
+        if not a.observed:
+            unknown += 1
+            continue
+        if a.record_present:
+            reachable += 1
+            continue
+        if a.rcode == "NXDOMAIN":
+            nxdomain.append(name)
+            continue
+        # 名前はあるが A が無い。IPv6 だけのホストがありうる
+        aaaa = resolver.query(name, "AAAA")
+        if not aaaa.observed:
+            unknown += 1
+        elif aaaa.record_present:
+            reachable += 1
+        else:
+            no_address += 1
+
+    out["mx_hosts_nxdomain"] = sorted(nxdomain)
+    if reachable:
+        out["mx_unreachable"] = False
+    elif unknown == 0:
+        out["mx_unreachable"] = True
+
+    if nxdomain:
+        out["mx_domain_unregistered"] = _any_registrable_unregistered(nxdomain, resolver)
+    else:
+        out["mx_domain_unregistered"] = False if unknown == 0 else None
+    return out
+
+
+def _any_registrable_unregistered(names: list[str], resolver: Resolver) -> bool | None:
+    """名前の無いホストのうち、登録ドメインごと空いているものがあるか。
+
+    **「未登録」は強い主張である。** 次の両方が確かめられたときだけ True。
+
+      1. 登録ドメイン（eTLD+1）の NS が NXDOMAIN（NODATA は「在る」）
+      2. その上の接尾辞（TLD など）は実在する。**PSL は知らない TLD も
+         接尾辞として扱う**ので、`mail.anp` は `mail.anp` が登録ドメインに
+         なる。`.anp` という TLD が無ければ誰も登録できない
+
+    IP アドレスを書いた MX（`160.16.74.120`）は名前ではないので数えない。
+    """
+    verdict: bool | None = False
+    for name in names:
+        try:
+            ipaddress.ip_address(name)
+            continue
+        except ValueError:
+            pass
+        registrable = etld_plus_one(name)
+        if not registrable or "." not in registrable:
+            continue
+        ns = resolver.query(registrable, "NS")
+        if not ns.observed:
+            verdict = None if verdict is False else verdict
+            continue
+        if ns.rcode != "NXDOMAIN":
+            continue
+        suffix = registrable.split(".", 1)[1]
+        parent = resolver.query(suffix, "NS")
+        if not parent.observed:
+            verdict = None if verdict is False else verdict
+            continue
+        if parent.rcode == "NXDOMAIN":
+            continue
+        return True
+    return verdict
 
 
 def apply_inherited_policy(
@@ -503,6 +612,12 @@ def run(
                 counters["rua_unauthorized"] += 1
             if parsed.get("rua_domain_unregistered"):
                 counters["rua_domain_unregistered"] += 1
+            if parsed.get("mx_unreachable"):
+                counters["mx_unreachable"] += 1
+            if parsed.get("mx_hosts_nxdomain"):
+                counters["mx_has_nxdomain_host"] += 1
+            if parsed.get("mx_domain_unregistered"):
+                counters["mx_domain_unregistered"] += 1
             if dane_orphan:
                 counters["dane_orphan"] += 1
             if parsed.get("effective_7489") != parsed.get("effective_9989"):
@@ -550,6 +665,26 @@ def run(
                 message=(
                     "rua の宛先ドメインが未登録。第三者が登録すればレポートが漏洩しうる"
                     "（Hureau et al., PAM 2024）"
+                ),
+            )
+
+        if counters.get("mx_unreachable"):
+            manifest.add_warning(
+                "MX_UNREACHABLE",
+                count=counters["mx_unreachable"],
+                message=(
+                    "どの MX ホストにも宛先が無い（名前が無い、またはアドレスが無い）"
+                    "ドメイン。**このドメイン宛のメールは届かない。** 終わったサービスや"
+                    "綴りの誤りを指したままのものがある"
+                ),
+            )
+        if counters.get("mx_domain_unregistered"):
+            manifest.add_warning(
+                "MX_DOMAIN_UNREGISTERED",
+                count=counters["mx_domain_unregistered"],
+                message=(
+                    "MX ホストの登録ドメインが未登録。**第三者が登録すれば、その企業の"
+                    "ドメイン宛のメールを受け取れる**（rua の未登録と同じ形）"
                 ),
             )
 
