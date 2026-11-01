@@ -369,7 +369,7 @@ def p5_parse(
         bool,
         typer.Option(
             "--no-dns",
-            help="Tree Walk と rua 宛先検証を行わない（DNS に出ない）",
+            help="Tree Walk・rua 宛先検証・MTA-STS ポリシー取得をしない（外に出ない）",
         ),
     ] = False,
 ) -> None:
@@ -381,13 +381,23 @@ def p5_parse(
 
     run_id = validate_run_id(run or default_run_id())
     resolver = None
-    rate = load_measure_config().get("rate", {})
+    measure_cfg = load_measure_config()
+    rate = measure_cfg.get("rate", {})
+    policy_fetcher = None
     if not no_dns:
         resolver = DnsResolver(
             timeout=float(rate.get("timeout_sec", 5)),
             retries=int(rate.get("retries", 3)),
             qps=float(rate.get("qps", 20)),
         )
+        if (measure_cfg.get("extras") or {}).get("https_fetch", False):
+            from .config import credential
+            from .p5_parse.mta_sts_policy import live_fetcher
+
+            # **連絡先を名乗る。** 相手の運用者がアクセスの主を確かめられるように
+            contact = credential("MAILAUTH_CONTACT_EMAIL")
+            ua = "mailauth-observatory/0.1" + (f" ({contact})" if contact else "")
+            policy_fetcher = live_fetcher(ua)
     try:
         result = run_p5(
             run_id=run_id,
@@ -396,6 +406,7 @@ def p5_parse(
             resolver=resolver,
             # P4 と同じつまみ。投げる間隔（qps）は resolver が全スレッドで守る
             concurrency=int(rate.get("concurrency", 1)),
+            policy_fetcher=policy_fetcher,
         )
     except MissingInputError as exc:
         typer.secho(str(exc), fg="red", err=True)

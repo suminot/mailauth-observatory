@@ -34,6 +34,7 @@ from ..resolver import Resolver
 from . import dkim as dkim_mod
 from . import dmarc as dmarc_mod
 from . import extras as extras_mod
+from . import mta_sts_policy
 from . import spf as spf_mod
 from .orgdomain import resolve as resolve_org_domain
 
@@ -96,8 +97,13 @@ def parse_domain(
     by_purpose: dict[str, list[dict]],
     *,
     resolver: Resolver | None = None,
+    policy_fetcher: mta_sts_policy.PolicyFetcher | None = None,
 ) -> dict[str, Any]:
-    """1ドメインぶんの bronze を解釈して fact のフィールドを返す。"""
+    """1ドメインぶんの bronze を解釈して fact のフィールドを返す。
+
+    `policy_fetcher` があれば、MTA-STS の TXT があるドメインだけポリシーを
+    HTTPS で取る（`mta_sts_policy.py`）。無ければ mode は null のまま。
+    """
     out: dict[str, Any] = {}
 
     # -- 観測の可否（原則5） ---------------------------------------------
@@ -295,10 +301,22 @@ def parse_domain(
             for v in _raw_values(r)]
     dane = extras_mod.parse_dane(tlsa, dnssec_signed=dnssec_signed)
 
+    policy: dict[str, Any] = {
+        "mta_sts_policy_status": None,
+        "mta_sts_mode": mta_sts.mode,
+        "mta_sts_max_age": None,
+        "mta_sts_policy_mx": [],
+        "mta_sts_mx_mismatch": None,
+        "mta_sts_policy_raw": None,
+    }
+    if mta_sts.present and policy_fetcher is not None:
+        policy = mta_sts_policy.evaluate(
+            policy_fetcher(domain), hosts if out["mx_present"] else []
+        )
+    out.update(policy)
     out.update(
         mta_sts_present=mta_sts.present,
         mta_sts_id=mta_sts.id,
-        mta_sts_mode=mta_sts.mode,
         tls_rpt_present=tls_rpt.present,
         tls_rpt_rua=tls_rpt.rua,
         bimi_present=bimi.present,
@@ -468,6 +486,7 @@ def run(
     dry_run: bool = False,
     resolver: Resolver | None = None,
     concurrency: int = 1,
+    policy_fetcher: mta_sts_policy.PolicyFetcher | None = None,
 ) -> dict[str, Any]:
     """P5 を実行し manifest の内容を返す。
 
@@ -559,14 +578,21 @@ def run(
 
         def parse_one(domain: str) -> tuple[str, dict | None, Exception | None]:
             try:
-                return domain, parse_domain(domain, grouped[domain], resolver=resolver), None
+                parsed = parse_domain(
+                    domain, grouped[domain], resolver=resolver, policy_fetcher=policy_fetcher
+                )
+                return domain, parsed, None
             except Exception as exc:  # noqa: BLE001 - 1件のパース失敗で全体を止めない
                 return domain, None, exc
 
         # **DNS に出るのは Tree Walk と rua の宛先確認だけ**だが、1本ずつ待つと
         # 国内 3,437 ドメインで 11 分かかっていた（2026-11、BACKLOG 7）。
         # resolver が無ければ待つものが無いので並行にしない
-        workers = max(1, int(concurrency)) if resolver is not None else 1
+        workers = (
+            max(1, int(concurrency))
+            if resolver is not None or policy_fetcher is not None
+            else 1
+        )
         manifest.set_breakdown(concurrency=workers)
         for domain, parsed, exc in in_input_order(
             parse_one, domain_names, concurrency=workers, window=PARSE_WINDOW
@@ -612,6 +638,13 @@ def run(
                 counters["rua_unauthorized"] += 1
             if parsed.get("rua_domain_unregistered"):
                 counters["rua_domain_unregistered"] += 1
+            status = parsed.get("mta_sts_policy_status")
+            if status:
+                counters[f"mta_sts_policy_{status}"] += 1
+            if parsed.get("mta_sts_mode"):
+                counters[f"mta_sts_mode_{parsed['mta_sts_mode']}"] += 1
+            if parsed.get("mta_sts_mx_mismatch"):
+                counters["mta_sts_mx_mismatch"] += 1
             if parsed.get("mx_unreachable"):
                 counters["mx_unreachable"] += 1
             if parsed.get("mx_hosts_nxdomain"):
@@ -668,6 +701,36 @@ def run(
                 ),
             )
 
+        if policy_fetcher is None:
+            manifest.add_warning(
+                "MTA_STS_POLICY_NOT_FETCHED",
+                message=(
+                    "MTA-STS のポリシーを HTTPS で取っていない。mta_sts_mode は null で、"
+                    "**enforce か testing かは分からない**（TXT の有無だけ）"
+                ),
+            )
+        failed = sum(
+            v for k, v in counters.items()
+            if k.startswith("mta_sts_policy_") and k != "mta_sts_policy_ok"
+        )
+        if failed:
+            manifest.add_warning(
+                "MTA_STS_POLICY_UNUSABLE",
+                count=failed,
+                message=(
+                    "MTA-STS の TXT はあるが、ポリシーを取れない・読めないドメイン。"
+                    "**送る側の MTA も同じく読めないので、MTA-STS は効いていない**"
+                ),
+            )
+        if counters.get("mta_sts_mx_mismatch"):
+            manifest.add_warning(
+                "MTA_STS_MX_MISMATCH",
+                count=counters["mta_sts_mx_mismatch"],
+                message=(
+                    "MTA-STS のポリシーの mx に、実際の MX が入っていない。"
+                    "**enforce なら、対応している送り手からのメールが届かない**"
+                ),
+            )
         if counters.get("mx_unreachable"):
             manifest.add_warning(
                 "MX_UNREACHABLE",

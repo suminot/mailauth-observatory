@@ -79,6 +79,10 @@ class DomainRow:
     dane_present: bool
     dane_orphan: bool
     park_class: str | None = None
+    #: HTTPS で取ったポリシーの mode。取っていない run では null
+    mta_sts_mode: str | None = None
+    mta_sts_policy_status: str | None = None
+    mta_sts_mx_mismatch: bool = False
 
     @classmethod
     def from_fact(cls, fact: dict) -> DomainRow:
@@ -104,6 +108,9 @@ class DomainRow:
             dnssec_signed=_truthy(fact.get("dnssec_signed")),
             dane_present=_truthy(fact.get("dane_present")),
             dane_orphan=_truthy(fact.get("dane_orphan")),
+            mta_sts_mode=_text(fact.get("mta_sts_mode")),
+            mta_sts_policy_status=_text(fact.get("mta_sts_policy_status")),
+            mta_sts_mx_mismatch=_truthy(fact.get("mta_sts_mx_mismatch")),
         )
 
     @property
@@ -204,6 +211,11 @@ def aggregate(
     def entities_where(predicate) -> int:
         return len({r.entity_id for r in observed if predicate(r)})
 
+    # MTA-STS のポリシーを取った run か。**TXT のあるドメインのうち1つでも
+    # 取っていなければ、mode の数は出さない**（0 と書くと「enforce が無い」に読める）
+    policy_fetched = not any(
+        r.mta_sts_present and r.mta_sts_policy_status is None for r in observed
+    )
     stages = Counter(r.stage for r in observed)
     parked = [r for r in observed if r.park_class in _PARKED_CLASSES]
     hardened = sum(1 for r in parked if r.park_class == ParkClass.HARDENED_PARKED)
@@ -260,6 +272,30 @@ def aggregate(
             if r.dkim_status == DkimStatus.NOT_FOUND_IN_KNOWN_SELECTORS
         ),
         mta_sts_domains=sum(1 for r in observed if r.mta_sts_present),
+        # **TXT があるだけでは効いていない。** ポリシーを取って mode を見る
+        # （P5 `mta_sts_policy.py`）。取っていない run では 0 ではなく null
+        mta_sts_enforce_domains=(
+            sum(1 for r in observed if r.mta_sts_present and r.mta_sts_mode == "enforce")
+            if policy_fetched
+            else None
+        ),
+        mta_sts_testing_domains=(
+            sum(1 for r in observed if r.mta_sts_present and r.mta_sts_mode == "testing")
+            if policy_fetched
+            else None
+        ),
+        mta_sts_unusable_domains=(
+            sum(
+                1
+                for r in observed
+                if r.mta_sts_present and r.mta_sts_policy_status not in (None, "ok")
+            )
+            if policy_fetched
+            else None
+        ),
+        mta_sts_mx_mismatch_domains=(
+            sum(1 for r in observed if r.mta_sts_mx_mismatch) if policy_fetched else None
+        ),
         tls_rpt_domains=sum(1 for r in observed if r.tls_rpt_present),
         bimi_domains=sum(1 for r in observed if r.bimi_present),
         dnssec_domains=sum(1 for r in observed if r.dnssec_signed),
