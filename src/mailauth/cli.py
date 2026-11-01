@@ -381,15 +381,22 @@ def p5_parse(
 
     run_id = validate_run_id(run or default_run_id())
     resolver = None
+    rate = load_measure_config().get("rate", {})
     if not no_dns:
-        rate = load_measure_config().get("rate", {})
         resolver = DnsResolver(
             timeout=float(rate.get("timeout_sec", 5)),
             retries=int(rate.get("retries", 3)),
             qps=float(rate.get("qps", 20)),
         )
     try:
-        result = run_p5(run_id=run_id, limit=limit, dry_run=dry_run, resolver=resolver)
+        result = run_p5(
+            run_id=run_id,
+            limit=limit,
+            dry_run=dry_run,
+            resolver=resolver,
+            # P4 と同じつまみ。投げる間隔（qps）は resolver が全スレッドで守る
+            concurrency=int(rate.get("concurrency", 1)),
+        )
     except MissingInputError as exc:
         typer.secho(str(exc), fg="red", err=True)
         raise typer.Exit(code=2) from exc
