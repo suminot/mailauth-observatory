@@ -24,6 +24,7 @@ from ..contracts import (
 from ..io import read_parquet, write_parquet
 from ..manifest import RunManifest
 from ..normalize import etld_plus_one
+from ..ordered import in_input_order
 from ..p4_measure.bronze import iter_bronze_files, read_bronze
 from ..paths import bronze_dir, month_date, phase_dir, phase_output
 from ..records import find_spf_records, is_null_mx, join_txt_strings
@@ -38,6 +39,10 @@ from .orgdomain import resolve as resolve_org_domain
 PHASE = "p5_parse"
 OUTPUT_FILENAME = "facts.parquet"
 PARSER_VERSION = "1.0.0"
+
+#: 返していないドメインを何件まで抱えるか（`ordered.in_input_order`）。
+#: 同時本数より十分大きくしないと、先頭の1件が遅いたびに手が止まる
+PARSE_WINDOW = 256
 
 
 class MissingInputError(RuntimeError):
@@ -353,11 +358,16 @@ def run(
     limit: int | None = None,
     dry_run: bool = False,
     resolver: Resolver | None = None,
+    concurrency: int = 1,
 ) -> dict[str, Any]:
     """P5 を実行し manifest の内容を返す。
 
     `resolver` は Tree Walk と External Destination Verification に使う。
     無ければその2つをスキップし、manifest に記録する。
+
+    `concurrency` は同時に応答を待つドメイン数（BACKLOG 7）。**結果は入力順に
+    受け取る**ので、facts の中身と並びは1本のときと変わらない。投げる間隔は
+    resolver が全スレッドで共有して守る。
     """
     out_dir = phase_dir(run_id, PHASE)
     bronze = bronze_dir(run_id)
@@ -438,10 +448,21 @@ def run(
         notes_sample: list[str] = []
         month = month_date(run_id)
 
-        for domain in domain_names:
+        def parse_one(domain: str) -> tuple[str, dict | None, Exception | None]:
             try:
-                parsed = parse_domain(domain, grouped[domain], resolver=resolver)
+                return domain, parse_domain(domain, grouped[domain], resolver=resolver), None
             except Exception as exc:  # noqa: BLE001 - 1件のパース失敗で全体を止めない
+                return domain, None, exc
+
+        # **DNS に出るのは Tree Walk と rua の宛先確認だけ**だが、1本ずつ待つと
+        # 国内 3,437 ドメインで 11 分かかっていた（2026-11、BACKLOG 7）。
+        # resolver が無ければ待つものが無いので並行にしない
+        workers = max(1, int(concurrency)) if resolver is not None else 1
+        manifest.set_breakdown(concurrency=workers)
+        for domain, parsed, exc in in_input_order(
+            parse_one, domain_names, concurrency=workers, window=PARSE_WINDOW
+        ):
+            if exc is not None or parsed is None:
                 manifest.add_failure(f"parse_error:{type(exc).__name__}")
                 notes_sample.append(f"{domain}: {type(exc).__name__}: {exc}")
                 continue

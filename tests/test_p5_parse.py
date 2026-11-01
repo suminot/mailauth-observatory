@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import datetime as dt
+import threading
+import time
 
 import pandas as pd
 import pytest
@@ -837,3 +839,74 @@ def test_apex_に_dmarc_が無ければ継承元にならない():
 
     assert sub.applied_source == "none"
     assert counts["dmarc_inherited"] == 0
+
+
+class _SlowStaticResolver(StaticResolver):
+    """応答を少し待たせ、どのスレッドから引かれたかを数える。"""
+
+    def __init__(self, answers) -> None:
+        super().__init__(answers)
+        self.threads: set[int] = set()
+        self._lock = threading.Lock()
+
+    def query(self, name, rtype):
+        with self._lock:
+            self.threads.add(threading.get_ident())
+        time.sleep(0.01)
+        return super().query(name, rtype)
+
+
+def test_p5_を並行に流しても_facts_は1本のときと同じ():
+    """BACKLOG 7：P5 の DNS（Tree Walk・rua 宛先）を並行に待つ。
+
+    **結果は入力順に受け取る**ので、facts のバイト列まで変わらない（原則6）。
+    """
+    _write_domains()
+    run_p4(run_id=RUN, backend=FakeBackend())
+    path = phase_output(RUN, "p5_parse", "facts.parquet")
+
+    run_p5(run_id=RUN, resolver=StaticResolver(ANSWERS), concurrency=1)
+    sequential = path.read_bytes()
+
+    slow = _SlowStaticResolver(ANSWERS)
+    result = run_p5(run_id=RUN, resolver=slow, concurrency=8)
+    assert result["status"] == "success"
+    assert result["breakdown"]["concurrency"] == 8
+    assert path.read_bytes() == sequential
+    # 2ドメインが別々のスレッドで引かれている（本当に並行に流れた）
+    assert len(slow.threads) >= 2
+
+
+def test_p5_は_resolver_が無ければ並行にしない():
+    _write_domains()
+    run_p4(run_id=RUN, backend=FakeBackend())
+    result = run_p5(run_id=RUN, resolver=None, concurrency=8)
+    assert result["breakdown"]["concurrency"] == 1
+
+
+def test_p5_の1件の失敗は並行でも全体を止めない(monkeypatch):
+    from mailauth.p5_parse import runner as p5_runner
+
+    _write_domains()
+    run_p4(run_id=RUN, backend=FakeBackend())
+    original = p5_runner.parse_domain
+
+    def flaky(domain, records, *, resolver=None):
+        if domain == "parked.example.jp":
+            raise ValueError("boom")
+        return original(domain, records, resolver=resolver)
+
+    monkeypatch.setattr(p5_runner, "parse_domain", flaky)
+    result = run_p5(run_id=RUN, resolver=StaticResolver(ANSWERS), concurrency=4)
+    assert result["counts"]["success"] == 1
+    assert result["counts"]["failed"] == 1
+    assert any("parked.example.jp: ValueError" in n for n in result["breakdown"]["notes_sample"])
+
+
+def test_cli_の_p5_は_measure_yaml_の同時本数を渡す():
+    import inspect
+
+    from mailauth import cli
+
+    source = inspect.getsource(cli.p5_parse)
+    assert 'rate.get("concurrency"' in source

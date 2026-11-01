@@ -299,7 +299,9 @@ jobs:
             echo
             echo '```json'
             jq '{status, counts, warnings: [.warnings[].code],
-                 wikidata: .breakdown.wikidata_identity}' "$M"
+                 enrich_seconds: .breakdown.enrich_seconds,
+                 wikidata: .breakdown.wikidata_identity,
+                 co_jp_homepage: .breakdown.co_jp_homepage}' "$M"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
