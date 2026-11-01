@@ -44,6 +44,33 @@ def test_ページの空白の違いは無視する():
     assert not page_names_company("<title>Area,Inc.</title>", "エリアクエスト")
 
 
+def test_短い社名は_ページのどこかに載っているだけでは採らない():
+    """**短い語は他社のページにも載る。** 2026-11 の国内計測で埋めた 177 社の
+    誤りは、すべて社名の芯が4文字以下の会社だった。例はそのときのタイトル。
+    """
+    # 本文に「ムサシ」が出てくるが、タイトルは別の会社
+    assert not page_names_company(
+        "<title>武蔵精密工業株式会社</title><p>ムサシの技術</p>", "ムサシ"
+    )
+    # 芯がタイトルに入っていても、商号の形でなければ採らない
+    assert not page_names_company("<title>ホーム | JRC 日本無線株式会社</title>", "JRC")
+    assert not page_names_company(
+        "<title>まつ毛美容液 | まつ毛と目元の専門ブランド eyez アイズ</title>", "アイズ"
+    )
+    # 商号の形なら採る。英字は大文字小文字を問わない
+    assert page_names_company("<title>株式会社タクミナ</title>", "タクミナ")
+    assert page_names_company("<title>Ｓｐｋ株式会社｜自動車部品</title>", "SPK")
+    assert page_names_company(
+        '<meta property="og:site_name" content="ニッコンホールディングス">', "ニッコン"
+    )
+
+
+def test_長い社名は本文に載っていれば採る():
+    core = name_core("株式会社テクノ菱和")
+    assert core == "テクノ菱和"
+    assert page_names_company("<title>トップ</title><footer>© 株式会社テクノ菱和</footer>", core)
+
+
 class _Web:
     """DNS とページの差し替え。呼ばれた URL を覚える。"""
 
@@ -61,7 +88,10 @@ class _Web:
 
 
 def test_サイトに社名が載っていれば採る():
-    web = _Web({"muraki.co.jp"}, {"https://www.muraki.co.jp/": "<h1>ムラキ株式会社</h1>"})
+    web = _Web(
+        {"muraki.co.jp"},
+        {"https://www.muraki.co.jp/": "<title>ムラキ株式会社 | 会社案内</title><h1>ムラキ</h1>"},
+    )
     g = CoJpGuesser(web.exists, web.fetch)
     assert g.domain_for("ムラキ株式会社", "MURAKI CORPORATION") == "muraki.co.jp"
     assert g.stats.found == 1
@@ -157,8 +187,8 @@ def test_空欄の企業だけを埋め_既にある値は上書きしない():
     web = _Web(
         {"muraki.co.jp", "tacmina.co.jp"},
         {
-            "https://www.muraki.co.jp/": "ムラキ",
-            "https://www.tacmina.co.jp/": "株式会社タクミナ",
+            "https://www.muraki.co.jp/": "<title>ムラキ株式会社</title>",
+            "https://www.tacmina.co.jp/": "<title>株式会社タクミナ</title>",
         },
     )
     manifest = RunManifest(run_id="2026-11", phase="p1_population", out_dir="/tmp/unused")
