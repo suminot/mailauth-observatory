@@ -2014,13 +2014,51 @@ def test_前の月より小さい劣化した月は公開せず_変更履歴に�
     assert commit.index("below_previous=1") < commit.index("git add gold"), (
         "印を見る前に gold を add している"
     )
-    assert '|| [ -n "$below_previous" ]; then' in commit, "公開しない条件に入っていない"
+    assert '|| [ -n "$below_previous" ]' in commit, "公開しない条件に入っていない"
+    assert '|| [ -n "$p7_refused" ]; then' in commit, "P7 が止まった月を公開する扱いにしている"
     # 公開しない側の分岐では、変更履歴を add しない（作り直した分を捨てる）
-    branch = commit[commit.index('|| [ -n "$below_previous" ]; then') : commit.index("else\n")]
+    branch = commit[commit.index('|| [ -n "$p7_refused" ]; then') : commit.index("else\n")]
     assert "changelog.md" not in branch.split("git checkout --")[0], (
         "公開しない月を変更履歴に載せてしまう"
     )
     assert "git checkout -- site/src/changelog.md site/src/en/changelog.md" in branch
+
+
+def test_実行報告と作業リストは母集団ごとの名前にする():
+    """**同じ月に国内と米国の両方を測る。** 月だけの名前だと後の方が上書きする。
+
+    2026-11 は国内を 11-01 に、米国を 11-02 に測る。
+    """
+    by_name = {s.get("name"): s for s in _monthly_steps()}
+    report = by_name["工程レポート"]["run"]
+    assert '--out "runs/${{ steps.run.outputs.id }}-${{ steps.run.outputs.pop }}.md"' in report
+    worklist = by_name["未知 MX ホストの作業リスト"]["run"]
+    assert "${{ steps.run.outputs.pop }}-worklist.md" in worklist
+
+
+def test_公開しない実行の報告で公開済みの報告を上書きしない():
+    """2026-11-01 の国内の流し直しで、P7 が gold を書かずに止まったのに、
+    その実行の報告が runs/2026-11.md を上書きした。**runs/<月>-<母集団>.md は
+    公開した gold の記録である。**
+    """
+    by_name = {s.get("name"): s for s in _monthly_steps()}
+    commit = by_name["gold と実行記録をコミット"]["run"]
+    assert """jq -r '.status' "$P7M")" = "failed" ]""" in commit, "P7 の失敗を見ていない"
+    branch = commit[commit.index('|| [ -n "$p7_refused" ]; then') : commit.index("else\n")]
+    assert 'git cat-file -e "HEAD:$REPORT"' in branch
+    assert "runs/attempts/" in branch
+    assert branch.index('mv "$REPORT"') < branch.index('git checkout -- "$REPORT"')
+
+
+def test_runs_に月だけの名前の報告が残っていない():
+    """名前を母集団ごとにした（2026-11-01）。古い名前のファイルを残すと、
+    どの母集団の記録か分からないものが並ぶ。
+    """
+    import re
+
+    names = [p.name for p in (repo_root() / "runs").glob("*.md")]
+    bad = [n for n in names if re.fullmatch(r"\d{4}-\d{2}(-worklist)?\.md", n)]
+    assert not bad, f"母集団の無い名前: {bad}"
 
 
 def test_工程の出力のキャッシュは母集団と月で分ける():

@@ -430,14 +430,18 @@ jobs:
       # runs/ に残してコミットする（翌月の連続month数の材料になる）
       - name: 未知 MX ホストの作業リスト
         continue-on-error: true
-        run: mailauth worklist --run "${{ steps.run.outputs.id }}"
+        # **ファイル名に母集団を入れる。** 同じ月に国内と米国の両方を測るので、
+        # 月だけの名前だと後から回した方が先の分を上書きする
+        run: |
+          mailauth worklist --run "${{ steps.run.outputs.id }}" \
+            --out "runs/${{ steps.run.outputs.id }}-${{ steps.run.outputs.pop }}-worklist.md"
 
       - name: 工程レポート
         id: report
         run: |
           mailauth status --run "${{ steps.run.outputs.id }}"
           mailauth run-report --run "${{ steps.run.outputs.id }}" \
-            --out "runs/${{ steps.run.outputs.id }}.md"
+            --out "runs/${{ steps.run.outputs.id }}-${{ steps.run.outputs.pop }}.md"
 
       # 第2層（個社名付き明細）を、**公開しない形で**出す。
       #
@@ -559,10 +563,35 @@ jobs:
           if [ -f "$P7M" ] && jq -e '[.warnings[].code] | index("GOLD_BELOW_PREVIOUS_MONTH")' "$P7M" >/dev/null; then
             below_previous=1
           fi
+          # **P7 が gold を書かずに止まった月も、公開しない月として扱う。**
+          # 前の月ではなく同じ月の既存 gold より分母が小さいとき、P7 は
+          # 例外で止まる（DegradedRunError）。2026-11-01 の国内の流し直しで、
+          # この経路が「公開する月」の扱いになり、公開していない実行の報告で
+          # runs/ の公開済みの報告が上書きされた
+          p7_refused=""
+          if [ -f "$P7M" ] && [ "$(jq -r '.status' "$P7M")" = "failed" ]; then
+            p7_refused=1
+          fi
+          REPORT="runs/${{ steps.run.outputs.id }}-${{ steps.run.outputs.pop }}.md"
+          WORKLIST="runs/${{ steps.run.outputs.id }}-${{ steps.run.outputs.pop }}-worklist.md"
           if [ -n "${{ github.event.inputs.limit }}" ] \
              || [ "${{ github.event.inputs.publish }}" = "no" ] \
              || [ -n "$p4_incomplete" ] \
-             || [ -n "$below_previous" ]; then
+             || [ -n "$below_previous" ] \
+             || [ -n "$p7_refused" ]; then
+            # **公開済みの報告を、公開しない実行の報告で上書きしない。**
+            # runs/<月>-<母集団>.md は、その月に公開した gold の記録である。
+            # 公開しない試行の報告は runs/attempts/ に別名で残す
+            if git cat-file -e "HEAD:$REPORT" 2>/dev/null; then
+              mkdir -p runs/attempts
+              ATTEMPT="runs/attempts/${{ steps.run.outputs.id }}-${{ steps.run.outputs.pop }}-${{ github.run_id }}.md"
+              [ -f "$REPORT" ] && mv "$REPORT" "$ATTEMPT"
+              git checkout -- "$REPORT" 2>/dev/null || true
+              git checkout -- "$WORKLIST" 2>/dev/null || true
+              echo "公開済みの報告は残し、この実行の報告は $ATTEMPT に置いた" >> "$GITHUB_STEP_SUMMARY"
+            fi
+            # 生成時刻しか変わらない訂正履歴も入れない
+            git checkout -- runs/corrections-log.md 2>/dev/null || true
             git add runs || true
             # **公開しない月を、変更履歴にも載せない。** 変更履歴は手元の gold
             # から作るので、コミットしない月まで「2026-10」として並ぶ
@@ -572,7 +601,10 @@ jobs:
             {
               echo "### gold はコミットしていない"
               echo
-              if [ -n "$below_previous" ]; then
+              if [ -n "$p7_refused" ]; then
+                echo "P7 が gold を書かずに止まった（同じ月の公開済みの gold より分母が小さいなど）。"
+                echo "公開データセットは前の実行のままである。理由は P7 の manifest の error を見ること。"
+              elif [ -n "$below_previous" ]; then
                 echo "crt.sh が落ちていて、前の月より分母（ドメイン数）が小さいため、"
                 echo "公開データセットには入れていない（P7 の警告 GOLD_BELOW_PREVIOUS_MONTH）。"
                 echo "**数字は成果物 \`gold-\` から読める。** crt.sh が戻ってから同じ run_id で流し直すこと。"

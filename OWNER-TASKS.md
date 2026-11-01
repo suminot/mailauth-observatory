@@ -132,7 +132,7 @@ mailauth status --run 2026-08          # 八工程の状態
 mailauth run-report --run 2026-08      # manifest を1枚に
 ```
 
-`gold/month=YYYY-MM/` がコミットされ、`runs/YYYY-MM.md` が残っていれば成功。
+`gold/month=YYYY-MM/` がコミットされ、`runs/YYYY-MM-<母集団>.md` が残っていれば成功。
 
 ### 見ておくべき警告
 
@@ -262,8 +262,8 @@ GitHub Actions は**60日間リポジトリに活動が無いと schedule を止
 月に1回、次を確認する。
 
 1. Actions に「月次計測」の実行があるか（**無ければ schedule が止まっている**）
-2. `runs/YYYY-MM.md` の工程レポート
-3. `runs/YYYY-MM-worklist.md`（未知 MX ホストの作業リスト → 6）
+2. `runs/YYYY-MM-<母集団>.md` の工程レポート
+3. `runs/YYYY-MM-<母集団>-worklist.md`（未知 MX ホストの作業リスト → 6）
 4. `site/src/changelog.md` の「解釈」欄が空いている月がないか
 
 4 が重要である。**版が上がったことは機械が検出するが、それが数字にどう
@@ -336,7 +336,7 @@ DESIGN.md 第11章の未解決事項1（優先度**高**）。仕組みは実装
 ### 毎月の手順
 
 ```bash
-cat runs/YYYY-MM-worklist.md
+cat runs/YYYY-MM-<母集団>-worklist.md
 ```
 
 「手を付けるもの」の上から順に、登録ドメインを調べて製品名を特定する。
