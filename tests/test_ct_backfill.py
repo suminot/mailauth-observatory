@@ -391,3 +391,27 @@ def test_補充は相手の上限の内側で投げる():
     full = str(wf).lower()
     for word in ("proxy", "tor ", "socks", "vpn"):
         assert word not in full, f"制限をすり抜ける手段（{word}）を使っている"
+
+
+def test_米国も毎月測る():
+    """国内の schedule とは日を分けて、米国の月次計測を頼む。"""
+    import yaml
+
+    from mailauth.paths import repo_root
+
+    wf = yaml.safe_load(
+        (repo_root() / ".github" / "workflows" / "monthly-us.yml").read_text(encoding="utf-8")
+    )
+    on = wf.get("on") or wf.get(True)
+    minute, hour, day = on["schedule"][0]["cron"].split()[:3]
+    assert day == "2", "国内（1日）と同じ日にしない"
+    run = wf["jobs"]["dispatch"]["steps"][0]["run"]
+    assert "configs/populations/us-all-listed.yaml" in run
+    assert "publish=yes" in run
+    # 頼む先の選択肢に米国があること（選べない値を渡すと起動に失敗する）
+    monthly = yaml.safe_load(
+        (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(encoding="utf-8")
+    )
+    m_on = monthly.get("on") or monthly.get(True)
+    options = m_on["workflow_dispatch"]["inputs"]["population"]["options"]
+    assert "configs/populations/us-all-listed.yaml" in options
