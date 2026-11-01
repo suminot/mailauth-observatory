@@ -448,3 +448,33 @@ def test_月次計測は終わりに補充を頼み_補充は終わるのを待�
     assert "gh workflow run ct-backfill.yml" in ask["run"]
     busy = _steps()[_index("月次計測が走っていないか確かめる")]["run"]
     assert "sleep" in busy, "頼んだ直後は向こうがまだ実行中なので、待たないと必ず飛ばす"
+
+
+@pytest.mark.parametrize(
+    "workflow, job", [("ct-backfill.yml", "backfill"), ("monthly.yml", "measure")]
+)
+def test_CT_キャッシュは保存の前にその間の分と混ぜる(workflow, job):
+    """補充と月次計測が重なると、後から保存した方が先の方の結果を消す。
+
+    鍵は crtsh-<月>-<run_id> で、復元は一番新しいものを取る。ファイルは
+    ドメインごとなので和集合で混ぜ、同じファイルはこの実行の方を残す。
+    """
+    import yaml
+
+    from mailauth.paths import repo_root
+
+    wf = yaml.safe_load(
+        (repo_root() / ".github" / "workflows" / workflow).read_text(encoding="utf-8")
+    )
+    steps = wf["jobs"][job]["steps"]
+    names = [s.get("name") for s in steps]
+    save = names.index("CT ログのキャッシュを保存")
+    stash = names.index("CT キャッシュを退避する")
+    restore = names.index("その間に保存された CT キャッシュを復元する")
+    overlay = names.index("この実行の CT キャッシュを上から重ねる")
+    assert stash < restore < overlay < save
+    assert "restore-keys" in steps[restore]["with"]
+    assert "cp -a /tmp/crtsh-ours/." in steps[overlay]["run"]
+    # 3つとも保存と同じ条件で動く（保存しないのに混ぜても意味が無い）
+    for i in (stash, restore, overlay):
+        assert steps[i].get("if") == steps[save].get("if")
