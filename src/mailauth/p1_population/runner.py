@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import csv
+import time
 from pathlib import Path
 from typing import Any
 
@@ -221,101 +222,111 @@ def _apply_enrichment(
     bangou_list = [e.houjin_bangou for e in entities if e.houjin_bangou]
     by_bangou = {e.houjin_bangou: e for e in entities if e.houjin_bangou}
 
+    enrich_seconds: dict[str, float] = {}
     for name in cfg.source.enrich:
-        if name == "gbizinfo":
-            client = GbizInfoClient()
-            result = client.fetch(bangou_list, limit=limit)
-            if result.skipped_reason:
-                manifest.add_warning("ENRICH_SKIPPED_GBIZINFO", message=result.skipped_reason)
-            for bangou, values in result.values.items():
-                entity = by_bangou.get(bangou)
-                if entity and values.get("official_url"):
-                    entity.official_url = values["official_url"]
-                    entity.official_domain = domain_from_url(values["official_url"])
-            if result.error:
-                # **breakdown に入れるだけでは気付けない。**
-                # 500社ぶん失敗しても status=success で通り、被覆率だけが
-                # 静かに落ちる。「サイトが無い」のではなく「引けなかった」
-                manifest.add_warning(
-                    "ENRICH_FAILED_GBIZINFO",
-                    count=result.error,
-                    message=(
-                        f"{result.error} 社で gBizINFO を引けなかった。"
-                        "その分 official_url が空になっている"
-                    ),
+        started = time.monotonic()
+        try:
+            if name == "gbizinfo":
+                client = GbizInfoClient()
+                result = client.fetch(bangou_list, limit=limit)
+                if result.skipped_reason:
+                    manifest.add_warning("ENRICH_SKIPPED_GBIZINFO", message=result.skipped_reason)
+                for bangou, values in result.values.items():
+                    entity = by_bangou.get(bangou)
+                    if entity and values.get("official_url"):
+                        entity.official_url = values["official_url"]
+                        entity.official_domain = domain_from_url(values["official_url"])
+                if result.error:
+                    # **breakdown に入れるだけでは気付けない。**
+                    # 500社ぶん失敗しても status=success で通り、被覆率だけが
+                    # 静かに落ちる。「サイトが無い」のではなく「引けなかった」
+                    manifest.add_warning(
+                        "ENRICH_FAILED_GBIZINFO",
+                        count=result.error,
+                        message=(
+                            f"{result.error} 社で gBizINFO を引けなかった。"
+                            "その分 official_url が空になっている"
+                        ),
+                    )
+                manifest.set_breakdown(
+                    gbizinfo={
+                        "attempted": result.attempted,
+                        "hit": result.hit,
+                        "miss": result.miss,
+                        "error": result.error,
+                        "cache_hit": result.cache_hit,
+                    }
                 )
-            manifest.set_breakdown(
-                gbizinfo={
-                    "attempted": result.attempted,
-                    "hit": result.hit,
-                    "miss": result.miss,
-                    "error": result.error,
-                    "cache_hit": result.cache_hit,
-                }
-            )
 
-        elif name == "houjin_bangou":
-            client = HoujinBangouClient()
-            result = client.fetch(bangou_list, limit=limit)
-            if result.skipped_reason:
-                manifest.add_warning("ENRICH_SKIPPED_HOUJIN_BANGOU", message=result.skipped_reason)
-            mismatched: list[str] = []
-            for bangou, values in result.values.items():
-                entity = by_bangou.get(bangou)
-                if not entity:
+            elif name == "houjin_bangou":
+                client = HoujinBangouClient()
+                result = client.fetch(bangou_list, limit=limit)
+                if result.skipped_reason:
+                    manifest.add_warning(
+                        "ENRICH_SKIPPED_HOUJIN_BANGOU", message=result.skipped_reason
+                    )
+                mismatched: list[str] = []
+                for bangou, values in result.values.items():
+                    entity = by_bangou.get(bangou)
+                    if not entity:
+                        continue
+                    nta_name = values.get("nta_name")
+                    # 商号の裏取り。EDINET と国税庁で表記が食い違う場合は
+                    # EDINET の値を残しつつ、食い違いの件数だけ記録する。
+                    if nta_name and normalize_name(nta_name) != entity.name_normalized:
+                        mismatched.append(entity.entity_id)
+                if mismatched:
+                    manifest.add_warning(
+                        "NAME_MISMATCH_NTA",
+                        count=len(mismatched),
+                        sample=mismatched[:5],
+                        message="EDINET と国税庁で商号の表記が一致しない（EDINET 側を採用）",
+                    )
+                if result.error:
+                    manifest.add_warning(
+                        "ENRICH_FAILED_HOUJIN_BANGOU",
+                        count=result.error,
+                        message=(
+                            f"{result.error} 社で国税庁を引けなかった。"
+                            "その分だけ商号の裏取りができていない"
+                        ),
+                    )
+                manifest.set_breakdown(
+                    houjin_bangou={
+                        "attempted": result.attempted,
+                        "hit": result.hit,
+                        "miss": result.miss,
+                        "error": result.error,
+                        "cache_hit": result.cache_hit,
+                    }
+                )
+
+            elif name == "wikidata_identity":
+                if offline:
+                    manifest.add_warning(
+                        "ENRICH_SKIPPED_WIKIDATA",
+                        message=(
+                            "offline のため公式サイトを補っていない。"
+                            "**「無い」のではなく「引いていない」**"
+                        ),
+                    )
                     continue
-                nta_name = values.get("nta_name")
-                # 商号の裏取り。EDINET と国税庁で表記が食い違う場合は
-                # EDINET の値を残しつつ、食い違いの件数だけ記録する。
-                if nta_name and normalize_name(nta_name) != entity.name_normalized:
-                    mismatched.append(entity.entity_id)
-            if mismatched:
-                manifest.add_warning(
-                    "NAME_MISMATCH_NTA",
-                    count=len(mismatched),
-                    sample=mismatched[:5],
-                    message="EDINET と国税庁で商号の表記が一致しない（EDINET 側を採用）",
-                )
-            if result.error:
-                manifest.add_warning(
-                    "ENRICH_FAILED_HOUJIN_BANGOU",
-                    count=result.error,
-                    message=(
-                        f"{result.error} 社で国税庁を引けなかった。"
-                        "その分だけ商号の裏取りができていない"
-                    ),
-                )
-            manifest.set_breakdown(
-                houjin_bangou={
-                    "attempted": result.attempted,
-                    "hit": result.hit,
-                    "miss": result.miss,
-                    "error": result.error,
-                    "cache_hit": result.cache_hit,
-                }
-            )
+                _fill_missing_urls_from_wikidata(entities, cfg, manifest)
 
-        elif name == "wikidata_identity":
-            if offline:
+            elif name == "co_jp_homepage":
+                _fill_from_co_jp_homepage(entities, manifest, limit=limit, offline=offline)
+
+            else:
                 manifest.add_warning(
-                    "ENRICH_SKIPPED_WIKIDATA",
-                    message=(
-                        "offline のため公式サイトを補っていない。"
-                        "**「無い」のではなく「引いていない」**"
-                    ),
+                    "ENRICH_UNKNOWN",
+                    sample=[name],
+                    message=f"未知の enrich 指定のためスキップした: {name}",
                 )
-                continue
-            _fill_missing_urls_from_wikidata(entities, cfg, manifest)
-
-        elif name == "co_jp_homepage":
-            _fill_from_co_jp_homepage(entities, manifest, limit=limit, offline=offline)
-
-        else:
-            manifest.add_warning(
-                "ENRICH_UNKNOWN",
-                sample=[name],
-                message=f"未知の enrich 指定のためスキップした: {name}",
-            )
+        finally:
+            # **どの経路が遅いかを残す。** 国内 2026-11 で P1 が 32 分かかったが、
+            # 工程全体の秒数しか無く、どれを直せばよいか分からなかった
+            enrich_seconds[name] = round(time.monotonic() - started, 1)
+    manifest.set_breakdown(enrich_seconds=enrich_seconds)
 
 
 def _fill_from_co_jp_homepage(
@@ -379,8 +390,6 @@ def _fill_from_co_jp_homepage(
 
 def _live_co_jp_guesser(contact: str):
     """実際に DNS とサイトを引く推測器。公開リゾルバと連絡先つき UA を使う。"""
-    import time
-
     import httpx
 
     from ..config import load_yaml

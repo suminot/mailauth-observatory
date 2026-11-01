@@ -505,6 +505,22 @@ def test_offline_ならネットワークに出ない(edinet_sample, monkeypatch
     )
 
 
+def test_補完の経路ごとに秒数を残す(edinet_sample):
+    """**どの経路が遅いかを manifest から読めること。**
+
+    国内 2026-11 で P1 が 32 分かかったが、工程全体の秒数しか無く、
+    gBizINFO・Wikidata・.co.jp 推測のどれが遅いのか分からなかった。
+    引かなかった経路（offline）も 0 秒として載る。
+    """
+    import yaml
+
+    result = run_p1("2026-08", edinet_sample, offline=True)
+    seconds = result["breakdown"]["enrich_seconds"]
+    cfg = yaml.safe_load(open("configs/populations/jp-all-listed.yaml", encoding="utf-8"))
+    assert set(seconds) == set(cfg["source"]["enrich"])
+    assert all(isinstance(v, float) and v >= 0 for v in seconds.values())
+
+
 def test_offline_でなければ補完を試みる(edinet_sample, monkeypatch):
     """**offline を外したら実際に引くこと。** 黙って何もしないのが一番悪い。"""
     called: list[str] = []
