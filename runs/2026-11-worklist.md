@@ -8,15 +8,13 @@
 `configs/worklist/unidentified_hosts.yaml` に理由を書いて作業リストから外してください。
 **「調べたが分からなかった」は結論であって、無かったことにはしません。**
 
-## 手を付けるもの（98 件）
+## 手を付けるもの（99 件）
 
 | 登録ドメイン | 件数 | 連続月 | 例 |
 |---|---|---|---|
 | `ktk-sol.co.jp` | 6 | 1 | `mx.ktk-sol.co.jp` |
 | `jm-s.co.jp` | 5 | 1 | `mx01.jm-s.co.jp`, `mx02.jm-s.co.jp`, `mx03.jm-s.co.jp` |
 | `s-idc.net` | 5 | 1 | `mta.nmail.s-idc.net` |
-| `wadax-sv.jp` | 5 | 1 | `wxa105.wadax-sv.jp`, `dda101.wadax-sv.jp` |
-| `xbiz.ne.jp` | 5 | 1 | `sv363.xbiz.ne.jp`, `sv850.xbiz.ne.jp`, `sv12293.xbiz.ne.jp` |
 | `0101.co.jp` | 4 | 1 | `mwbmry11.0101.co.jp`, `mwbmta11.0101.co.jp`, `mwbmta21.0101.co.jp` |
 | `aams4.jp` | 4 | 1 | `mx-1.aams4.jp`, `mx-0.aams4.jp`, `mx.aams4.jp` |
 | `biglobe.ne.jp` | 4 | 1 | `bgmgate1.biglobe.ne.jp`, `bgmgate2.biglobe.ne.jp` |
@@ -31,7 +29,6 @@
 | `enets.ne.jp` | 3 | 1 | `spamcs1.enets.ne.jp` |
 | `memenet.or.jp` | 3 | 1 | `dr-web02.memenet.or.jp`, `dr-web01.memenet.or.jp`, `cache.memenet.or.jp` |
 | `reflexion.net` | 3 | 1 | `asp.reflexion.net`, `mx-110.reflexion.net`, `mx-100.reflexion.net` |
-| `xserver.jp` | 3 | 1 | `sv10262.xserver.jp`, `sv221.xserver.jp`, `sv129.xserver.jp` |
 | `admiral.ne.jp` | 2 | 1 | `xmx01.admiral.ne.jp`, `zmx00.admiral.ne.jp` |
 | `aics.ne.jp` | 2 | 1 | `amxi.aics.ne.jp` |
 | `asp-direct.net` | 2 | 1 | `mail02.asp-direct.net`, `mail01.asp-direct.net` |
@@ -44,12 +41,10 @@
 | `ipsol-dc.net` | 2 | 1 | `mgw02.ipsol-dc.net`, `mgw01.ipsol-dc.net` |
 | `k-mac.jp` | 2 | 1 | `mx02.k-mac.jp`, `mx01.k-mac.jp` |
 | `kisc.co.jp` | 2 | 1 | `smtp-gate2.kisc.co.jp`, `smtp-gate1.kisc.co.jp` |
-| `mailgun.org` | 2 | 1 | `mxb.mailgun.org`, `mxa.mailgun.org` |
 | `marketingsuite.jp` | 2 | 1 | `ims.marketingsuite.jp` |
 | `mewave.jp` | 2 | 1 | `sato1.check.mewave.jp`, `cbon1.check.mewave.jp` |
 | `mg-r.com` | 2 | 1 | `vms2.mg-r.com`, `mx2.mg-r.com` |
 | `msaas.jp` | 2 | 1 | `mail-mgnatori.msaas.jp`, `mail-mgcm.msaas.jp` |
-| `muumuu-mail.com` | 2 | 1 | `mx01.muumuu-mail.com` |
 | `ntvit.co.jp` | 2 | 1 | `mx07.ntvit.co.jp`, `mx08.ntvit.co.jp` |
 | `pacific-systems.co.jp` | 2 | 1 | `mail0.pacific-systems.co.jp`, `mail1.pacific-systems.co.jp` |
 | `primedrive.jp` | 2 | 1 | `primedrive.jp` |
@@ -78,14 +73,12 @@
 | `ebarafoods.sakura.ne.jp` | 1 | 1 | `ebarafoods.sakura.ne.jp` |
 | `einfonet-mail.sakura.ne.jp` | 1 | 1 | `einfonet-mail.sakura.ne.jp` |
 | `fitsite.ne.jp` | 1 | 1 | `proxy2.fitsite.ne.jp` |
-| `frontbridge.com` | 1 | 1 | `mail.global.frontbridge.com` |
 | `google.co` | 1 | 1 | `alt2.aspmx.l.google.co` |
 | `gracenet.ne.jp` | 1 | 1 | `ns2.gracenet.ne.jp` |
 | `guardianwall.jp` | 1 | 1 | `prmtotr010.guardianwall.jp` |
 | `gungho.jp` | 1 | 1 | `mail.gungho.jp` |
 | `hammock.co.jp` | 1 | 1 | `mail.hammock.co.jp` |
 | `his.ne.jp` | 1 | 1 | `dns1.his.ne.jp` |
-| `holo.ne.jp` | 1 | 1 | `rabbit.holo.ne.jp` |
 | `home-s.net` | 1 | 1 | `ns-01.home-s.net` |
 | `housei-inc.com` | 1 | 1 | `tokyo-proxy.housei-inc.com` |
 | `infoteria.com` | 1 | 1 | `sfw.infoteria.com` |
@@ -110,15 +103,22 @@
 | `nippon-grande.sakura.ne.jp` | 1 | 1 | `nippon-grande.sakura.ne.jp` |
 | `nissan.co.jp` | 1 | 1 | `gloria.nissan.co.jp` |
 | `nittobo.com` | 1 | 1 | `vs1.nittobo.com` |
+| `oita-asp.jp` | 1 | 1 | `altmsv01.oita-asp.jp` |
+| `ptrcloud.net` | 1 | 1 | `ep.ptr173.ptrcloud.net` |
+| `qemailserver.com` | 1 | 1 | `noreply.qemailserver.com` |
+| `recruit.co.jp` | 1 | 1 | `mx.x.recruit.co.jp` |
+| `ringerhut.sakura.ne.jp` | 1 | 1 | `ringerhut.sakura.ne.jp` |
+| `siteprotector.us` | 1 | 1 | `cell.siteprotector.us` |
+| `sixcore.ne.jp` | 1 | 1 | `sv213.sixcore.ne.jp` |
+| `skyarch.ne.jp` | 1 | 1 | `mailgate20.skyarch.ne.jp` |
 
-## 調査済み・同定できなかったもの（2 件）
+## 調査済み・同定できなかったもの（1 件）
 
 **件数は残します。** 「調べたが分からなかった」を無かったことにしないためです。
 
 | 登録ドメイン | 件数 | 理由 | 調査日 |
 |---|---|---|---|
-| `mailsecure.jp` | 15 | 公開情報から同定できない | 2026-09-29 |
-| `sharedmail.jp` | 10 | 公開情報から同定できない | 2026-09-29 |
+| `sharedmail.jp` | 10 | 公開情報から同定できない | 2026-11-01 |
 
 - P6 の未知ホスト一覧が上限 100 件に達している。**一覧に無いホストが残っている**（頻度の低いものが切れている）
 
