@@ -3,7 +3,7 @@
 # 証拠の強さ: DKIM_CNAME >= MX > SPF_INCLUDE > VERIFICATION_TXT（DESIGN.md P3/P6）
 # ゲートウェイ型製品が MX を握っていても、SPF include / DKIM CNAME から
 # 背後の実基盤を別カテゴリとして残すこと（原則2。単一ベンダーに丸めない）。
-version: 2026-10-31
+version: 2026-11-01
 category: mail_platform
 
 rules:
@@ -440,3 +440,88 @@ rules:
       pattern: '^mx00[1-4]\.netsol\.xion\.oxcs\.net\.?$'
     confidence: high
     source: https://www.networksolutions.com/help/article/cloud-mail-dns-settings
+
+  # ---------------------------------------------------------------------------
+  # 2026-10 の米国計測の作業リスト（未知 MX）から、各社の公式資料に MX の
+  # ホスト名が載っているものだけ（2026-11-01 に確認）
+  # ---------------------------------------------------------------------------
+
+  # Network Solutions と同じ Newfold の Cloud Mail（Register.com で買ったもの）。
+  # 資料は Network Solutions のページに Register.com 分として載っている
+  - id: register-mx-01
+    vendor: Register.com
+    product: Cloud Mail（Open-Xchange）
+    match:
+      record: MX
+      pattern: '^mx00[1-4]\.register\.xion\.oxcs\.net\.?$'
+    confidence: high
+    source: https://www.networksolutions.com/help/article/cloud-mail-dns-settings
+
+  - id: ionos-mx-01
+    vendor: IONOS
+    product: IONOS Mail
+    match:
+      record: MX
+      pattern: '^mx0[01]\.ionos\.com\.?$'
+    confidence: high
+    source: https://www.ionos.com/help/index.php?id=4786
+
+  # Titan（titan.email）は TitanHQ（security_gw.yaml）とは別の会社
+  - id: titan-mx-01
+    vendor: Titan
+    product: Titan Email
+    match:
+      record: MX
+      pattern: '^mx[12]\.titan\.email\.?$'
+    confidence: high
+    source: https://support.titan.email/hc/en-us/articles/900003527246-Setup-Titan-MX-and-TXT-records-for-Hostinger
+
+  - id: fastmail-mx-01
+    vendor: Fastmail
+    product: Fastmail
+    match:
+      record: MX
+      pattern: '^in[12]-smtp\.messagingengine\.com\.?$'
+    confidence: high
+    source: https://www.fastmail.help/hc/en-us/articles/1500000280261
+
+  - id: 263-mx-01
+    vendor: 263 云通信
+    product: 263 企业邮箱
+    match:
+      record: MX
+      pattern: '^mxw?\.263\.net\.?$|^mxw?com\.263xmail\.com\.?$'
+    confidence: high
+    source: https://www.263.net/success/mail/client/20160603/970.html
+
+  - id: xinnet-mx-01
+    vendor: 新网（Xinnet）
+    product: 全球邮
+    match:
+      record: MX
+      pattern: '^(mxu|mxc|mx1?|mx1?-n)\.global-mail\.cn\.?$'
+    confidence: high
+    source: https://www.xinnet.com/service/cjwt/mail/shezhi/957.html
+
+  # sendgrid-mx-01 と同じく、**アプリが受け取るための受信口。** 確度を下げる
+  - id: mailgun-mx-01
+    vendor: Sinch
+    product: Mailgun (Inbound Routes)
+    match:
+      record: MX
+      pattern: '^mx[ab](\.eu)?\.mailgun\.org\.?$'
+    confidence: medium
+    source: https://documentation.mailgun.com/docs/mailgun/user-manual/domains/domains-verify
+    note: 受信したメールをアプリに渡す仕組み。業務メールの基盤とは限らない
+
+  # **受け取って別のメールボックスへ転送するだけ。** 実際のメールボックスは
+  # DNS からは分からない。受信がそこを通る事実は残すが、確度を下げる
+  - id: cloudflare-routing-mx-01
+    vendor: Cloudflare
+    product: Email Routing（転送）
+    match:
+      record: MX
+      pattern: '^route[123]\.mx\.cloudflare\.net\.?$'
+    confidence: medium
+    source: https://developers.cloudflare.com/email-routing/setup/email-routing-dns-records/
+    note: 転送のみ。転送先のメールボックスは分からない

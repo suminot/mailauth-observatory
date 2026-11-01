@@ -5,7 +5,7 @@
 #
 # 国内ベンダーの固定ホスト名は未解決事項の筆頭（DESIGN.md 第11章 #1）。
 # 運用コンソール画面5の「未知 MX ホスト頻度順リスト」から帰納的に埋めていく。
-version: 2026-10-31
+version: 2026-11-01
 category: security_gateway
 
 rules:
@@ -420,6 +420,86 @@ rules:
     confidence: high
     layer: inbound_gateway
     source: https://documentation.n-able.com/mail-assure/userguide/Content/B_Admin%20Level/domains/mx-records.htm
+
+  # ---------------------------------------------------------------------------
+  # 2026-10 の米国計測の作業リスト（未知 MX）から、各社の公式資料に MX の
+  # ホスト名が載っているものだけ（2026-11-01 に確認）
+  # ---------------------------------------------------------------------------
+
+  # 旧 FuseMail。資料は地域別の `<地域>.mxN` だけで、`<顧客>.mx3-us` の形は
+  # 載っていないので入れない
+  - id: vipre-mx-01
+    vendor: VIPRE
+    product: VIPRE Email Security Cloud
+    match:
+      record: MX
+      pattern: '^(usa|ca|uk|dk|se|eu)\.mx[13]\.mailanyone\.net\.?$|^(usa|ca|uk|dk|se|eu)\.mx[24]\.mx25\.net\.?$'
+    confidence: high
+    layer: inbound_gateway
+    source: https://vipre.helpjuice.com/email-cloud-basics/email-security-cloud-update-mx-records
+
+  # Mesh Security（Bitdefender が買収）。同じ文面が Bitdefender の資料にもある
+  - id: mesh-mx-01
+    vendor: Bitdefender
+    product: Mesh Email Security
+    match:
+      record: MX
+      pattern: '^mx[12]-(us|eu)\.emailsecurity\.app\.?$'
+    confidence: high
+    layer: inbound_gateway
+    source: https://docs.emailsecurity.app/help-center/connection-details
+
+  - id: spamhero-mx-01
+    vendor: SpamHero
+    product: SpamHero
+    match:
+      record: MX
+      pattern: '\.p10\.spamhero\.com\.?$|\.p[234]0\.spamhero\.net\.?$'
+    confidence: high
+    layer: inbound_gateway
+    source: https://www.spamhero.com/support/86459/Using_SpamHero_Spam_Filtering_with_GoDaddy
+
+  - id: mailchannels-mx-01
+    vendor: MailChannels
+    product: Inbound Filtering
+    match:
+      record: MX
+      pattern: '^mx[12]\.mailchannels\.net\.?$'
+    confidence: high
+    layer: inbound_gateway
+    source: https://docs.mailchannels.com/inbound/overview
+
+  - id: mailprotector-mx-01
+    vendor: Mailprotector
+    product: CloudFilter
+    match:
+      record: MX
+      pattern: '\.inbound\.emailservice\.(io|co|cc)\.?$'
+    confidence: high
+    layer: inbound_gateway
+    source: https://support.mailprotector.com/hc/en-us/articles/200154695-Step-5-Modify-MX-and-SPF-Records
+
+  - id: mailroute-mx-01
+    vendor: MailRoute
+    product: MailRoute
+    match:
+      record: MX
+      pattern: '^mail\.mailroute\.net\.?$'
+    confidence: high
+    layer: inbound_gateway
+    source: https://mailroute.net/docs/setup/godaddy-com
+
+  # 資料ではドイツ（EU）リージョン。旧 Hosted Email Security の
+  # `in.hes.trendmicro.eu` とは別
+  - id: trendmicro-mx-02
+    vendor: Trend Micro
+    product: Trend Micro Email Security
+    match:
+      record: MX
+      pattern: '\.in\.tmes\.trendmicro\.eu\.?$'
+    confidence: high
+    layer: inbound_gateway
+    source: https://docs.trendmicro.com/en-us/documentation/article/trend-micro-email-security-online-help-configuring-a-domain
 
 # DNS に痕跡を残さない製品（DESIGN.md P6「API連携型製品という構造的盲点」）
 # 「検出されなかった＝使っていない」ではないことを出力とレポートに明示する。

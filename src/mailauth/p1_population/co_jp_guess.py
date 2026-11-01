@@ -25,10 +25,20 @@
   - 試験（2026-10-31、30社）：WHOIS で確かめた 12 社と一致し、他社の
     ドメインを採ったものは無かった。WHOIS より多く拾った2社（社名変更・
     事業子会社）も正しかった
+  - **社名の芯が短い（4文字以下）ときは、ページ全体ではなくタイトルで
+    確かめる。** 2026-11 の国内計測で埋めた 177 社を見直したら、誤りは
+    すべて芯の短い会社だった。musashi.co.jp（タイトルは武蔵精密工業）、
+    jrc.co.jp（日本無線）、tomita.co.jp（富田興業）、bcc.co.jp（株式会社
+    ビーシーシー）、kozo.co.jp（構造システム）、uls.co.jp（株式会社ウルス）
+    など。短い語は他社のページのどこかに載ってしまう。タイトル（og:title・
+    og:site_name を含む）に「株式会社◯◯」「◯◯株式会社」「◯◯ホールディ
+    ングス」などの形で載っていることを求める。同じ見直しで、正しかった
+    短い社名の会社の約1割がこれで落ちる（タイトルが商品名だけのもの）
 """
 
 from __future__ import annotations
 
+import html
 import re
 import unicodedata
 from collections.abc import Callable
@@ -61,6 +71,12 @@ _JA_DROP = ("株式会社", "ホールディングス", "グループ", "（株�
 
 #: 社名の芯がこれより短いと、他社のページにも偶然載る
 MIN_CORE_CHARS = 3
+
+#: 社名の芯がこの長さ以下なら、ページ全体ではなくタイトルで確かめる
+SHORT_CORE_CHARS = 4
+
+#: タイトルで社名と認める形。{c} が社名の芯
+_TITLE_FORMS = ("株式会社{c}", "{c}株式会社", "(株){c}", "{c}ホールディングス", "{c}グループ")
 
 #: 1社あたりに試す推測の数の上限
 MAX_GUESSES = 4
@@ -99,13 +115,34 @@ def name_core(name_ja: str | None) -> str:
     return text
 
 
+def _squash(text: str) -> str:
+    text = unicodedata.normalize("NFKC", html.unescape(text or ""))
+    return re.sub(r"\s+", "", text).replace("・", "")
+
+
+def page_title(page: str) -> str:
+    """`<title>` と og:title / og:site_name をつなげて返す（NFKC・空白なし）。"""
+    parts = re.findall(r"<title[^>]*>(.*?)</title>", page or "", re.S | re.I)
+    parts += re.findall(
+        r"property=[\"']og:(?:title|site_name)[\"'][^>]*content=[\"']([^\"']*)",
+        page or "",
+        re.I,
+    )
+    return "".join(_squash(p) for p in parts)
+
+
 def page_names_company(page: str, core: str) -> bool:
-    """ページに社名の芯が載っているか。空白の違いは無視する。"""
+    """ページに社名が載っているか。空白の違いは無視する。
+
+    芯が短い（SHORT_CORE_CHARS 以下）ときは、タイトルに商号の形で載って
+    いることを求める（モジュールの説明）。
+    """
     if len(core) < MIN_CORE_CHARS:
         return False
-    text = unicodedata.normalize("NFKC", page or "")
-    text = re.sub(r"\s+", "", text).replace("・", "")
-    return core in text
+    if len(core) <= SHORT_CORE_CHARS:
+        title = page_title(page).lower()
+        return any(form.format(c=core.lower()) in title for form in _TITLE_FORMS)
+    return core in _squash(page)
 
 
 @dataclass
