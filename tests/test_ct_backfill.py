@@ -478,3 +478,38 @@ def test_CT_キャッシュは保存の前にその間の分と混ぜる(workflo
     # 3つとも保存と同じ条件で動く（保存しないのに混ぜても意味が無い）
     for i in (stash, restore, overlay):
         assert steps[i].get("if") == steps[save].get("if")
+
+
+def test_補充は_crtsh_の応答待ちを重ねる(tmp_path):
+    """1本ずつ待つと、応答の中央値 11 秒に対して qps 0.5 の1割も使えず、
+    1回 45 分で 150 件前後しか進まなかった（2026-11-01）。P2 と同じく
+    `prefetch` で応答待ちだけを重ねる（投げる間隔は全スレッドで共有）。
+    """
+    import threading
+    import time as _time
+
+    domains = [f"d{i}.jp" for i in range(8)]
+    write_pending(tmp_path, MONTH, "jp-all-listed", domains, total=100)
+    threads: set[int] = set()
+    lock = threading.Lock()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        with lock:
+            threads.add(threading.get_ident())
+        _time.sleep(0.05)
+        domain = request.url.params["q"].removeprefix("%.")
+        return httpx.Response(200, json=[{"name_value": domain}])
+
+    crtsh = CrtShClient(
+        cache_dir=tmp_path,
+        month=MONTH,
+        qps=0,
+        retries=0,
+        concurrency=4,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    report = backfill(tmp_path, MONTH, crtsh=crtsh, certspotter=None)
+    assert report.crtsh["tried"] == 8
+    assert report.crtsh["got"] == 8
+    assert len(threads) >= 2, "1本ずつ待っている"
+    assert read_pending(pending_path(tmp_path, MONTH, "jp-all-listed"))["pending"] == []

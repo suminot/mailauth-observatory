@@ -990,15 +990,24 @@ def backfill(
 
     if crtsh is not None and remaining:
         tried = 0
-        for domain in remaining:
+        # **応答待ちだけを重ねる**（P2 と同じ `prefetch`）。1本ずつ待つと、
+        # 応答の中央値 11 秒に対して qps 0.5 の上限の1割も使えず、1回 45 分で
+        # 150 件前後しか進まなかった（2026-11-01）。投げる間隔は 0.5 qps の
+        # まま全スレッドで共有するので、crt.sh から見た本数は変わらない。
+        # 持ち時間と「落ちている」の判定は、同時本数ぶんの塊ごとに見る
+        chunk = max(int(getattr(crtsh, "concurrency", 1)), 1)
+        for start in range(0, len(remaining), chunk):
             if deadline is not None and time.monotonic() > deadline:
                 break
             if crtsh.upstream_down:
                 break
-            result = crtsh.search(domain)
-            tried += 1
-            if not result.error:
-                got.add(domain)
+            batch = remaining[start : start + chunk]
+            for domain, result in crtsh.prefetch(batch).items():
+                # 落ちていると見切った後の分は投げていない。本数に数えない
+                if result.error_kind != "upstream_down":
+                    tried += 1
+                if not result.error:
+                    got.add(domain)
         report.crtsh = {
             "tried": tried,
             "got": sum(1 for d in remaining if d in got),
