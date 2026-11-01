@@ -193,9 +193,7 @@ def test_gateway_signing_domain_is_not_read_as_platform(rules):
     dxg.dox.jp はアライメント不可のゲートウェイ独自ドメイン。
     これを mail_platform と読むと「IIJ がメール基盤」という誤りになる。
     """
-    drafts = build_drafts(
-        _fact(dkim_cname_targets=["sel._domainkey.dxg.dox.jp"]), rules
-    )
+    drafts = build_drafts(_fact(dkim_cname_targets=["sel._domainkey.dxg.dox.jp"]), rules)
     assert [d.category for d in drafts] == [InferenceCategory.SECURITY_GATEWAY]
     assert drafts[0].vendor == "IIJ"
 
@@ -220,9 +218,7 @@ def test_dkim_cname_upgrades_confidence(rules):
     weak = build_drafts(_fact(spf_includes=["spf12.biglobe.ne.jp"]), rules)[0]
     assert weak.confidence == ConfidenceLevel.MEDIUM
 
-    strong = build_drafts(
-        _fact(dkim_cname_targets=["x.dkim.amazonses.com"]), rules
-    )[0]
+    strong = build_drafts(_fact(dkim_cname_targets=["x.dkim.amazonses.com"]), rules)[0]
     assert strong.confidence == ConfidenceLevel.HIGH
 
 
@@ -320,9 +316,7 @@ def test_uncorroborated_verification_needs_three_months(rules):
     assert first.stale_streak_months == 1
 
     key = (InferenceCategory.MAIL_PLATFORM, "Microsoft")
-    third = build_drafts(
-        fact, rules, prior_streaks={key: STALE_CONSECUTIVE_MONTHS - 1}
-    )[0]
+    third = build_drafts(fact, rules, prior_streaks={key: STALE_CONSECUTIVE_MONTHS - 1})[0]
     assert third.stale_streak_months == STALE_CONSECUTIVE_MONTHS
     assert third.is_stale is True
 
@@ -346,20 +340,30 @@ def test_corroboration_without_rules_is_none(rules):
     [
         # 模範的。M3AAWG 推奨構成
         (
-            dict(mx_null=True, spf_present=True, spf_all_qualifier="-",
-                 dmarc_present=True, effective_7489="reject"),
+            dict(
+                mx_null=True,
+                spf_present=True,
+                spf_all_qualifier="-",
+                dmarc_present=True,
+                effective_7489="reject",
+            ),
             ParkClass.HARDENED_PARKED,
         ),
         # Null MX が無くても quarantine 以上なら十分に固められている
         (
-            dict(spf_present=True, spf_all_qualifier="~", dmarc_present=True,
-                 effective_7489="quarantine"),
+            dict(
+                spf_present=True,
+                spf_all_qualifier="~",
+                dmarc_present=True,
+                effective_7489="quarantine",
+            ),
             ParkClass.DEFENDED_PARKED,
         ),
         # 送信禁止の意図はあるが DMARC が弱い
         (
-            dict(spf_present=True, spf_all_qualifier="-", dmarc_present=True,
-                 effective_7489="none"),
+            dict(
+                spf_present=True, spf_all_qualifier="-", dmarc_present=True, effective_7489="none"
+            ),
             ParkClass.INTENTIONAL_NO_SEND,
         ),
         # 放置。なりすましの出発点になりうる
@@ -395,8 +399,13 @@ def test_unobserved_domain_is_not_neglected():
 def test_hardened_requires_reject_not_quarantine():
     """hardened は p=reject のみ。quarantine は defended に留める。"""
     result = park_mod.classify(
-        _fact(mx_null=True, spf_present=True, spf_all_qualifier="-",
-              dmarc_present=True, effective_7489="quarantine")
+        _fact(
+            mx_null=True,
+            spf_present=True,
+            spf_all_qualifier="-",
+            dmarc_present=True,
+            effective_7489="quarantine",
+        )
     )
     assert result.park_class == ParkClass.DEFENDED_PARKED
 
@@ -412,9 +421,14 @@ def test_park_denominators():
 
 def test_wildcard_revoked_key_is_noted():
     result = park_mod.classify(
-        _fact(mx_null=True, spf_present=True, spf_all_qualifier="-",
-              dmarc_present=True, effective_7489="reject",
-              dkim_wildcard_revoked=True)
+        _fact(
+            mx_null=True,
+            spf_present=True,
+            spf_all_qualifier="-",
+            dmarc_present=True,
+            effective_7489="reject",
+            dkim_wildcard_revoked=True,
+        )
     )
     assert result.has_wildcard_dkim_revoked is True
     # 実効的な防御力は小さいことを併記する
@@ -428,9 +442,7 @@ def test_wildcard_revoked_key_is_noted():
 
 def test_unknown_mx_hosts_are_aggregated_by_registered_domain():
     """顧客別ホスト名を1件ずつ数えても辞書を育てる手がかりにならない。"""
-    facts = [
-        _fact(mx_hosts=[f"mx{i}.cust{i}.unknown-vendor.co.jp"]) for i in range(5)
-    ]
+    facts = [_fact(mx_hosts=[f"mx{i}.cust{i}.unknown-vendor.co.jp"]) for i in range(5)]
     facts.append(_fact(mx_hosts=["a.mail.protection.outlook.com"]))
     ranked = unknown_mx_hosts(facts, {"a.mail.protection.outlook.com"})
 
@@ -447,8 +459,7 @@ def test_unknown_mx_hosts_are_aggregated_by_registered_domain():
 
 
 def _write_facts(rows: list[dict], run_id: str = RUN) -> None:
-    write_parquet(rows, phase_output(run_id, "p5_parse", "facts.parquet"),
-                  FACT_ARROW_SCHEMA)
+    write_parquet(rows, phase_output(run_id, "p5_parse", "facts.parquet"), FACT_ARROW_SCHEMA)
 
 
 def _inferences(run_id: str = RUN):
@@ -525,8 +536,10 @@ def test_p6_marks_undetectable_when_no_gateway_found():
 def test_p6_reports_unknown_mx_hosts_in_manifest():
     """未知 MX ホストが manifest に出ること（受け入れ基準）。"""
     _write_facts(
-        [_fact(domain_id=f"d:{i}", mx_hosts=["mx.unknown-vendor.example"],
-               mx_present=True) for i in range(3)]
+        [
+            _fact(domain_id=f"d:{i}", mx_hosts=["mx.unknown-vendor.example"], mx_present=True)
+            for i in range(3)
+        ]
     )
     result = run_p6(run_id=RUN)
 
@@ -630,9 +643,7 @@ def test_specific_rule_wins_product_over_catch_all(rules):
 
 def test_unmatched_pphosted_host_still_infers_proofpoint(rules):
     """命名が変わっても未知ホストに落とさない。系列だけ不明にする。"""
-    drafts = build_drafts(
-        _fact(mx_hosts=["mx-newstyle.pphosted.com"], mx_present=True), rules
-    )
+    drafts = build_drafts(_fact(mx_hosts=["mx-newstyle.pphosted.com"], mx_present=True), rules)
     gateway = next(d for d in drafts if d.vendor == "Proofpoint")
     assert gateway.rule_ids == ["pp-mx-03"]
     assert gateway.product is None
@@ -731,6 +742,25 @@ IDENTIFIED_MX_HOSTS = [
     ("cloud8.spamtitan.com", InferenceCategory.SECURITY_GATEWAY, "TitanHQ"),
     ("primary.us.etp.fireeyegov.com", InferenceCategory.SECURITY_GATEWAY, "Trellix"),
     ("mx2.mtaroutes.com", InferenceCategory.SECURITY_GATEWAY, "N-able"),
+    # 2026-11-01：米国 2026-10 の作業リストから、公式資料で確かめて足した
+    ("mx001.register.xion.oxcs.net", InferenceCategory.MAIL_PLATFORM, "Register.com"),
+    ("mx00.ionos.com", InferenceCategory.MAIL_PLATFORM, "IONOS"),
+    ("mx2.titan.email", InferenceCategory.MAIL_PLATFORM, "Titan"),
+    ("in1-smtp.messagingengine.com", InferenceCategory.MAIL_PLATFORM, "Fastmail"),
+    ("mxwcom.263xmail.com", InferenceCategory.MAIL_PLATFORM, "263 云通信"),
+    ("mxw.263.net", InferenceCategory.MAIL_PLATFORM, "263 云通信"),
+    ("mxu.global-mail.cn", InferenceCategory.MAIL_PLATFORM, "新网（Xinnet）"),
+    ("mxa.eu.mailgun.org", InferenceCategory.MAIL_PLATFORM, "Sinch"),
+    ("route2.mx.cloudflare.net", InferenceCategory.MAIL_PLATFORM, "Cloudflare"),
+    ("usa.mx1.mailanyone.net", InferenceCategory.SECURITY_GATEWAY, "VIPRE"),
+    ("ca.mx2.mx25.net", InferenceCategory.SECURITY_GATEWAY, "VIPRE"),
+    ("mx1-us.emailsecurity.app", InferenceCategory.SECURITY_GATEWAY, "Bitdefender"),
+    ("rciis-com.p10.spamhero.com", InferenceCategory.SECURITY_GATEWAY, "SpamHero"),
+    ("rciis-com.p30.spamhero.net", InferenceCategory.SECURITY_GATEWAY, "SpamHero"),
+    ("mx1.mailchannels.net", InferenceCategory.SECURITY_GATEWAY, "MailChannels"),
+    ("shpreit-com.inbound.emailservice.io", InferenceCategory.SECURITY_GATEWAY, "Mailprotector"),
+    ("mail.mailroute.net", InferenceCategory.SECURITY_GATEWAY, "MailRoute"),
+    ("airglobal.in.tmes.trendmicro.eu", InferenceCategory.SECURITY_GATEWAY, "Trend Micro"),
 ]
 
 
@@ -744,6 +774,13 @@ IDENTIFIED_MX_HOSTS = [
         "mx1.smtp.goog",
         "mxa-00336402.gslb.gpphosted.com",
         "alpinereit-com.mx1.arsmtp.com",
+        # 2026-11-01：資料に載っている形と違うもの。**似た形でも広げない**
+        "mx10.mailspamprotection.com",  # SiteGround の資料は mx10.antispam.〜 だけ
+        "ithmines-com.mx3-us.mailanyone.net",  # VIPRE の資料は地域別の形だけ
+        "mx.c5.icoremail.net",  # Coremail の資料に C5 は無い
+        "mx1.pub.mailpod11-cph3.one.com",  # one.com の資料に無い形
+        "keytronic-mx2.titanhq.com",  # TitanHQ の資料は <クラスタ>-smtp-mxN
+        "mx-biz.mail.am0.yahoodns.net",
     ],
 )
 def test_資料で確かめていないホストは同定しない(rules, host):
@@ -785,9 +822,7 @@ def test_hennge_is_found_by_spf_not_mx(rules):
     2026-09 の実測で34件あった SPF 側の痕跡を1件も拾えていなかった
     （MX 側は0件）。
     """
-    drafts = build_drafts(
-        _fact(spf_includes=["spf.mta.hdems.com"], spf_present=True), rules
-    )
+    drafts = build_drafts(_fact(spf_includes=["spf.mta.hdems.com"], spf_present=True), rules)
     gateway = next(d for d in drafts if d.vendor == "HENNGE")
     assert gateway.category == InferenceCategory.SECURITY_GATEWAY
     assert gateway.rule_ids == ["hennge-spf-01"]
@@ -879,10 +914,7 @@ def test_one_external_mx_is_enough_to_not_be_self_hosted(rules):
         mx_present=True,
         org_domain_psl="kubota.example",
     )
-    assert (
-        undetectable_draft(rules, fact).undetectable_reason
-        != UndetectableReason.SELF_HOSTED_MX
-    )
+    assert undetectable_draft(rules, fact).undetectable_reason != UndetectableReason.SELF_HOSTED_MX
 
 
 def test_flattened_spf_is_unreadable_not_absent(rules):
@@ -904,10 +936,7 @@ def test_a_flattening_service_is_caught_even_when_the_count_is_low(rules):
         spf_is_flattened=False,
         spf_includes=["example.powerspf.com"],
     )
-    assert (
-        undetectable_draft(rules, fact).undetectable_reason
-        == UndetectableReason.SPF_FLATTENED
-    )
+    assert undetectable_draft(rules, fact).undetectable_reason == UndetectableReason.SPF_FLATTENED
 
 
 def test_the_default_reason_is_the_api_mode_blind_spot(rules):
@@ -1179,9 +1208,7 @@ def test_the_id_keeps_the_two_layers_apart(rules):
 )
 def test_the_oem_family_keeps_its_own_vendor(rules, spf_include, vendor, product):
     """**どこと契約しているかは消さない。**"""
-    drafts = build_drafts(
-        _fact(spf_includes=[spf_include], spf_present=True), rules
-    )
+    drafts = build_drafts(_fact(spf_includes=[spf_include], spf_present=True), rules)
     got = next(d for d in drafts if d.vendor == vendor)
     assert got.product == product
     assert got.engine == "Active! gate SS"
@@ -1239,9 +1266,7 @@ def test_synergy_and_spiral_are_different_companies(rules):
     数えるところだった。**
     """
     drafts = build_drafts(
-        _fact(
-            spf_includes=["smp.ne.jp", "support.crmstyle.com"], spf_present=True
-        ),
+        _fact(spf_includes=["smp.ne.jp", "support.crmstyle.com"], spf_present=True),
         rules,
     )
     vendors = {d.vendor for d in drafts if d.category == InferenceCategory.ESP}
