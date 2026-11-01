@@ -525,3 +525,69 @@ rules:
     confidence: medium
     source: https://developers.cloudflare.com/email-routing/setup/email-routing-dns-records/
     note: 転送のみ。転送先のメールボックスは分からない
+
+  # ---------------------------------------------------------------------------
+  # 2026-11 の国内計測の作業リスト（未知 MX）から、運営会社自身の資料に
+  # ホスト名が載っているものだけ（2026-11-01 に確認）
+  # ---------------------------------------------------------------------------
+
+  # 資料の例：「予備ドメイン：v0000-000.mailsecure.jp … MX 10 v0000-000.mailsecure.jp」
+  - id: webarena-mx-01
+    vendor: NTTPC コミュニケーションズ
+    product: WebARENA（メールホスティング）
+    match:
+      record: MX
+      pattern: '^v\d+-\d+\.mailsecure\.jp\.?$'
+    confidence: high
+    source: https://help.arena.ne.jp/hc/ja/articles/23628557189143
+
+  - id: muumuu-mx-01
+    vendor: GMOペパボ
+    product: ムームーメール
+    match:
+      record: MX
+      pattern: '^mx01\.muumuu-mail\.com\.?$'
+    confidence: high
+    source: https://muumuu-domain.com/information/maintenances/5008
+
+  # 資料は契約サーバーのホスト名（sv***.xserver.jp）をメールサーバーとして示す。
+  # MX にその名前が入っていれば、受信はそのレンタルサーバー
+  - id: xserver-mx-01
+    vendor: エックスサーバー
+    product: Xserver レンタルサーバー
+    match:
+      record: MX
+      pattern: '^sv\d+\.xserver\.jp\.?$'
+    confidence: high
+    source: https://www.xserver.ne.jp/support/faq/service_mail_setting_mail_server.php
+
+  - id: xserver-mx-02
+    vendor: エックスサーバー
+    product: XServerビジネス
+    match:
+      record: MX
+      pattern: '^sv\d+\.xbiz\.ne\.jp\.?$'
+    confidence: high
+    source: https://support.xserver.ne.jp/manual/man_mail_spf.php
+
+  # 資料（保守の告知）に共用・専用サーバーの一覧として載っている形だけ
+  - id: wadax-mx-01
+    vendor: WADAX
+    product: WADAX 共用・専用サーバー
+    match:
+      record: MX
+      pattern: '^(sva?|wxa?|dda)\d+\.wadax-sv\.jp\.?$'
+    confidence: high
+    source: https://www.wadax.ne.jp/support/mainte/detail.php?idyea=2025&no=1745220474
+
+  # Microsoft の資料が「MX に入っていてはいけない」とする**廃止された値。**
+  # 受信は Microsoft 365（EOP）に届くが、設定が古いまま残っている
+  - id: m365-mx-07
+    vendor: Microsoft
+    product: Microsoft 365 (Exchange Online)
+    match:
+      record: MX
+      pattern: '^mail\.global\.frontbridge\.com\.?$'
+    confidence: medium
+    source: https://learn.microsoft.com/en-us/troubleshoot/exchange/email-delivery/wrong-office-365-region-exo
+    note: 廃止された MX の値（旧 FrontBridge / EOP）。Microsoft は使わないよう案内している
