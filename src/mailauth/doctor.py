@@ -661,7 +661,7 @@ def _next_action(
         why=f"gold {len(months)} か月ぶん。公開も退避も設定済み",
         steps=[
             "Actions に「月次計測」の実行があるか",
-            "runs/YYYY-MM-worklist.md の未知 MX ホスト",
+            "runs/YYYY-MM-<母集団>-worklist.md の未知 MX ホスト",
             "site/src/changelog.md の「解釈」欄",
         ],
     )

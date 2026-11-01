@@ -58,6 +58,8 @@ class PhaseReport:
 @dataclass
 class RunReport:
     run_id: str
+    #: どの母集団の計測か（P1 の params）。**同じ月に国内と米国の両方がある**
+    population_id: str | None = None
     phases: list[PhaseReport] = field(default_factory=list)
     #: 工程間の件数変化。どこで落ちたかを追うための主要な材料
     flow: list[dict[str, Any]] = field(default_factory=list)
@@ -96,6 +98,7 @@ class RunReport:
     def to_dict(self) -> dict[str, Any]:
         return {
             "run_id": self.run_id,
+            "population_id": self.population_id,
             "status": self.status,
             "phases": [
                 {
@@ -138,6 +141,9 @@ def collect(run_id: str) -> RunReport:
             item.failure_breakdown = dict(manifest.get("failure_breakdown") or {})
             item.error = manifest.get("error")
             item.outputs = list(manifest.get("outputs") or [])
+            if phase == "p1_population":
+                pop = (manifest.get("params") or {}).get("population_id")
+                report.population_id = str(pop) if pop else None
         report.phases.append(item)
 
     # 工程間の件数変化。実行した工程だけを順に並べる
@@ -169,8 +175,10 @@ def to_markdown(report: RunReport, *, now: dt.datetime | None = None) -> str:
     """人が読む形にする。GitHub Actions の成果物として commit する。"""
     stamp = (now or dt.datetime.now(dt.UTC)).replace(microsecond=0).isoformat()
     lines = [
-        f"# 月次計測 {report.run_id}",
+        f"# 月次計測 {report.run_id}"
+        + (f"（{report.population_id}）" if report.population_id else ""),
         "",
+        f"- 母集団: `{report.population_id or '不明'}`",
         f"- 状態: **{report.status}**",
         f"- 集計時刻: {stamp}",
         f"- 警告: {report.total_warnings} 件",

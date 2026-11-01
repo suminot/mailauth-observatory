@@ -140,7 +140,7 @@ mailauth p8-publish    --any-month     # gold にある月をそのまま出す�
 
 # 月次実行の記録と退避
 mailauth run-report    --run 2026-08   # 八工程の manifest を1枚にまとめる
-mailauth run-report    --run 2026-08 --out runs/2026-08.md --fail-on-error
+mailauth run-report    --run 2026-08 --out runs/2026-08-jp-all-listed.md --fail-on-error
 mailauth offload       --run 2026-08   # bronze / silver を R2 へ（Git には入れない層）
 mailauth changelog                     # 計測側の変更を gold と manifest から検出する
 mailauth corrections                   # 訂正申告の登録簿から訂正履歴を runs/ に書く
@@ -812,7 +812,7 @@ P9 は `PHASES` に含まれない。**通知を自動実行に混ぜると、�
 
 ## 未知 MX ホストの月次ルーチン（Sprint 10）
 
-`mailauth worklist` が `runs/<run_id>-worklist.md` を作る。P6 は未知ホストを
+`mailauth worklist` が `runs/<run_id>-worklist.md` を作る（月次計測では `runs/<run_id>-<母集団>-worklist.md`）。P6 は未知ホストを
 頻度順で manifest に出しているが、**一覧が出るだけでは routine にならない。**
 毎月同じ顔ぶれが並んでいても気付けないし、手を付けたのかどうかも分からない。
 そこで月をまたいで追跡する。
