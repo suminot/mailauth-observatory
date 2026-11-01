@@ -415,3 +415,36 @@ def test_米国も毎月測る():
     m_on = monthly.get("on") or monthly.get(True)
     options = m_on["workflow_dispatch"]["inputs"]["population"]["options"]
     assert "configs/populations/us-all-listed.yaml" in options
+
+
+def test_進んだ回だけ続きを自分で頼む():
+    """毎時の schedule は足してから3時間起動しなかった（2026-11-01）。
+
+    **取れなかった回は頼まない** ── 落ちている相手を叩き続けない。
+    """
+    step = _steps()[_index("続きを頼む")]
+    cond = step.get("if", "")
+    assert "steps.fill.outputs.got != '0'" in cond
+    assert "steps.fill.outputs.ready == ''" in cond, "流し直しを頼んだ回は続けない"
+    assert "steps.fill.outputs.pending != '0'" in cond
+    assert "gh workflow run ct-backfill.yml" in step["run"]
+    assert _index("続きを頼む") > _index("CT ログのキャッシュを保存"), (
+        "保存する前に次の回を頼むと、次の回が古いキャッシュから始める"
+    )
+
+
+def test_月次計測は終わりに補充を頼み_補充は終わるのを待つ():
+    import yaml
+
+    from mailauth.paths import repo_root
+
+    monthly = yaml.safe_load(
+        (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(encoding="utf-8")
+    )
+    assert monthly["permissions"].get("actions") == "write"
+    steps = {s.get("name"): s for s in monthly["jobs"]["measure"]["steps"]}
+    ask = steps["CT の補充を頼む"]
+    assert "always()" in ask["if"]
+    assert "gh workflow run ct-backfill.yml" in ask["run"]
+    busy = _steps()[_index("月次計測が走っていないか確かめる")]["run"]
+    assert "sleep" in busy, "頼んだ直後は向こうがまだ実行中なので、待たないと必ず飛ばす"
