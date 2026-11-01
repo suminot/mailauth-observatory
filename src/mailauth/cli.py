@@ -153,6 +153,91 @@ def p2_candidates(
         raise typer.Exit(code=1)
 
 
+@app.command("ct-backfill")
+def ct_backfill_cmd(
+    run: RunOption = "",
+    max_minutes: Annotated[
+        float, typer.Option("--max-minutes", help="この実行で取りにいく時間の上限")
+    ] = 45.0,
+    use_crtsh: Annotated[bool, typer.Option("--crtsh/--no-crtsh", help="crt.sh を試す")] = True,
+    certspotter_requests: Annotated[
+        int,
+        typer.Option(
+            "--certspotter-requests",
+            help="CertSpotter に投げる本数の上限。鍵なしは1時間に10本まで。0 で使わない",
+        ),
+    ] = 9,
+    mark_rerun: Annotated[
+        str | None,
+        typer.Option("--mark-rerun", help="この母集団の流し直しを頼んだと記録して終わる"),
+    ] = None,
+    config: Annotated[
+        str, typer.Option("--config", help="候補生成のパラメータ（crt.sh の qps など）")
+    ] = "configs/candidates.yaml",
+) -> None:
+    """P2 の CT の積み残しを、月のあいだに少しずつ取り直す（BACKLOG 12）。
+
+    crt.sh を qps 0.5 のまま試し、落ちていれば CertSpotter の無料枠の内側で取る。
+    取れたものは同じ月のキャッシュに入り、同じ run_id の流し直しで使われる。
+    """
+    import os
+    import time
+
+    from .config import load_yaml
+    from .ctlog import (
+        DEFAULT_CONCURRENCY,
+        CertSpotterClient,
+        CrtShClient,
+        backfill,
+        mark_rerun_requested,
+    )
+    from .paths import cache_root
+
+    run_id = validate_run_id(run or default_run_id())
+    cache_dir = cache_root() / "crtsh"
+    if mark_rerun:
+        mark_rerun_requested(cache_dir, run_id, mark_rerun)
+        typer.echo(f"{run_id} / {mark_rerun}: 流し直しを頼んだと記録した")
+        return
+    if offline_from_env():
+        typer.echo("MAILAUTH_OFFLINE のため取りにいかない")
+        return
+
+    ct_cfg = load_yaml(config).get("ct", {})
+    crtsh = (
+        CrtShClient(
+            cache_dir=cache_dir,
+            month=run_id,
+            qps=float(ct_cfg.get("qps", 0.5)),
+            timeout=float(ct_cfg.get("timeout_sec", 60)),
+            retries=int(ct_cfg.get("retries", 2)),
+            concurrency=int(ct_cfg.get("concurrency", DEFAULT_CONCURRENCY)),
+            # **補充では早めに見切る。** 落ちている相手を何十本も叩かない
+            down_after=5,
+        )
+        if use_crtsh
+        else None
+    )
+    certspotter = (
+        CertSpotterClient(
+            cache_dir=cache_dir,
+            month=run_id,
+            api_key=os.environ.get("MAILAUTH_CERTSPOTTER_API_KEY") or None,
+            max_requests=certspotter_requests,
+        )
+        if certspotter_requests > 0
+        else None
+    )
+    report = backfill(
+        cache_dir,
+        run_id,
+        crtsh=crtsh,
+        certspotter=certspotter,
+        deadline=time.monotonic() + max_minutes * 60,
+    )
+    typer.echo(json.dumps(report.to_dict(), ensure_ascii=False, indent=1))
+
+
 @app.command("p3-domains")
 def p3_domains(
     run: RunOption = "",
@@ -530,9 +615,7 @@ def changelog_cmd(
     if out is None:
         en_target = config_path("site/src/en/changelog.md")
         en_target.parent.mkdir(parents=True, exist_ok=True)
-        en_target.write_text(
-            _EN_FRONT_MATTER + to_markdown(entries, lang="en"), encoding="utf-8"
-        )
+        en_target.write_text(_EN_FRONT_MATTER + to_markdown(entries, lang="en"), encoding="utf-8")
         typer.echo(f"→ {en_target}")
 
     pending = [e.month for e in entries if e.has_measurement_change]
@@ -1090,6 +1173,4 @@ def drilldown_cmd(
         typer.secho(str(e), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from e
     typer.echo(f"→ {path}（{n} 行）")
-    typer.secho(
-        "  ⚠ 第2層（個社名付き明細）。社外に出さないこと", fg=typer.colors.YELLOW
-    )
+    typer.secho("  ⚠ 第2層（個社名付き明細）。社外に出さないこと", fg=typer.colors.YELLOW)

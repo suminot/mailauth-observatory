@@ -37,6 +37,7 @@ from ..ctlog import (
     CtResult,
     CtSource,
     DisabledCtSource,
+    write_pending,
 )
 from ..exclusions import ExclusionRegistry, require_available
 from ..exclusions import load as load_exclusions
@@ -136,9 +137,7 @@ OWNERSHIP_METHODS = frozenset(
 )
 
 
-def _domain_entities(
-    collectors: dict[str, _Collector], attr: str = "found"
-) -> dict[str, set[str]]:
+def _domain_entities(collectors: dict[str, _Collector], attr: str = "found") -> dict[str, set[str]]:
     """domain -> それを候補に持つ entity_id の集合。
 
     `attr` で apex 側（`found`）とサブドメイン側（`subdomains`）を切り替える。
@@ -297,9 +296,7 @@ def _discover_from_dns(
                     # 同じ apex の下にあるものだけ候補にする。
                     # **問い合わせは増えない** ── TXT は上で引いている
                     if etld_plus_one(target) == etld_plus_one(apex):
-                        collector.add(
-                            target, DiscoveryMethod.SPF_INCLUDE, f"include from {apex}"
-                        )
+                        collector.add(target, DiscoveryMethod.SPF_INCLUDE, f"include from {apex}")
 
     if use_rua:
         dmarc = ask(f"_dmarc.{apex}", "TXT")
@@ -361,6 +358,21 @@ def _prefetch_dns(
             strict=True,
         )
     )
+
+
+def _population_of(entities) -> str:
+    """企業の表から母集団の名前を取る。1回の P1 は1つの母集団なので、
+    **全行に共通するもの**を選ぶ。決まらなければ "mixed"。"""
+    common: set[str] | None = None
+    for value in entities.get("population_ids", []):
+        try:
+            names = {str(v) for v in value}
+        except TypeError:
+            names = {str(value)}
+        common = names if common is None else common & names
+    if common and len(common) == 1:
+        return next(iter(common))
+    return "mixed"
 
 
 def run(
@@ -512,6 +524,9 @@ def run(
             "from_cache": 0,
             # 当月以外のキャッシュを使った件数。**0 でなければ時系列が嘘になる**
             "stale_cache": 0,
+            # 月のあいだの補充で CertSpotter から取ったもの（ctlog.py）。
+            # **期限内の証明書しか返さない**ので crt.sh より少なく出る
+            "from_certspotter": 0,
             "cache_month": run_id,
             "errors": 0,
             "raw_names": 0,
@@ -646,9 +661,7 @@ def run(
                         ct_org_stats["errors"] += 1
                         manifest.add_failure(f"ct_org_{found.error_kind or 'error'}")
                     for domain in found.found[:org_max]:
-                        collector.add(
-                            domain, DiscoveryMethod.CT_ORG, f"crt.sh O={name}"
-                        )
+                        collector.add(domain, DiscoveryMethod.CT_ORG, f"crt.sh O={name}")
                         org_seeds.append(domain)
                     if found.found:
                         ct_org_stats["entities_recovered"] += 1
@@ -676,6 +689,8 @@ def run(
                         # 月で区切っているので通常は起きないが、起きたら見える形にする
                         if ct.cache_month != run_id:
                             ct_stats["stale_cache"] += 1
+                        if getattr(ct, "source", "crtsh") == "certspotter":
+                            ct_stats["from_certspotter"] += 1
                     if ct.error:
                         ct_stats["errors"] += 1
                         # **失敗を一語にまとめない。** 時間切れなら待ち方、
@@ -683,7 +698,12 @@ def run(
                         manifest.add_failure(f"ct_log_{ct.error_kind or 'error'}")
                     ct_max = int(ct_cfg.get("max_per_entity", 200))
                     for found in ct.found[:ct_max]:
-                        collector.add(found, DiscoveryMethod.CT_LOG, f"crt.sh %.{official}")
+                        via = (
+                            "CertSpotter"
+                            if getattr(ct, "source", "") == "certspotter"
+                            else "crt.sh"
+                        )
+                        collector.add(found, DiscoveryMethod.CT_LOG, f"{via} %.{official}")
                     if len(ct.found) > ct_max:
                         ct_stats["truncated"] += len(ct.found) - ct_max
 
@@ -978,6 +998,29 @@ def run(
         # 2026-09-24 に crt.sh はトップページごと 502 を返しており、この
         # 区別が無いと、その月の結果が「そういう分布だった」として残る
         down = getattr(ct_source, "upstream_down", None)
+        # **取れなかった起点ドメインを積み残しとして書く。** 月のあいだに
+        # ct-backfill が取り直し、同じ run_id の流し直しで使われる
+        # （ctlog.py「積み残しと、月のあいだの補充」）
+        ct_cache_dir = getattr(ct_source, "cache_dir", None)
+        if ct_enabled and ct_cache_dir is not None and limit is None:
+            pending = [d for d, r in ct_ready.items() if r.error]
+            population = _population_of(active)
+            path = write_pending(
+                Path(ct_cache_dir),
+                run_id,
+                population,
+                pending,
+                total=len(ct_ready),
+                config=f"configs/populations/{population}.yaml",
+            )
+            manifest.set_breakdown(
+                ct_pending={
+                    "population": population,
+                    "pending": len(pending),
+                    "total": len(ct_ready),
+                    "path": str(path),
+                }
+            )
         if down:
             manifest.add_warning(
                 "CT_UPSTREAM_UNAVAILABLE",
@@ -1059,8 +1102,7 @@ def _check_acceptance(
             manifest.add_warning(
                 "ACCEPTANCE_MEDIAN_OUT_OF_RANGE",
                 message=(
-                    f"1社あたり候補数の中央値 {percentiles['p50']} が想定 {lo}〜{hi} の外"
-                    + cause
+                    f"1社あたり候補数の中央値 {percentiles['p50']} が想定 {lo}〜{hi} の外" + cause
                 ),
             )
 

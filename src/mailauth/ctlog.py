@@ -99,6 +99,9 @@ class CtResult:
     duration_sec: float | None = None
     #: 投げ直した回数。0 なら一発で返っている
     attempts: int = 1
+    #: どこから取ったか（crtsh / certspotter）。**取り方が違えば見え方も違う**
+    #: ので、混ぜても数えられるようにしておく
+    source: str = "crtsh"
 
 
 #: 同時に応答を待つ本数の既定値。**投げる間隔（qps）とは別のつまみ。**
@@ -370,6 +373,7 @@ class CrtShClient:
                     raw_names=payload.get("raw_names", 0),
                     from_cache=True,
                     cache_month=payload.get("month"),
+                    source=payload.get("source", "crtsh"),
                 )
             except (json.JSONDecodeError, OSError):
                 pass
@@ -421,19 +425,19 @@ class CrtShClient:
                     # 待ち時間を延ばす方が投げ直すより成功率が上がる
                     if attempt < self.retries:
                         attempt += 1
-                        time.sleep(2 ** attempt)
+                        time.sleep(2**attempt)
                         continue
                     return failed("timeout", f"timeout: {exc}"[:200])
                 except httpx.HTTPError as exc:
                     if attempt < self.retries:
                         attempt += 1
-                        time.sleep(2 ** attempt)
+                        time.sleep(2**attempt)
                         continue
                     return failed("transport", f"request failed: {exc}"[:200])
 
                 if resp.status_code in (429, 502, 503, 504) and attempt < self.retries:
                     attempt += 1
-                    time.sleep(2 ** attempt)
+                    time.sleep(2**attempt)
                     continue
                 if resp.status_code != 200:
                     # **404 を「証明書が無い」と読まない。** 2026-09-25 に
@@ -468,12 +472,12 @@ class CrtShClient:
                         # **どの月の観測かを payload にも書く。** パスだけに
                         # 頼ると、ディレクトリを動かしたときに月が分からなくなる
                         "month": self.month,
+                        "source": "crtsh",
                     }
                 ),
                 encoding="utf-8",
             )
         return result
-
 
     def prefetch(
         self,
@@ -643,7 +647,7 @@ class DisabledCtSource:
         return CtResult(domain=domain, found=[], raw_names=0)
 
     def search_org(self, name: str) -> CtResult:
-        return CtResult(domain=f'org={name}', found=[], raw_names=0)
+        return CtResult(domain=f"org={name}", found=[], raw_names=0)
 
     def prefetch(
         self,
@@ -668,3 +672,397 @@ def _serial_prefetch(
         if on_result is not None:
             on_result(domain, out[domain])
     return out
+
+
+# ===========================================================================
+# 積み残しと、月のあいだの補充（BACKLOG 12）
+# ===========================================================================
+#
+# **CT の取得を「月初の1回」に賭けない。**
+#
+# crt.sh は 2026-09 から 2026-11 まで、月次計測のたびに落ちていた
+# （CT_UPSTREAM_UNAVAILABLE）。落ち方はまだらで、一日のうちに戻る時間帯も
+# ある。月初に一度だけ数時間叩いても、その時間帯に落ちていれば終わりである。
+#
+# そこで P2 が取れなかった起点ドメインを**積み残し**として書き、別の定期
+# 実行（ct-backfill）が月のあいだ少しずつ取り直す。取れたものは同じ月の
+# キャッシュに入るので、同じ run_id で流し直すとそのまま使われる。
+#
+# **相手への当たり方は変えない。** crt.sh は qps 0.5 のまま、CertSpotter は
+# 無料枠の上限（1時間に10件）の内側で、どちらも同じ IP から投げる。
+# 制限をすり抜けるために IP や経路を変えることはしない。
+
+#: 積み残しを置く場所。月のキャッシュの中に置き、キャッシュと一緒に持ち越す
+PENDING_DIRNAME = "_pending"
+
+
+def pending_path(cache_dir: Path, month: str, population: str) -> Path:
+    return cache_dir / f"month={month}" / PENDING_DIRNAME / f"{population}.json"
+
+
+def read_pending(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def write_pending(
+    cache_dir: Path,
+    month: str,
+    population: str,
+    domains: Iterable[str],
+    *,
+    total: int,
+    config: str | None = None,
+    now: str | None = None,
+) -> Path:
+    """P2 が取れなかった起点ドメインを書く。**流し直しの回数は引き継ぐ。**"""
+    path = pending_path(cache_dir, month, population)
+    before = read_pending(path)
+    payload = {
+        "month": month,
+        "population": population,
+        "config": config or before.get("config"),
+        # P2 が取りにいった起点ドメインの数。**積み残しの割合の分母**
+        "total": int(total),
+        "pending": sorted({d for d in domains if d}),
+        "updated_at": now or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        # 補充が済んで流し直しを頼んだ回数。**頼み続けない**ための数
+        "reruns_requested": int(before.get("reruns_requested", 0)),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+    return path
+
+
+def list_pending(cache_dir: Path, month: str) -> list[Path]:
+    base = cache_dir / f"month={month}" / PENDING_DIRNAME
+    return sorted(base.glob("*.json")) if base.is_dir() else []
+
+
+CERTSPOTTER_ENDPOINT = "https://api.certspotter.com/v1/issuances"
+
+#: CertSpotter が1回の応答で返す件数。これより少なければ最後のページ。
+#: `Link: rel="next"` は最後のページにも付くので、それでは判定できない
+#: （2026-11-01 に実地で確かめた）
+CERTSPOTTER_PAGE_SIZE = 100
+
+
+class CertSpotterClient:
+    """SSLMate CertSpotter の issuances API。**crt.sh が落ちているときの補充用。**
+
+    証明書ごとの `dns_names` を返すので、crt.sh と同じく「別 apex への
+    飛び移り」が取れる（BACKLOG 12）。違いは2つある。
+
+      - **期限内の証明書だけを返す**（2026-11-01 の応答で、期限切れの
+        ものは出てこなかった）。crt.sh は期限切れも返すので、こちらの方が
+        少なく出る。**どちらから取ったかをキャッシュに書き、P2 で数える**
+      - 鍵なしは**1時間に10件**（`x-ratelimit-limit: 10`）。ページ送りも
+        1件と数える。`max_requests` で1回の実行の上限を決め、応答の
+        `x-ratelimit-remaining` が 0 になったらその場でやめる
+
+    鍵（`MAILAUTH_CERTSPOTTER_API_KEY`）があれば上限が上がる。無くても動く。
+    """
+
+    def __init__(
+        self,
+        *,
+        cache_dir: Path | None,
+        month: str | None,
+        api_key: str | None = None,
+        max_requests: int = 9,
+        max_pages: int = 5,
+        min_interval: float = 2.0,
+        timeout: float = 60.0,
+        client: httpx.Client | None = None,
+    ) -> None:
+        self.cache_dir = cache_dir
+        self.month = month
+        self.api_key = api_key
+        self.max_requests = max(int(max_requests), 0)
+        self.max_pages = max(int(max_pages), 1)
+        self.min_interval = min_interval
+        self.timeout = timeout
+        self._client = client
+        self.requests = 0
+        self._last_call = 0.0
+        #: 相手に止められた理由。立ったらこの実行ではもう投げない
+        self.stopped: str | None = None
+
+    def _cache_path(self, domain: str) -> Path | None:
+        if self.cache_dir is None:
+            return None
+        base = self.cache_dir / f"month={self.month}" if self.month else self.cache_dir
+        return base / f"{domain.replace('/', '_')}.json"
+
+    def _get(self, client: httpx.Client, params: dict[str, str]) -> httpx.Response | None:
+        if self.stopped or self.requests >= self.max_requests:
+            return None
+        wait = self.min_interval - (time.monotonic() - self._last_call)
+        if wait > 0:
+            time.sleep(wait)
+        self._last_call = time.monotonic()
+        self.requests += 1
+        headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        resp = client.get(CERTSPOTTER_ENDPOINT, params=params, headers=headers)
+        remaining = resp.headers.get("x-ratelimit-remaining")
+        if resp.status_code == 429:
+            retry = resp.headers.get("retry-after")
+            self.stopped = f"CertSpotter の上限に達した（HTTP 429、Retry-After={retry}）"
+        elif remaining is not None and remaining.strip() == "0":
+            # **使い切ったら、次の1本を投げて断られる前にやめる**
+            self.stopped = "CertSpotter の1時間あたりの上限を使い切った"
+        return resp
+
+    def search(self, domain: str) -> CtResult:
+        cached = self._cache_path(domain)
+        if cached and cached.is_file():
+            try:
+                payload = json.loads(cached.read_text(encoding="utf-8"))
+                return CtResult(
+                    domain=domain,
+                    found=payload.get("found", []),
+                    raw_names=payload.get("raw_names", 0),
+                    from_cache=True,
+                    cache_month=payload.get("month"),
+                    source=payload.get("source", "crtsh"),
+                )
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        own = self._client is None
+        client = self._client or httpx.Client(timeout=self.timeout, follow_redirects=True)
+        started = time.monotonic()
+        seen: dict[str, None] = {}
+        raw = 0
+        after: str | None = None
+        pages = 0
+        try:
+            while True:
+                params = {
+                    "domain": domain,
+                    "include_subdomains": "true",
+                    "expand": "dns_names",
+                }
+                if after:
+                    params["after"] = after
+                try:
+                    resp = self._get(client, params)
+                except httpx.HTTPError as exc:
+                    return CtResult(
+                        domain=domain,
+                        error=f"CertSpotter: {exc}"[:200],
+                        error_kind="transport",
+                        source="certspotter",
+                    )
+                if resp is None:
+                    return CtResult(
+                        domain=domain,
+                        error=self.stopped or "この実行の CertSpotter の枠を使い切った",
+                        error_kind="budget",
+                        attempts=0,
+                        source="certspotter",
+                    )
+                if resp.status_code != 200:
+                    return CtResult(
+                        domain=domain,
+                        error=f"CertSpotter: HTTP {resp.status_code}",
+                        error_kind="http",
+                        source="certspotter",
+                    )
+                try:
+                    rows = resp.json()
+                except ValueError:
+                    return CtResult(
+                        domain=domain,
+                        error="CertSpotter: JSON として解釈できない応答",
+                        error_kind="decode",
+                        source="certspotter",
+                    )
+                pages += 1
+                for row in rows or []:
+                    for fqdn in row.get("dns_names") or []:
+                        candidate = str(fqdn).strip().lstrip("*.").rstrip(".").lower()
+                        if not candidate or " " in candidate:
+                            continue
+                        raw += 1
+                        apex = etld_plus_one(candidate)
+                        if apex:
+                            seen.setdefault(apex, None)
+                if len(rows or []) < CERTSPOTTER_PAGE_SIZE:
+                    break
+                if pages >= self.max_pages:
+                    # **途中までを「全部」として書かない**（原則5）。
+                    # 証明書の多い大企業は crt.sh が戻ったときに取る
+                    return CtResult(
+                        domain=domain,
+                        error=f"CertSpotter: {pages} ページで打ち切った（まだ続きがある）",
+                        error_kind="truncated",
+                        source="certspotter",
+                    )
+                after = str(rows[-1].get("id"))
+        finally:
+            if own:
+                client.close()
+
+        result = CtResult(
+            domain=domain,
+            found=sorted(seen),
+            raw_names=raw,
+            cache_month=self.month,
+            duration_sec=round(time.monotonic() - started, 3),
+            attempts=pages,
+            source="certspotter",
+        )
+        if cached:
+            cached.parent.mkdir(parents=True, exist_ok=True)
+            cached.write_text(
+                json.dumps(
+                    {
+                        "found": result.found,
+                        "raw_names": result.raw_names,
+                        "month": self.month,
+                        "source": "certspotter",
+                    }
+                ),
+                encoding="utf-8",
+            )
+        return result
+
+
+@dataclass
+class BackfillReport:
+    month: str
+    populations: dict[str, dict] = field(default_factory=dict)
+    crtsh: dict = field(default_factory=dict)
+    certspotter: dict = field(default_factory=dict)
+    #: 流し直しを頼んでよい母集団（積み残しがほぼ無くなった）
+    ready_for_rerun: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "month": self.month,
+            "populations": self.populations,
+            "crtsh": self.crtsh,
+            "certspotter": self.certspotter,
+            "ready_for_rerun": self.ready_for_rerun,
+        }
+
+
+#: 積み残しがこの割合以下になったら、流し直してよい
+RERUN_PENDING_RATE = 0.02
+#: 1か月に頼む流し直しの上限。**頼み続けない**
+MAX_RERUNS_PER_MONTH = 2
+
+
+def backfill(
+    cache_dir: Path,
+    month: str,
+    *,
+    crtsh: CrtShClient | None,
+    certspotter: CertSpotterClient | None,
+    deadline: float | None = None,
+) -> BackfillReport:
+    """積み残しを取り直す。**crt.sh を先に、だめなら CertSpotter で。**
+
+    取れたものは月のキャッシュに入り、積み残しから消える。
+    """
+    report = BackfillReport(month=month)
+    paths = list_pending(cache_dir, month)
+    files = {p: read_pending(p) for p in paths}
+    wanted: list[str] = []
+    for payload in files.values():
+        for d in payload.get("pending", []):
+            if d not in wanted:
+                wanted.append(d)
+
+    got: set[str] = set()
+
+    def _cached(domain: str) -> bool:
+        path = cache_dir / f"month={month}" / f"{domain.replace('/', '_')}.json"
+        return path.is_file()
+
+    remaining = [d for d in wanted if not _cached(d)]
+    got.update(d for d in wanted if _cached(d))
+
+    if crtsh is not None and remaining:
+        tried = 0
+        for domain in remaining:
+            if deadline is not None and time.monotonic() > deadline:
+                break
+            if crtsh.upstream_down:
+                break
+            result = crtsh.search(domain)
+            tried += 1
+            if not result.error:
+                got.add(domain)
+        report.crtsh = {
+            "tried": tried,
+            "got": sum(1 for d in remaining if d in got),
+            "upstream_down": crtsh.upstream_down,
+            "response": crtsh.response_stats(),
+        }
+        remaining = [d for d in remaining if d not in got]
+
+    if certspotter is not None and remaining:
+        tried = 0
+        errors: dict[str, int] = {}
+        for domain in remaining:
+            if deadline is not None and time.monotonic() > deadline:
+                break
+            if certspotter.stopped or certspotter.requests >= certspotter.max_requests:
+                break
+            result = certspotter.search(domain)
+            tried += 1
+            if result.error:
+                errors[result.error_kind or "error"] = (
+                    errors.get(result.error_kind or "error", 0) + 1
+                )
+            else:
+                got.add(domain)
+        report.certspotter = {
+            "tried": tried,
+            "got": sum(1 for d in remaining if d in got),
+            "requests": certspotter.requests,
+            "errors_by_kind": dict(sorted(errors.items())),
+            "stopped": certspotter.stopped,
+        }
+
+    for path, payload in files.items():
+        pop = payload.get("population") or path.stem
+        before = list(payload.get("pending", []))
+        after = [d for d in before if d not in got]
+        total = int(payload.get("total") or 0)
+        payload["pending"] = after
+        rate = (len(after) / total) if total else 0.0
+        report.populations[pop] = {
+            "total": total,
+            "pending_before": len(before),
+            "pending_after": len(after),
+            "pending_rate": round(rate, 4),
+            "reruns_requested": int(payload.get("reruns_requested", 0)),
+        }
+        # **取れたものがあり、積み残しがほぼ無くなったら流し直してよい。**
+        # 回数に上限を置く（取れないまま残るドメインで頼み続けない）
+        filled = len(before) - len(after)
+        if (
+            before
+            and filled > 0
+            and rate <= RERUN_PENDING_RATE
+            and int(payload.get("reruns_requested", 0)) < MAX_RERUNS_PER_MONTH
+        ):
+            report.ready_for_rerun.append(pop)
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+    return report
+
+
+def mark_rerun_requested(cache_dir: Path, month: str, population: str) -> None:
+    path = pending_path(cache_dir, month, population)
+    payload = read_pending(path)
+    if not payload:
+        return
+    payload["reruns_requested"] = int(payload.get("reruns_requested", 0)) + 1
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
