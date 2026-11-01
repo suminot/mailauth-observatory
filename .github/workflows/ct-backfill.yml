@@ -66,9 +66,15 @@ jobs:
       # 読み書きしていて、後から保存した方が先の分を上書きする
       - name: 月次計測が走っていないか確かめる
         id: busy
+        # 月次計測は終わり際にこの補充を頼む。頼んだ時点では向こうがまだ
+        # 「実行中」なので、**10分までは終わるのを待つ**
         run: |
-          n=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow monthly.yml \
-                --json status --jq '[.[] | select(.status != "completed")] | length')
+          for i in $(seq 1 20); do
+            n=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow monthly.yml \
+                  --json status --jq '[.[] | select(.status != "completed")] | length')
+            [ "$n" = "0" ] && break
+            sleep 30
+          done
           echo "monthly_running=$n" >> "$GITHUB_OUTPUT"
           if [ "$n" != "0" ]; then
             echo "月次計測が $n 本走っている。今回は補充しない" >> "$GITHUB_STEP_SUMMARY"
@@ -108,6 +114,7 @@ jobs:
           got=$(jq '[.crtsh.got // 0, .certspotter.got // 0] | add' /tmp/backfill.json)
           echo "got=$got" >> "$GITHUB_OUTPUT"
           echo "ready=$(jq -r '.ready_for_rerun | join(" ")' /tmp/backfill.json)" >> "$GITHUB_OUTPUT"
+          echo "pending=$(jq '[.populations[].pending_after // 0] | add // 0' /tmp/backfill.json)" >> "$GITHUB_OUTPUT"
           {
             echo "### CT の補充 ${{ steps.run.outputs.id }}"
             echo
@@ -152,3 +159,22 @@ jobs:
               -f start_from=p1
             echo "$pop を流し直した" >> "$GITHUB_STEP_SUMMARY"
           done
+
+      # **定期実行だけに頼らない。** 毎時の schedule は、足してから3時間
+      # 一度も起動しなかった（2026-11-01、GitHub の schedule は遅れたり
+      # 落ちたりする）。1回 45 分で取れるのは 140 件前後で、国内の積み残し
+      # 3,195 件には 20 回以上かかる。
+      #
+      # **進んだ回だけ、次の回を自分で頼む。** 取れなかった回（相手が落ちて
+      # いる）は頼まない ── 弱っている相手を叩き続けないため。そのときは
+      # 次の schedule か月次計測の終わりから再開する。qps は変えない。
+      # 同じ concurrency グループなので、この回が終わってから始まる
+      - name: 続きを頼む
+        if: >-
+          steps.fill.outputs.got != '' && steps.fill.outputs.got != '0'
+          && steps.fill.outputs.ready == ''
+          && steps.fill.outputs.pending != '0'
+        run: |
+          gh workflow run ct-backfill.yml --repo "$GITHUB_REPOSITORY" --ref main \
+            -f run_id="${{ steps.run.outputs.id }}"
+          echo "積み残し ${{ steps.fill.outputs.pending }} 件。続きを頼んだ" >> "$GITHUB_STEP_SUMMARY"

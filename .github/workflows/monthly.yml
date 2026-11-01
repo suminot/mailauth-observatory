@@ -82,6 +82,8 @@ concurrency:
 
 permissions:
   contents: write
+  # 終わったあとに CT の補充を頼む（最後のステップ）
+  actions: write
 
 # **`shell: bash` を明示する。** 明示しないと Actions は `bash -e {0}` で
 # 走らせ、`pipefail` が付かない ── `cmd | tee` の cmd が失敗しても
@@ -649,6 +651,23 @@ jobs:
           done
           echo "::error::gold と実行記録を push できなかった。成果物はこの実行のログにしか無い"
           exit 1
+
+      # **CT の積み残しがあれば、補充を頼む。** 補充は月次計測が走っている間は
+      # 何もしない。毎時の schedule が起動しないこともあるので（2026-11-01）、
+      # 終わったここから再開させる。--limit の動作確認では頼まない
+      - name: CT の補充を頼む
+        if: always() && github.event.inputs.limit == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          P="data/cache/crtsh/month=${{ steps.run.outputs.id }}/_pending/${{ steps.run.outputs.pop }}.json"
+          n=0
+          if [ -f "$P" ]; then n=$(jq '.pending | length' "$P"); fi
+          if [ "$n" != "0" ]; then
+            gh workflow run ct-backfill.yml --repo "$GITHUB_REPOSITORY" --ref main \
+              -f run_id="${{ steps.run.outputs.id }}" || true
+            echo "CT の積み残し $n 件。補充を頼んだ" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: 失敗した工程があれば落とす
         run: mailauth run-report --run "${{ steps.run.outputs.id }}" --fail-on-error
