@@ -1363,6 +1363,18 @@ def test_a_subdomain_of_the_org_counts_as_self_hosted():
     assert unknown_mx_hosts(facts, set()) == []
 
 
+def test_名前の無い_MX_ホストは作業リストに出さないが数は残す():
+    """終わったサービス（asp.reflexion.net）は製品ではない。辞書に足しても推定できない。"""
+    fact = _mx_fact("d:1", "kubota.example", ["asp.reflexion.net", "mx1.unknown-vendor.example"])
+    fact["mx_hosts_nxdomain"] = ["asp.reflexion.net"]
+    listed = unknown_mx_hosts([fact], set())
+    assert [h["registered_domain"] for h in listed] == ["unknown-vendor.example"]
+    total = unknown_mx_total([fact], set())
+    assert total["nxdomain_domains"] == 1
+    assert total["nxdomain_registered_domains"] == 1
+    assert total["domains"] == 1
+
+
 def test_without_an_org_domain_nothing_is_dropped():
     """**org が取れていないものを自社運用とみなさない**（原則5）。"""
     facts = [_fact(mx_hosts=["mx3.kubota.example"], mx_present=True, org_domain_psl=None)]

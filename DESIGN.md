@@ -1163,6 +1163,11 @@ rua_external         BOOLEAN
 rua_authorized       BOOLEAN  _report._dmarc の確認結果
 rua_domain_unregistered BOOLEAN
 
+-- MX の宛先（P5 で引く。断定できたときだけ値が立つ）
+mx_hosts_nxdomain    LIST<STRING>  名前が無いと確定した MX ホスト
+mx_unreachable       BOOLEAN  どの MX ホストにも宛先が無い（メールが届かない）
+mx_domain_unregistered BOOLEAN  名前の無い MX ホストの登録ドメインが未登録
+
 -- DKIM（三値表現。原則5の適用）
 dkim_status          STRING   detected | not_found_in_known_selectors | not_applicable
 dkim_selectors       ARRAY<STRING>
@@ -1205,6 +1210,9 @@ breakdown:
   dkim_wildcard_suspect:  N
   rua_unauthorized:       N
   rua_domain_unregistered: N
+  mx_unreachable:         N   # どの MX ホストにも宛先が無いドメイン
+  mx_has_nxdomain_host:   N   # 名前の無い MX ホストを1つ以上持つドメイン
+  mx_domain_unregistered: N
 ```
 
 ### 受け入れ基準

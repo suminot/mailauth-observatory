@@ -910,3 +910,146 @@ def test_cli_の_p5_は_measure_yaml_の同時本数を渡す():
 
     source = inspect.getsource(cli.p5_parse)
     assert 'rate.get("concurrency"' in source
+
+
+# -- MX の宛先が実在するか（2026-11） ------------------------------------------
+
+
+def _nx(name: str, rtype: str) -> DnsAnswer:
+    return make_answer(name, rtype, [], rcode="NXDOMAIN")
+
+
+def _reach(hosts, answers):
+    from mailauth.p5_parse.runner import _mx_reachability
+
+    return _mx_reachability(hosts, StaticResolver(answers))
+
+
+def test_終わったサービスを指す_MX_は届かないと言う():
+    """Sophos Reflexion は 2023-03 に終わったが、MX が残っている会社がある。"""
+    out = _reach(
+        ["asp.reflexion.net"],
+        {
+            ("asp.reflexion.net", "A"): _nx("asp.reflexion.net", "A"),
+            # reflexion.net 自体はまだ登録されている（NODATA）
+            ("reflexion.net", "NS"): make_answer("reflexion.net", "NS", ["ns1.example."]),
+        },
+    )
+    assert out["mx_hosts_nxdomain"] == ["asp.reflexion.net"]
+    assert out["mx_unreachable"] is True
+    # 登録ドメインは在るので、第三者が取れるとは言わない
+    assert out["mx_domain_unregistered"] is False
+
+
+def test_1つでも宛先があれば届かないとは言わない():
+    out = _reach(
+        ["mx1.example.jp", "old.reflexion.net"],
+        {
+            ("mx1.example.jp", "A"): make_answer("mx1.example.jp", "A", ["192.0.2.1"]),
+            ("old.reflexion.net", "A"): _nx("old.reflexion.net", "A"),
+            ("reflexion.net", "NS"): make_answer("reflexion.net", "NS", ["ns1.example."]),
+        },
+    )
+    assert out["mx_unreachable"] is False
+    assert out["mx_hosts_nxdomain"] == ["old.reflexion.net"]
+
+
+def test_IPv6_だけのホストは届く():
+    out = _reach(
+        ["v6.example.jp"],
+        {("v6.example.jp", "AAAA"): make_answer("v6.example.jp", "AAAA", ["2001:db8::1"])},
+    )
+    assert out["mx_unreachable"] is False
+    assert out["mx_hosts_nxdomain"] == []
+
+
+def test_引けなかったホストが残れば断定しない():
+    """**取れなかったは「無い」ではない**（原則5）。"""
+    from mailauth.resolver import DnsAnswer as A
+
+    unobserved = A(name="slow.example.jp", rtype="A", observed=False,
+                   record_present=None, rcode="TIMEOUT")
+    out = _reach(
+        ["gone.example.net", "slow.example.jp"],
+        {
+            ("gone.example.net", "A"): _nx("gone.example.net", "A"),
+            ("example.net", "NS"): make_answer("example.net", "NS", ["ns1.example."]),
+            ("slow.example.jp", "A"): unobserved,
+        },
+    )
+    assert out["mx_unreachable"] is None
+    assert out["mx_hosts_nxdomain"] == ["gone.example.net"]
+
+
+def test_登録ドメインごと空いていれば第三者に取られうると言う():
+    """綴りの誤り `alt2.aspmgle.comx.l.goo` の `l.goo` は .goo の下で空いている。"""
+    out = _reach(
+        ["alt2.aspmgle.comx.l.goo"],
+        {
+            ("alt2.aspmgle.comx.l.goo", "A"): _nx("alt2.aspmgle.comx.l.goo", "A"),
+            ("l.goo", "NS"): _nx("l.goo", "NS"),
+            ("goo", "NS"): make_answer("goo", "NS", ["a.nic.goo."]),
+        },
+    )
+    assert out["mx_unreachable"] is True
+    assert out["mx_domain_unregistered"] is True
+
+
+def test_実在しない_TLD_の下は_誰も登録できないので未登録と言わない():
+    """PSL は知らない TLD も接尾辞として扱う。`mail.anp` の `.anp` は無い。"""
+    out = _reach(
+        ["mail.anp"],
+        {
+            ("mail.anp", "A"): _nx("mail.anp", "A"),
+            ("mail.anp", "NS"): _nx("mail.anp", "NS"),
+            ("anp", "NS"): _nx("anp", "NS"),
+        },
+    )
+    assert out["mx_unreachable"] is True
+    assert out["mx_domain_unregistered"] is False
+
+
+def test_IP_アドレスを書いた_MX_は登録の話にしない():
+    out = _reach(
+        ["160.16.74.120"],
+        {("160.16.74.120", "A"): _nx("160.16.74.120", "A")},
+    )
+    assert out["mx_unreachable"] is True
+    assert out["mx_domain_unregistered"] is False
+
+
+def test_resolver_が無ければ何も言わない():
+    from mailauth.p5_parse.runner import _mx_reachability
+
+    out = _mx_reachability(["mx.example.jp"], None)
+    assert out == {"mx_hosts_nxdomain": [], "mx_unreachable": None,
+                   "mx_domain_unregistered": None}
+
+
+def test_Null_MX_は宛先を引かない():
+    """Null MX（`.`）は「受け取らない」宣言で、届かないのは意図どおり。"""
+    _write_domains()
+    run_p4(run_id=RUN, backend=FakeBackend())
+    resolver = StaticResolver(ANSWERS)
+    result = run_p5(run_id=RUN, resolver=resolver)
+    parked = facts().loc["d:2"]
+    assert parked["mx_unreachable"] is None or pd.isna(parked["mx_unreachable"])
+    assert ("", "A") not in resolver.calls
+    assert not any(name == "." for name, _ in resolver.calls)
+    assert result["status"] == "success"
+
+
+def test_届かない_MX_は警告に出る():
+    _write_domains()
+    run_p4(run_id=RUN, backend=FakeBackend())
+    answers = dict(ANSWERS)
+    host = "x.mail.protection.outlook.com"
+    answers[(host, "A")] = _nx(host, "A")
+    answers[("outlook.com", "NS")] = make_answer("outlook.com", "NS", ["ns1.example."])
+    result = run_p5(run_id=RUN, resolver=StaticResolver(answers))
+    codes = {w["code"] for w in result["warnings"]}
+    assert "MX_UNREACHABLE" in codes
+    assert "MX_DOMAIN_UNREGISTERED" not in codes
+    send = facts().loc["d:1"]
+    assert list(send["mx_hosts_nxdomain"]) == [host]
+    assert bool(send["mx_unreachable"]) is True
