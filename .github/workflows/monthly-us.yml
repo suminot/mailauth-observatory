@@ -1,0 +1,39 @@
+name: 月次計測（米国）の起動
+
+# **米国も毎月測る。** 月次計測（monthly.yml）の schedule は国内だけを回す
+# （population の既定値が jp-all-listed）。2026-10 に米国を初めて公開した
+# ので、続く月も同じように測らないと前月比が出せない。
+#
+# monthly.yml そのものは触らず、毎月2日に米国の計測を頼むだけにする。
+# 1日は国内の計測が走る（GitHub の schedule は月初に数時間遅れることが
+# あり、2026-11-01 は 02:00 の予定が 09:01 に起動した）ので、日を分ける。
+# 頼んだ実行は monthly.yml のゲート（P4 完走・前月比）をそのまま通る。
+
+on:
+  schedule:
+    - cron: "23 3 2 * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: 米国の月次計測を頼む
+        run: |
+          RUN_ID=$(date -u +%Y-%m)
+          gh workflow run monthly.yml --repo "$GITHUB_REPOSITORY" --ref main \
+            -f run_id="$RUN_ID" \
+            -f population=configs/populations/us-all-listed.yaml \
+            -f publish=yes \
+            -f start_from=p1
+          echo "米国 $RUN_ID の月次計測を頼んだ" >> "$GITHUB_STEP_SUMMARY"
