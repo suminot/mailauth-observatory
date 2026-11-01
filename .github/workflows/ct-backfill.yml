@@ -1,0 +1,154 @@
+name: CT の補充
+
+# **CT の取得を「月初の1回」に賭けない**（BACKLOG 12、ctlog.py）。
+#
+# crt.sh は 2026-09 から 2026-11 まで、月次計測のたびに落ちていた。落ち方は
+# まだらで、一日のうちに戻る時間帯もある。月次計測の P2 が取れなかった起点
+# ドメインを積み残しとして書き、ここで毎時少しずつ取り直す。
+#
+#   1. crt.sh を qps 0.5 のまま試す（相手への礼儀なので外さない）。5本続けて
+#      取れなければ、落ちているとみてやめる
+#   2. 残りを CertSpotter で取る。鍵なしは1時間に10本までなので、毎時
+#      1回9本まで（応答の残り回数が 0 になったらその場でやめる）
+#   3. 積み残しが 2% 以下になり、新しく取れたものがあれば、その月の計測を
+#      同じ run_id で流し直す（月に2回まで）
+#
+# **制限をすり抜けるために IP や経路を変えることはしない。** 取れないなら
+# 待って、次の回にまた試す。
+
+on:
+  schedule:
+    - cron: "41 * * * *"
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "実行ID（YYYY-MM）。既定は当月"
+        required: false
+      certspotter_requests:
+        description: "CertSpotter に投げる本数の上限（鍵なしは1時間に10本まで）"
+        required: false
+        default: "9"
+
+concurrency:
+  # 補充どうしが同じキャッシュを書き合わないように
+  group: ct-backfill
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # 積み残しが片付いたら月次計測の流し直しを頼む（gh workflow run）
+  actions: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # 無くても動く（鍵なしの無料枠）。あれば上限が上がる
+      MAILAUTH_CERTSPOTTER_API_KEY: ${{ secrets.MAILAUTH_CERTSPOTTER_API_KEY }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: run_id を決める
+        id: run
+        run: |
+          RUN_ID="${{ github.event.inputs.run_id }}"
+          if [ -z "$RUN_ID" ]; then RUN_ID=$(date -u +%Y-%m); fi
+          echo "id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "run_id=$RUN_ID"
+
+      # **月次計測が走っている間は触らない。** 向こうも同じ月の CT キャッシュを
+      # 読み書きしていて、後から保存した方が先の分を上書きする
+      - name: 月次計測が走っていないか確かめる
+        id: busy
+        run: |
+          n=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow monthly.yml \
+                --json status --jq '[.[] | select(.status != "completed")] | length')
+          echo "monthly_running=$n" >> "$GITHUB_OUTPUT"
+          if [ "$n" != "0" ]; then
+            echo "月次計測が $n 本走っている。今回は補充しない" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.busy.outputs.monthly_running == '0'
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: 依存関係のインストール
+        if: steps.busy.outputs.monthly_running == '0'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: CT ログのキャッシュを復元
+        if: steps.busy.outputs.monthly_running == '0'
+        id: ct_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: data/cache/crtsh
+          key: crtsh-${{ steps.run.outputs.id }}-${{ github.run_id }}
+          restore-keys: |
+            crtsh-${{ steps.run.outputs.id }}-
+
+      - name: 補充
+        if: steps.busy.outputs.monthly_running == '0'
+        id: fill
+        run: |
+          mailauth ct-backfill --run "${{ steps.run.outputs.id }}" \
+            --max-minutes 45 \
+            --certspotter-requests "${{ github.event.inputs.certspotter_requests || '9' }}" \
+            > /tmp/backfill.json
+          cat /tmp/backfill.json
+          got=$(jq '[.crtsh.got // 0, .certspotter.got // 0] | add' /tmp/backfill.json)
+          echo "got=$got" >> "$GITHUB_OUTPUT"
+          echo "ready=$(jq -r '.ready_for_rerun | join(" ")' /tmp/backfill.json)" >> "$GITHUB_OUTPUT"
+          {
+            echo "### CT の補充 ${{ steps.run.outputs.id }}"
+            echo
+            echo "新しく取れた起点ドメイン: $got"
+            echo
+            echo '```json'
+            cat /tmp/backfill.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # 流し直しを頼んだことを**キャッシュを保存する前に**書く。保存の後に
+      # 書くと、次の回がそれを知らずにまた頼む
+      - name: 流し直しを頼んだと記録する
+        if: steps.fill.outputs.ready != ''
+        run: |
+          for pop in ${{ steps.fill.outputs.ready }}; do
+            mailauth ct-backfill --run "${{ steps.run.outputs.id }}" --mark-rerun "$pop"
+          done
+
+      - name: CT ログのキャッシュを保存
+        if: steps.fill.outputs.got != '' && steps.fill.outputs.got != '0'
+        uses: actions/cache/save@v4
+        with:
+          path: data/cache/crtsh
+          key: crtsh-${{ steps.run.outputs.id }}-${{ github.run_id }}
+
+      # **公開の判断は月次計測のゲートに任せる。** P4 が測り終えなかった月、
+      # 前の月より分母が小さい月は、流し直しても gold をコミットしない
+      - name: 月次計測を流し直す
+        if: steps.fill.outputs.ready != ''
+        run: |
+          for pop in ${{ steps.fill.outputs.ready }}; do
+            config="configs/populations/${pop}.yaml"
+            if [ ! -f "$config" ]; then
+              echo "::warning::$config が無いので流し直さない"
+              continue
+            fi
+            gh workflow run monthly.yml --repo "$GITHUB_REPOSITORY" --ref main \
+              -f run_id="${{ steps.run.outputs.id }}" \
+              -f population="$config" \
+              -f publish=yes \
+              -f start_from=p1
+            echo "$pop を流し直した" >> "$GITHUB_STEP_SUMMARY"
+          done

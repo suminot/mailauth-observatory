@@ -92,6 +92,7 @@ GitHub の Settings → Secrets and variables → Actions に入れる。
 | `MAILAUTH_GBIZINFO_TOKEN` | 公式サイト URL | [gBizINFO](https://info.gbiz.go.jp/api/index.html)（無料・申請制） | `official_domain` が全社欠損し、**P2 の候補生成が起点を失う** |
 | `MAILAUTH_HOUJIN_BANGOU_APP_ID` | 商号の裏取り | [国税庁](https://www.houjin-bangou.nta.go.jp/webapi/)（無料） | 裏取りをスキップ（動く） |
 | `MAILAUTH_CONTACT_EMAIL` | SEC の User-Agent | あなたの連絡先 | 米国母集団が**理由を添えて停止**する |
+| `MAILAUTH_CERTSPOTTER_API_KEY` | CT の補充（`ct-backfill.yml`）。crt.sh が落ちているときに CertSpotter から取る | [SSLMate CertSpotter](https://sslmate.com/ct_search_api/)（無料枠あり。上位は有料） | **鍵なしでも動く**（1時間に10件の無料枠の内側で、毎時9件）。鍵があれば1回に取れる件数を増やせる |
 
 `MAILAUTH_CONTACT_EMAIL` は**実在する連絡先を入れること。** SEC は User-Agent に
 連絡先を含めることを必須としており、偽の値を送るのは規約違反である。だから
