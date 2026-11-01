@@ -41,6 +41,11 @@ def patterns():
         ("in.mailhardener.com", "Mailhardener"),
         ("reports-sg.inkydmarc.com", "INKY"),
         ("ar.glockapps.com", "GlockApps"),
+        # 2026-11-01：国内の宛先から、ベンダーの資料で確かめた
+        ("mpub.ne.jp", "エンバーポイント"),
+        ("dmarcrua.tmems-jp.trendmicro.com", "Trend Micro"),
+        ("dmarcrua.tmes.trendmicro.eu", "Trend Micro"),
+        ("emailfraudprotect.email", "Broadcom"),
     ],
 )
 def test_資料で確かめた宛先はベンダーに結び付く(patterns, domain, vendor):
@@ -58,6 +63,15 @@ def test_資料で確かめた宛先はベンダーに結び付く(patterns, dom
         "redsift.cloud",
         "everest.email",
         "dmarcinput.com",
+        # trendmicro.com 全体には広げない
+        "trendmicro.com",
+        "mail.trendmicro.com",
+        # 運営者は分かったが、資料に宛先のドメインが無い
+        "securemx.jp",
+        "dmarc.smtps.jp",
+        "bmscore.jp",
+        "dmarc-report.sakura.ne.jp",
+        "jp.teams.ms",
         # Brevo の本体（送信元）や、似た名前の別ドメイン
         "brevo.com",
         "barracudanetworks.com",
