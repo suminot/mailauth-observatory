@@ -115,6 +115,8 @@ jobs:
           echo "got=$got" >> "$GITHUB_OUTPUT"
           echo "ready=$(jq -r '.ready_for_rerun | join(" ")' /tmp/backfill.json)" >> "$GITHUB_OUTPUT"
           echo "pending=$(jq '[.populations[].pending_after // 0] | add // 0' /tmp/backfill.json)" >> "$GITHUB_OUTPUT"
+          # crt.sh から実際に取れて、落ちているとも判定されなかったか
+          echo "crtsh_ok=$(jq -r '((.crtsh.got // 0) > 0) and (.crtsh.upstream_down == null)' /tmp/backfill.json)" >> "$GITHUB_OUTPUT"
           {
             echo "### CT の補充 ${{ steps.run.outputs.id }}"
             echo
@@ -191,13 +193,15 @@ jobs:
       # 落ちたりする）。1回 45 分で取れるのは 140 件前後で、国内の積み残し
       # 3,195 件には 20 回以上かかる。
       #
-      # **進んだ回だけ、次の回を自分で頼む。** 取れなかった回（相手が落ちて
-      # いる）は頼まない ── 弱っている相手を叩き続けないため。そのときは
-      # 次の schedule か月次計測の終わりから再開する。qps は変えない。
+      # **crt.sh から取れた回だけ、次の回を自分で頼む。** 相手が落ちて
+      # いると判定した回は、CertSpotter で取れていても頼まない ──
+      # 2026-11-01、その条件が無く、crt.sh が弱っている間に5分おきに
+      # 32本ずつ投げ続けた（手で止めた）。止まったら、次の schedule か
+      # 月次計測の終わりから再開する。qps は変えない。
       # 同じ concurrency グループなので、この回が終わってから始まる
       - name: 続きを頼む
         if: >-
-          steps.fill.outputs.got != '' && steps.fill.outputs.got != '0'
+          steps.fill.outputs.crtsh_ok == 'true'
           && steps.fill.outputs.ready == ''
           && steps.fill.outputs.pending != '0'
         run: |

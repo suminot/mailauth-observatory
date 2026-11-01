@@ -424,7 +424,12 @@ def test_進んだ回だけ続きを自分で頼む():
     """
     step = _steps()[_index("続きを頼む")]
     cond = step.get("if", "")
-    assert "steps.fill.outputs.got != '0'" in cond
+    # **crt.sh から取れた回だけ。** CertSpotter だけで取れた回は続けない
+    # （2026-11-01、crt.sh が弱っている間に5分おきに32本ずつ投げ続けた）
+    assert "steps.fill.outputs.crtsh_ok == 'true'" in cond
+    assert "steps.fill.outputs.got" not in cond
+    fill = _steps()[_index("補充")]["run"]
+    assert ".crtsh.upstream_down == null" in fill
     assert "steps.fill.outputs.ready == ''" in cond, "流し直しを頼んだ回は続けない"
     assert "steps.fill.outputs.pending != '0'" in cond
     assert "gh workflow run ct-backfill.yml" in step["run"]
@@ -513,3 +518,22 @@ def test_補充は_crtsh_の応答待ちを重ねる(tmp_path):
     assert report.crtsh["got"] == 8
     assert len(threads) >= 2, "1本ずつ待っている"
     assert read_pending(pending_path(tmp_path, MONTH, "jp-all-listed"))["pending"] == []
+
+
+def test_補充の同時本数は_P2_より絞る():
+    """補充を同時32本にしたら、crt.sh の応答の中央値が 11 秒から 129 秒になり、
+    32本中20本が HTTP エラーになった（2026-11-01）。補充は月に何十回も回る。
+    """
+    import inspect
+
+    import yaml
+
+    from mailauth import cli
+    from mailauth.paths import repo_root
+
+    cfg = yaml.safe_load(
+        (repo_root() / "configs" / "candidates.yaml").read_text(encoding="utf-8")
+    )["ct"]
+    assert cfg["backfill_concurrency"] <= 4
+    assert cfg["backfill_concurrency"] < cfg["concurrency"]
+    assert 'ct_cfg.get("backfill_concurrency"' in inspect.getsource(cli.ct_backfill_cmd)

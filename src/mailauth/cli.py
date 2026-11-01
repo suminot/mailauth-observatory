@@ -185,7 +185,6 @@ def ct_backfill_cmd(
 
     from .config import load_yaml
     from .ctlog import (
-        DEFAULT_CONCURRENCY,
         CertSpotterClient,
         CrtShClient,
         backfill,
@@ -211,7 +210,8 @@ def ct_backfill_cmd(
             qps=float(ct_cfg.get("qps", 0.5)),
             timeout=float(ct_cfg.get("timeout_sec", 60)),
             retries=int(ct_cfg.get("retries", 2)),
-            concurrency=int(ct_cfg.get("concurrency", DEFAULT_CONCURRENCY)),
+            # **P2 より絞る**（candidates.yaml の backfill_concurrency に理由）
+            concurrency=int(ct_cfg.get("backfill_concurrency", 4)),
             # **補充では早めに見切る。** 落ちている相手を何十本も叩かない
             down_after=5,
         )
