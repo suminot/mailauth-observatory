@@ -761,6 +761,14 @@ IDENTIFIED_MX_HOSTS = [
     ("shpreit-com.inbound.emailservice.io", InferenceCategory.SECURITY_GATEWAY, "Mailprotector"),
     ("mail.mailroute.net", InferenceCategory.SECURITY_GATEWAY, "MailRoute"),
     ("airglobal.in.tmes.trendmicro.eu", InferenceCategory.SECURITY_GATEWAY, "Trend Micro"),
+    # 2026-11-01：国内 2026-11 の作業リストから、運営会社の資料で確かめて足した
+    ("v2301-244.mailsecure.jp", InferenceCategory.MAIL_PLATFORM, "NTTPC コミュニケーションズ"),
+    ("mx01.muumuu-mail.com", InferenceCategory.MAIL_PLATFORM, "GMOペパボ"),
+    ("sv10262.xserver.jp", InferenceCategory.MAIL_PLATFORM, "エックスサーバー"),
+    ("sv363.xbiz.ne.jp", InferenceCategory.MAIL_PLATFORM, "エックスサーバー"),
+    ("wxa105.wadax-sv.jp", InferenceCategory.MAIL_PLATFORM, "WADAX"),
+    ("dda101.wadax-sv.jp", InferenceCategory.MAIL_PLATFORM, "WADAX"),
+    ("mail.global.frontbridge.com", InferenceCategory.MAIL_PLATFORM, "Microsoft"),
 ]
 
 
@@ -781,6 +789,12 @@ IDENTIFIED_MX_HOSTS = [
         "mx1.pub.mailpod11-cph3.one.com",  # one.com の資料に無い形
         "keytronic-mx2.titanhq.com",  # TitanHQ の資料は <クラスタ>-smtp-mxN
         "mx-biz.mail.am0.yahoodns.net",
+        # 国内：運営会社の資料に MX のホスト名が無いもの
+        "km0071.kagoyamail.jp",  # KAGOYA の資料の MX は dmail.kagoya.net など
+        "mailforward.dnsv.jp",
+        "mx1.sharedmail.jp",
+        "asahinet-mx-v4.xspmail.jp",
+        "mx.bizmail.nifcloud.com",  # 資料を取得できていない
     ],
 )
 def test_資料で確かめていないホストは同定しない(rules, host):
@@ -865,12 +879,14 @@ def test_unidentified_hosts_are_recorded_not_forgotten(rules):
 
     entries, available, _ = load_unidentified()
     assert available
-    for domain in ("mailsecure.jp", "sharedmail.jp"):
+    for domain in ("sharedmail.jp",):
         assert domain in entries, f"{domain} の調査結果が記録されていない"
         assert entries[domain].investigated_on is not None
         assert entries[domain].note
 
-    for host in ("v2301-244.mailsecure.jp", "filter1.mail.sharedmail.jp"):
+    # mailsecure.jp は 2026-11-01 に資料で確かめて規則にしたので、ここには無い
+    assert "mailsecure.jp" not in entries, "規則にしたものが同定できない一覧に残っている"
+    for host in ("filter1.mail.sharedmail.jp",):
         drafts = build_drafts(_fact(mx_hosts=[host], mx_present=True), rules)
         named = [d for d in drafts if d.vendor != NOT_DETECTED_VENDOR]
         assert not named, f"同定できていない {host} に規則が当たっている"
