@@ -406,8 +406,8 @@ def test_mta_sts_parsing():
     result = extras_mod.parse_mta_sts(["v=STSv1; id=20260801"])
     assert result.present is True
     assert result.id == "20260801"
-    assert result.mode is None  # DNS だけでは分からない
-    assert any("HTTPS" in n for n in result.notes)
+    # DNS だけでは分からない。HTTPS で取る段（mta_sts_policy.py）が埋める
+    assert result.mode is None
 
 
 def test_tls_rpt_parsing():
@@ -891,10 +891,10 @@ def test_p5_の1件の失敗は並行でも全体を止めない(monkeypatch):
     run_p4(run_id=RUN, backend=FakeBackend())
     original = p5_runner.parse_domain
 
-    def flaky(domain, records, *, resolver=None):
+    def flaky(domain, records, **kw):
         if domain == "parked.example.jp":
             raise ValueError("boom")
-        return original(domain, records, resolver=resolver)
+        return original(domain, records, **kw)
 
     monkeypatch.setattr(p5_runner, "parse_domain", flaky)
     result = run_p5(run_id=RUN, resolver=StaticResolver(ANSWERS), concurrency=4)

@@ -67,10 +67,6 @@ def parse_mta_sts(txt_records: list[str]) -> MtaStsResult:
             result = MtaStsResult(present=True, id=tags.get("id"))
             if not result.id:
                 result.notes.append("id タグが無い。ポリシーの更新検知ができない")
-            result.notes.append(
-                "mode は DNS では分からない。enforce か testing かは "
-                "HTTPS でポリシーを取得して確認する（第2段）"
-            )
             return result
     return MtaStsResult(present=False)
 

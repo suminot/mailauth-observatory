@@ -41,3 +41,65 @@ hosts:
       資料に MX のホスト名は無い（SPF の include だけ）。資料で確かめられる
       まで規則にしない
 
+
+  # ---- 2026-11-01：国内 2026-11 の作業リストから。運営会社は公式の
+  # ページで分かったが、**そのページに MX のホスト名が無い**もの。
+  # 名前の印象で規則にしない（資料が見つかったら規則に移す）
+
+  - registered_domain: kagoyamail.jp
+    reason: no_public_info
+    investigated_on: 2026-11-01
+    note: >-
+      `km0071.kagoyamail.jp` の形。カゴヤ・ジャパンのドメインだが、同社の
+      マニュアル（support.kagoya.jp/kir/manual/dns/）が案内する MX は
+      `dmail.kagoya.net` と `map-r3-km●.kagoya.net` で、どちらも既存の
+      kagoya-mx-01 が拾う。kagoyamail.jp を MX にする案内は資料に無い
+
+  - registered_domain: conoha.ne.jp
+    reason: no_public_info
+    investigated_on: 2026-11-01
+    note: >-
+      `mail85.conoha.ne.jp` の形。ConoHa WING（GMOインターネットグループ）。
+      公式のサポートページは「コントロールパネルのサーバー情報に表示される
+      MX レコード設定値」とだけ書き、ホスト名の形を載せていない
+
+  - registered_domain: biglobe.ne.jp
+    reason: no_public_info
+    investigated_on: 2026-11-01
+    note: >-
+      `bgmgate1.biglobe.ne.jp` の形。BIGLOBE の法人向け独自ドメインの資料
+      （biz.biglobe.ne.jp/domain/）には SPF と DKIM の値はあるが MX は無い。
+      SPF は biglobe-spf-01 が既に拾っている
+
+  - registered_domain: secomtrust.net
+    reason: no_public_info
+    investigated_on: 2026-11-01
+    note: >-
+      `sdc-smtpd-in.secomtrust.net` の形。セコムトラストシステムズの
+      メールセキュリティ（secomtrust.net/service/cybersecurity/ml.html）。
+      「MX レコードを変更するだけで利用できます」とだけあり、ホスト名は無い
+
+  - registered_domain: u-netsurf.ne.jp
+    reason: no_public_info
+    investigated_on: 2026-11-01
+    note: >-
+      `asmail.u-netsurf.ne.jp` / `ft-asmail.u-netsurf.ne.jp` の形。
+      ユニアデックスの U-netSURF 法人向け迷惑メールフィルタリング（ASP 型
+      ゲートウェイ）。案内（netsurf.ad.jp/hojin/sv/）は「MX を弊社の
+      フィルタリングサーバーへ変更」とだけ書き、ホスト名は無い
+
+  - registered_domain: s-idc.net
+    reason: no_public_info
+    investigated_on: 2026-11-01
+    note: >-
+      `mta.nmail.s-idc.net` の形。NECネッツエスアイの S-iDC メールサービス
+      （nesic.co.jp/solution/sidc_mail.html）。サービスの紹介にホスト名は無い
+
+  - registered_domain: xspmail.jp
+    reason: no_public_info
+    investigated_on: 2026-11-01
+    note: >-
+      `asahinet-mx-v4.xspmail.jp` の形。ASAHIネットの独自ドメインは DNS を
+      ASAHIネットが管理し「ASAHIネットで設定したもの以外へ変更することは
+      できません」とある（asahi-net.jp/service/option/hp/hosting/）。利用者に
+      MX の値が案内されないので、資料で確かめる手段が無い

@@ -91,11 +91,11 @@ extras:
   bimi: true
   dnssec: true
   dane: true                          # 取得はするが日米では指標化しない
-  # **未実装。** MTA-STS の enforce と testing を見分けるには
-  # `https://mta-sts.<domain>/.well-known/mta-sts.txt` を取りに行く必要が
-  # あるが、その経路はまだ無い。false のままでも true にしても**何も変わらない**
-  https_fetch: false
-  https_fetch_status: planned
+  # MTA-STS の enforce と testing を見分けるために、TXT に `v=STSv1` がある
+  # ドメインだけ `https://mta-sts.<domain>/.well-known/mta-sts.txt` を取る
+  # （P5、`p5_parse/mta_sts_policy.py`）。送る側の MTA と同じ取り方で、
+  # リダイレクトは追わない。国内で十数件、米国で百数十件
+  https_fetch: true
 
 tiers:
   # P3 が割り当てる measure_tier ごとの計測の深さ（DESIGN.md P4 表）

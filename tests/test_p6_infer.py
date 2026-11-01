@@ -769,6 +769,12 @@ IDENTIFIED_MX_HOSTS = [
     ("wxa105.wadax-sv.jp", InferenceCategory.MAIL_PLATFORM, "WADAX"),
     ("dda101.wadax-sv.jp", InferenceCategory.MAIL_PLATFORM, "WADAX"),
     ("mail.global.frontbridge.com", InferenceCategory.MAIL_PLATFORM, "Microsoft"),
+    # キヤノン MJ のスタートアップガイドが `XXXX.guardianwall.jp` の形を示している
+    (
+        "prmtotr010.guardianwall.jp",
+        InferenceCategory.SECURITY_GATEWAY,
+        "キヤノンITソリューションズ",
+    ),
 ]
 
 

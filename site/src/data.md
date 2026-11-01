@@ -193,7 +193,11 @@ Parquet は月ごとに保管しています。同じ数字を二重に持つと
 | `entities_with_subdomain_mail` | サブドメインでメールを扱っていた企業数 |
 | `dkim_detected_domains` | 既知セレクタで検出できた |
 | `dkim_not_found_domains` | 既知セレクタでは検出できなかった。**未設定ではない** |
-| `mta_sts_domains` | MTA-STS を公開している |
+| `mta_sts_domains` | MTA-STS を公開している（`_mta-sts` の TXT がある） |
+| `mta_sts_enforce_domains` | ポリシーを HTTPS で取り、`mode: enforce` だった。取っていない月は空 |
+| `mta_sts_testing_domains` | 同じく `mode: testing` だった（失敗を報告するだけで、配送は止めない） |
+| `mta_sts_unusable_domains` | TXT はあるが、ポリシーを取れない・読めない。**送る側も読めないので効いていない** |
+| `mta_sts_mx_mismatch_domains` | ポリシーの `mx` に実際の MX が入っていない |
 | `tls_rpt_domains` | TLS-RPT を公開している |
 | `bimi_domains` | BIMI を公開している |
 | `dnssec_domains` | DNSSEC で署名されている |

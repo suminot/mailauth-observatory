@@ -200,7 +200,11 @@ The main columns used in the tables above.
 | `entities_with_subdomain_mail` | companies found handling mail on a subdomain |
 | `dkim_detected_domains` | found among known selectors |
 | `dkim_not_found_domains` | not found among known selectors. **This is not the same as unset** |
-| `mta_sts_domains` | publishes MTA-STS |
+| `mta_sts_domains` | publishes MTA-STS (has the `_mta-sts` TXT) |
+| `mta_sts_enforce_domains` | the policy fetched over HTTPS says `mode: enforce`. Empty for months where it was not fetched |
+| `mta_sts_testing_domains` | the policy says `mode: testing` (failures are reported, delivery is not stopped) |
+| `mta_sts_unusable_domains` | has the TXT, but the policy could not be fetched or read. **Senders cannot read it either, so it has no effect** |
+| `mta_sts_mx_mismatch_domains` | the actual MX is not listed in the policy's `mx` |
 | `tls_rpt_domains` | publishes TLS-RPT |
 | `bimi_domains` | publishes BIMI |
 | `dnssec_domains` | signed with DNSSEC |

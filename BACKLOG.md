@@ -1639,6 +1639,36 @@ SPF 4,616（4,614）、DMARC 4,156（同）、強制 3,087（3,071）、DKIM 3,7
 
 ---
 
+## 19. MTA-STS は TXT の有無しか見ていなかった ── **ポリシーを取るようにした（2026-11-01）**
+
+`_mta-sts` の TXT は「ポリシーがある」と言っているだけで、**強制か試行かは
+HTTPS の先にしか書いていない。** `measure.yaml` の `https_fetch` は
+「未実装」と明示したまま残っていた。公開値の `mta_sts_domains`（国内 16、
+米国 148）には、`mode: testing` も、取れないポリシーも、MX と合わない
+ポリシーも入っている。
+
+P5 で、TXT に `v=STSv1` があるドメインだけ
+`https://mta-sts.<domain>/.well-known/mta-sts.txt` を1回取る
+（`p5_parse/mta_sts_policy.py`）。**送る側の MTA と同じ取り方をする**
+（RFC 8461 §3.3）── 証明書は検証し、リダイレクトは追わない（追うと、送る
+側が失敗するポリシーを「取れた」と数える）、64 KiB で打ち切る。連絡先つきの
+User-Agent を名乗る。
+
+- facts：`mta_sts_mode`（これまで常に null）、`mta_sts_policy_status`、
+  `mta_sts_max_age`、`mta_sts_policy_mx`、`mta_sts_mx_mismatch`、
+  `mta_sts_policy_raw`（取った本文。パーサを直したら作り直せる）
+- gold：`mta_sts_enforce_domains` / `_testing_` / `_unusable_` /
+  `_mx_mismatch_`。**取っていない月は null**（0 と書くと「enforce が無い」と
+  読める）
+- 警告：`MTA_STS_POLICY_UNUSABLE`、`MTA_STS_MX_MISMATCH`（enforce で MX が
+  ポリシーに無いと、対応している送り手からのメールが届かない）、
+  `MTA_STS_POLICY_NOT_FETCHED`
+- 成熟度ステージは今までどおり TXT の有無で数える。**変えると過去の月と
+  比べられなくなる**ので、変えるなら運営者の判断で、注記と一緒に
+- 公開サイトの表示はまだ足していない（gold とデータの説明だけ）
+
+---
+
 ## 7. 規模に対する前提
 
 いまの国内 1 母集団では問題にならないが、DESIGN.md の 30,000 ドメインでは

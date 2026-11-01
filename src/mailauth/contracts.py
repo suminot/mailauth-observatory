@@ -583,6 +583,13 @@ class Fact(_Model):
     mta_sts_present: bool | None = None
     mta_sts_id: str | None = None
     mta_sts_mode: str | None = None
+    #: ポリシーを HTTPS で取った結果（`mta_sts_policy.FetchStatus`）。取りに行かなければ null
+    mta_sts_policy_status: str | None = None
+    mta_sts_max_age: int | None = None
+    mta_sts_policy_mx: list[str] = Field(default_factory=list)
+    #: 実際の MX がポリシーの mx に入っていない。enforce なら届かない
+    mta_sts_mx_mismatch: bool | None = None
+    mta_sts_policy_raw: str | None = None
     tls_rpt_present: bool | None = None
     tls_rpt_rua: list[str] = Field(default_factory=list)
     bimi_present: bool | None = None
@@ -668,6 +675,11 @@ FACT_ARROW_SCHEMA = pa.schema(
         ("mta_sts_present", pa.bool_()),
         ("mta_sts_id", pa.string()),
         ("mta_sts_mode", pa.string()),
+        ("mta_sts_policy_status", pa.string()),
+        ("mta_sts_max_age", pa.int64()),
+        ("mta_sts_policy_mx", pa.list_(pa.string())),
+        ("mta_sts_mx_mismatch", pa.bool_()),
+        ("mta_sts_policy_raw", pa.string()),
         ("tls_rpt_present", pa.bool_()),
         ("tls_rpt_rua", pa.list_(pa.string())),
         ("bimi_present", pa.bool_()),
@@ -835,6 +847,13 @@ class StatsOverall(_Model):
     dkim_detected_domains: int = 0
     dkim_not_found_domains: int = 0
     mta_sts_domains: int = 0
+    #: ポリシーを HTTPS で取った mode ごとの数（P5）。取っていない月は null
+    mta_sts_enforce_domains: int | None = None
+    mta_sts_testing_domains: int | None = None
+    #: TXT はあるがポリシーを取れない・読めない。送る側にも効いていない
+    mta_sts_unusable_domains: int | None = None
+    #: ポリシーの mx に実際の MX が入っていない
+    mta_sts_mx_mismatch_domains: int | None = None
     tls_rpt_domains: int = 0
     bimi_domains: int = 0
     dnssec_domains: int = 0
@@ -906,6 +925,10 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("dkim_detected_domains", pa.int32()),
     ("dkim_not_found_domains", pa.int32()),
     ("mta_sts_domains", pa.int32()),
+    ("mta_sts_enforce_domains", pa.int32()),
+    ("mta_sts_testing_domains", pa.int32()),
+    ("mta_sts_unusable_domains", pa.int32()),
+    ("mta_sts_mx_mismatch_domains", pa.int32()),
     ("tls_rpt_domains", pa.int32()),
     ("bimi_domains", pa.int32()),
     ("dnssec_domains", pa.int32()),

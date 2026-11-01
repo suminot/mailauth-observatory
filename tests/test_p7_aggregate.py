@@ -1135,3 +1135,41 @@ def test_外した一覧が無い母集団は0社():
     _write_facts(ids)
     run_p7(run_id=RUN)
     assert _gold("stats_overall.parquet").iloc[0]["excluded_non_operating"] == 0
+
+
+# ---------------------------------------------------------------------------
+# MTA-STS の mode（BACKLOG 19）
+# ---------------------------------------------------------------------------
+
+
+def test_MTA_STS_の_mode_ごとに数える():
+    rows = [
+        _row(domain_id="d:1", mta_sts_present=True, mta_sts_mode="enforce",
+             mta_sts_policy_status="ok"),
+        _row(domain_id="d:2", entity_id="jp:2", mta_sts_present=True,
+             mta_sts_mode="testing", mta_sts_policy_status="ok"),
+        _row(domain_id="d:3", entity_id="jp:3", mta_sts_present=True,
+             mta_sts_policy_status="redirect"),
+        _row(domain_id="d:4", entity_id="jp:4", mta_sts_present=True,
+             mta_sts_mode="enforce", mta_sts_policy_status="ok",
+             mta_sts_mx_mismatch=True),
+    ]
+    stats = _agg(rows, total_entities=4)
+    assert stats.mta_sts_domains == 4
+    assert stats.mta_sts_enforce_domains == 2
+    assert stats.mta_sts_testing_domains == 1
+    assert stats.mta_sts_unusable_domains == 1
+    assert stats.mta_sts_mx_mismatch_domains == 1
+
+
+def test_ポリシーを取っていない月は_0_ではなく空():
+    """**0 と書くと「enforce が無い」と読める。** 取っていないなら出さない。"""
+    stats = _agg([_row(mta_sts_present=True)], total_entities=1)
+    assert stats.mta_sts_domains == 1
+    assert stats.mta_sts_enforce_domains is None
+    assert stats.mta_sts_unusable_domains is None
+
+
+def test_MTA_STS_が1つも無ければ_0_でよい():
+    stats = _agg([_row()], total_entities=1)
+    assert stats.mta_sts_enforce_domains == 0

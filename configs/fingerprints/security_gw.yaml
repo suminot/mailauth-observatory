@@ -139,6 +139,21 @@ rules:
     confidence: high
     layer: outbound_gateway
 
+  # 受信側。スタートアップガイド §2.1.2「MX レコードの設定」が、MX に向けた後の
+  # 確認として `Received: from XXXX.guardianwall.jp` になることを示している
+  # （MX の値そのものは「サービス登録完了書」に書かれる。2026-11-01 に確認）。
+  # ホスト名の前半（prmtotr010 など）は資料に無いので、**接尾辞だけで当てる**
+  - id: guardianwall-mx-01
+    vendor: キヤノンITソリューションズ
+    product: GUARDIANWALL メールセキュリティクラウド
+    region: JP
+    match:
+      record: MX
+      pattern: '\.guardianwall\.jp\.?$'
+    confidence: high
+    layer: inbound_gateway
+    source: canon.jp/-/media/Project/Canon/CanonJP/Website/biz/solution/security/it-sec/lineup/guardianwall/pdf/msc-p-startup-guide.pdf
+
   - id: iij-mx-01
     vendor: IIJ
     product: IIJ セキュアMXサービス
