@@ -148,6 +148,13 @@ function watch(page, sink) {
       sink.push(`CSP 違反: ${t.slice(0, 160)}`);
     }
   });
+  // **外へは1本も出さない。** 書体も自前で配っている（BACKLOG 11）。
+  // Google Fonts を直接読むと、開いた人の IP が Google に届く
+  page.on("request", (r) => {
+    const url = new URL(r.url());
+    if (url.protocol === "data:" || url.protocol === "blob:") return;
+    if (url.hostname !== "127.0.0.1") sink.push(`外部への取得: ${url.hostname}${url.pathname}`);
+  });
   page.on("response", (r) => {
     const url = new URL(r.url());
     if (url.hostname !== "127.0.0.1") return;
@@ -226,6 +233,16 @@ async function main() {
 
     const controls = page.locator(".chrome-controls");
     check("左下の切り替えがある", (await controls.count()) === 1);
+
+    // **自前で配った書体が実際に当たっていること。** 取れていなければ
+    // 黙って代替フォントに落ちる ── 画面を見ない限り気付けない
+    const fonts = await page.evaluate(async () => {
+      await document.fonts.ready;
+      return [...document.fonts].filter((f) => f.status === "loaded").map((f) => f.family.replaceAll('"', ""));
+    });
+    for (const family of ["Noto Sans JP", "Chakra Petch"]) {
+      check(`書体 ${family} を自前で読み込んでいる`, fonts.includes(family), `読み込めた書体: ${[...new Set(fonts)].join(", ") || "なし"}`);
+    }
 
     // **電話では一覧が畳まれている。** 畳まれたまま押そうとすると
     // 「要素はあるのに見えない」になる ── 開いてから確かめる。

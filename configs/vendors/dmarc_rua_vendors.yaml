@@ -5,7 +5,7 @@
 #
 # 国内ベンダーの rua 宛先は dmarc25.jp（TwoFive）以外ほぼ未確認
 # （DESIGN.md 第11章 未解決事項 #6）。実測で埋める。
-version: 2026-10-31
+version: 2026-11-01
 category: dmarc_vendor
 
 rules:
@@ -209,6 +209,49 @@ rules:
     confidence: high
     source: glockapps.zendesk.com/hc/en-us/articles/4412836477851
 
+  # ---------------------------------------------------------------------------
+  # 2026-11 の国内計測で多かった rua 宛先（P2 の記録）のうち、ベンダー自身の
+  # 資料に宛先が載っているもの（2026-11-01 に確認）
+  # ---------------------------------------------------------------------------
+
+  # 37件。**メール配信サービスが、自社の宛先を入れた DMARC レコードを顧客に
+  # 案内している。** 資料に「DMARCレポートを当社で参照させていただきますが
+  # DMARCレポートの提供は承っておりません」とある ── この宛先しか無い企業は、
+  # **自分では DMARC レポートを受け取っていない**
+  - id: rua-emberpoint-01
+    vendor: エンバーポイント
+    product: MailPublisher
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)mpub\.ne\.jp$'
+    confidence: high
+    source: https://emberpoint.zendesk.com/hc/article_attachments/4899782378014
+    note: 配信サービスの宛先。企業自身はレポートを受け取らない
+
+  # 12件。メールの前段（Trend Micro Email Security）の機能で、顧客ごとの
+  # 宛先が地域別の dmarcrua ホストにある。**trendmicro.com 全体には広げない**
+  # （日本は tmems-jp。tmes-jp ではない）
+  - id: rua-trendmicro-01
+    vendor: Trend Micro
+    product: Trend Micro Email Security（DMARC レポート分析）
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '^dmarcrua\.(tmes|tmems-jp|tmes-[a-z]+)\.trendmicro\.(com|eu)$'
+    confidence: high
+    source: https://docs.trendmicro.com/en-us/documentation/article/trend-micro-email-security-online-help-analyzing-dmarc-repo
+
+  # 米国 2026-10 では資料が見つからず同定しない一覧に入れていた。Symantec
+  # Email Fraud Protect の基盤を運用する Valimail の手引きに宛先がある
+  - id: rua-efp-01
+    vendor: Broadcom
+    product: Symantec Email Fraud Protect
+    match:
+      record: DMARC_RUA_DOMAIN
+      pattern: '(^|\.)emailfraudprotect\.email$'
+    confidence: high
+    source: https://support.valimail.com/en/articles/9243002-getting-started-with-symantec-email-fraud-protect
+    note: 手引きは基盤を運用する Valimail のもの
+
 # 実測で見つかったが**ベンダー名を確認できていない** rua 宛先。
 #
 # 名前を書かないのは、確認できていないものを断定しないためである
@@ -222,10 +265,35 @@ rules:
 unidentified_rua_domains:
   - domain: smtps.jp
     observed_for: [ajinomoto.com, mufg.jp]
-    note: 宛先は dmarc.smtps.jp / dp.smtps.jp。テナントごとの不透明なID形式
+    note: >-
+      宛先は dmarc.smtps.jp / dp.smtps.jp。国内 2026-11 で30社。HENNGE の
+      Domain Protection（Customers Mail Cloud）と見られる（資料に「rua に
+      指定するメールアドレスを生成する」とある）が、宛先のドメインは資料に無い
   - domain: teams.ms
     observed_for: [ajinomoto.com]
-    note: 宛先は 471eb9b4.ajinomoto.com@jp.teams.ms。ローカル部に顧客ドメインを含む
+    note: >-
+      宛先は 471eb9b4.ajinomoto.com@jp.teams.ms。Microsoft Teams のチャネルの
+      メールアドレスで、**ベンダーではなく企業自身の受け口**
+  # 以下は国内 2026-11。運営者は分かったが、資料に宛先のドメインが無い
+  - domain: securemx.jp
+    note: >-
+      163社。IIJ セキュアMX の「DMARCレポート統計機能」と見られる（IIJ の
+      発表資料に「DMARC レポートをお客様に代わって受信」とある）が、宛先の
+      ドメインは公開の資料に無い。設定の手引きは申込者向け
+  - domain: bmscore.jp
+    note: 21社。ベアメール（株式会社リンク）の DMARC 分析機能と見られるが、資料に宛先が無い
+  - domain: dmarc-report.sakura.ne.jp
+    note: >-
+      5社。さくらインターネットの DMARC レポート機能。資料が「集計専用の
+      メールアドレスは確認できません」と宛先を伏せている
+  - domain: hornetdmarc.com
+    note: Hornetsecurity DMARC Manager。資料に rua の宛先が無い
+  - domain: ibesecurity.com
+    note: 27社。運営者を特定できない
+  - domain: brandkeeper.jp
+    note: サイバービジョンホスティング。自社のメールドメインでもあり、担当者の受け口の可能性
+  - domain: cacco-dmarc.com
+    note: 運営者を特定できない（Amazon SES で受ける自前の集計と見られる）
   # 以下は米国 2026-10。ベンダー自身の資料に rua の例が見つからなかった
   # （2026-10-31。販売店・第三者の記事や、他社の DMARC レコードには出てくる）
   - domain: mimecastdmarcanalyzer.com
@@ -242,4 +310,4 @@ unidentified_rua_domains:
   - domain: inboxmonster.com
   - domain: dmarcinput.com
   - domain: emailanalyst.com
-  - domain: emailfraudprotect.email
+  # emailfraudprotect.email は 2026-11-01 に rua-efp-01 として規則にした
