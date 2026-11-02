@@ -48,6 +48,8 @@ OUTPUT_FILENAME = "entities.parquet"
 EXCLUDED_FILENAME = "excluded_entities.parquet"
 #: 公式サイトの推測で、同時に確かめる企業数。投げる間隔は別に全体 1 秒 2 本
 CO_JP_CONCURRENCY = 8
+#: 公式サイトの推測で、1ページを読むのにかける時間の上限（秒）
+CO_JP_PAGE_DEADLINE_SEC = 20
 
 
 class PopulationNotImplementedError(NotImplementedError):
@@ -406,7 +408,7 @@ def _fill_from_co_jp_homepage(
     )
 
 
-def _live_co_jp_guesser(contact: str):
+def _live_co_jp_guesser(contact: str, *, transport=None):
     """実際に DNS とサイトを引く推測器。公開リゾルバと連絡先つき UA を使う。"""
     import httpx
 
@@ -425,6 +427,8 @@ def _live_co_jp_guesser(contact: str):
         timeout=15,
         follow_redirects=True,
         headers={"User-Agent": f"mailauth-observatory/0.1 ({contact})"},
+        # 検査で差し替える（ネットワークに出ない）
+        transport=transport,
     )
     last = [0.0]
     throttle = threading.Lock()
@@ -442,6 +446,10 @@ def _live_co_jp_guesser(contact: str):
             if wait > 0:
                 time.sleep(wait)
             last[0] = time.monotonic()
+        # **1ページにかける時間に上限を置く。** httpx の timeout は接続・読み
+        # 1回ごとの上限で、少しずつ送り続ける相手には効かない。8 本の作業の
+        # うち1本でも掴まれると、そのぶん全体が遅れる
+        deadline = time.monotonic() + CO_JP_PAGE_DEADLINE_SEC
         try:
             with client.stream("GET", url) as resp:
                 if resp.status_code >= 400:
@@ -450,6 +458,9 @@ def _live_co_jp_guesser(contact: str):
                 for chunk in resp.iter_bytes():
                     body += chunk
                     if len(body) >= MAX_BYTES:
+                        break
+                    if time.monotonic() > deadline:
+                        # 読めた分で確かめる（商号はたいてい先頭の <title> にある）
                         break
                 # **charset はヘッダに無ければ meta を見る**（decode_page）
                 return decode_page(body, resp.charset_encoding)
