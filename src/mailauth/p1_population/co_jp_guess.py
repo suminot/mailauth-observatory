@@ -51,6 +51,7 @@ import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urljoin, urlsplit
 
 #: 推測に使わない語。法人格と、どの会社にも付く語
 _STOP = {
@@ -138,6 +139,34 @@ def guesses(name_en: str | None) -> list[str]:
     group = [f"{f}.co.jp" for f in _group_forms(name_en, words) if len(f) >= 3]
     head, tail = base[:2], base[2:]
     return list(dict.fromkeys(head + group + tail))
+
+
+_META_REFRESH = re.compile(
+    r"<meta[^>]+http-equiv=[\"']?refresh[\"']?[^>]*content=[\"']\s*\d*\s*;?\s*url\s*=\s*"
+    r"[\"']?([^\"'>\s]+)",
+    re.I,
+)
+
+
+def meta_refresh_target(page: str, base_url: str, domain: str) -> str | None:
+    """`<meta http-equiv="refresh">` の飛び先。**同じドメインの中**のときだけ返す。
+
+    別のドメインへ飛ぶもの（駐車ページ・売り物・グループ会社）は追わない。
+    そこに社名があっても、このドメインがその会社のものとは言えない。
+    """
+    m = _META_REFRESH.search(page or "")
+    if not m:
+        return None
+    target = urljoin(base_url, html.unescape(m.group(1)))
+    parts = urlsplit(target)
+    host = (parts.hostname or "").lower().rstrip(".")
+    if parts.scheme not in ("http", "https"):
+        return None
+    if host != domain and not host.endswith("." + domain):
+        return None
+    if target.rstrip("/") == base_url.rstrip("/"):
+        return None
+    return target
 
 
 #: .co.jp に無いときに見る TLD。**順に見る**
@@ -355,6 +384,8 @@ class GuessStats:
     cert_lookups: int = 0
     #: .co.jp に無く、.jp・.com で確かめられた（`found` の内数）
     found_other_tld: int = 0
+    #: 入口が meta refresh だけのページで、飛び先を読んだ
+    meta_refresh_followed: int = 0
     dns_queries: int = 0
     pages_fetched: int = 0
     sample_found: list[str] = field(default_factory=list)
@@ -381,6 +412,7 @@ class GuessStats:
             "found_by_cert_org": self.found_by_cert_org,
             "cert_lookups": self.cert_lookups,
             "found_other_tld": self.found_other_tld,
+            "meta_refresh_followed": self.meta_refresh_followed,
             "dns_queries": self.dns_queries,
             "pages_fetched": self.pages_fetched,
             "sample_found": self.sample_found[:5],
@@ -510,6 +542,18 @@ class CoJpGuesser:
                 if page is None:
                     continue
                 read_any = True
+                # **入口が「飛ばすだけのページ」なら、飛び先を1回だけ読む。**
+                # `<meta http-equiv="refresh" content="0;URL=/top/">` だけで
+                # タイトルも本文も無いトップページがある（2026-11 の国内で、
+                # 読めて違ったものの見本 20 件中 3 件がタイトル空だった）。
+                # 飛び先が同じドメインの中のときだけ
+                target = meta_refresh_target(page, url, domain)
+                if target is not None:
+                    self._bump("pages_fetched")
+                    self._bump("meta_refresh_followed")
+                    followed = self.fetch(target)
+                    if followed is not None:
+                        page = followed
                 if first_read is None:
                     first_read = (domain, page_title(page)[:40])
                 if page_names_company(page, core, strict=strict):

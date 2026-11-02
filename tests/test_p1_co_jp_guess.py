@@ -579,3 +579,42 @@ def test_どこにも無ければDNSに無かったと数える():
     g = CoJpGuesser(lambda d: False, lambda u: None)
     assert g.domain_for("ポーターズ株式会社", "PORTERS CORPORATION") is None
     assert g.stats.no_guess_exists == 1
+
+
+# -- 入口が meta refresh だけのページ -------------------------------------------
+
+
+def test_meta_refreshの飛び先を同じドメインの中なら読む():
+    from mailauth.p1_population.co_jp_guess import CoJpGuesser
+
+    web = _Web(
+        {"sukegawa.co.jp"},
+        {
+            "https://www.sukegawa.co.jp/": (
+                '<html><head><meta http-equiv="Refresh" content="0; URL=/jp/index.html">'
+                "</head></html>"
+            ),
+            "https://www.sukegawa.co.jp/jp/index.html": "<title>助川電気工業株式会社</title>",
+        },
+    )
+    g = CoJpGuesser(web.exists, web.fetch)
+    assert g.domain_for("助川電気工業株式会社", "SUKEGAWA ELECTRIC CO.,LTD.") == "sukegawa.co.jp"
+    assert g.stats.meta_refresh_followed == 1
+
+
+def test_meta_refreshで別のドメインへ飛ぶなら追わない():
+    """駐車ページ・グループ会社へ飛ぶもの。**飛び先に社名があっても、このドメインの話ではない。**"""
+    from mailauth.p1_population.co_jp_guess import meta_refresh_target
+
+    page = '<meta http-equiv="refresh" content="0;url=https://www.other-group.co.jp/">'
+    assert meta_refresh_target(page, "https://www.abc.co.jp/", "abc.co.jp") is None
+    # 似た名前の別ドメイン（末尾が一致するだけ）も追わない
+    page2 = '<meta http-equiv="refresh" content="0;url=https://xabc.co.jp/">'
+    assert meta_refresh_target(page2, "https://www.abc.co.jp/", "abc.co.jp") is None
+    # 自分自身へ飛ぶものは読み直さない
+    page3 = '<meta http-equiv="refresh" content="5">'
+    assert meta_refresh_target(page3, "https://www.abc.co.jp/", "abc.co.jp") is None
+    page4 = "<meta http-equiv='refresh' content='0;url=https://abc.co.jp/top/'>"
+    assert meta_refresh_target(page4, "https://www.abc.co.jp/", "abc.co.jp") == (
+        "https://abc.co.jp/top/"
+    )
