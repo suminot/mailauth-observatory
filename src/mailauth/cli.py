@@ -218,16 +218,28 @@ def ct_backfill_cmd(
         if use_crtsh
         else None
     )
+    # **鍵なしでは使わない。** SSLMate の資料は、鍵なしの問い合わせを「個人利用か
+    # 評価目的」に限り、本番ではアカウント登録を求めている（2026-11-02 に確認、
+    # sslmate.com/help/reference/ct_search_api_v1）。毎月の定期処理は本番である。
+    # 無料の Small プラン（$0）の鍵を MAILAUTH_CERTSPOTTER_API_KEY に置けば使う
+    certspotter_key = os.environ.get("MAILAUTH_CERTSPOTTER_API_KEY") or None
     certspotter = (
         CertSpotterClient(
             cache_dir=cache_dir,
             month=run_id,
-            api_key=os.environ.get("MAILAUTH_CERTSPOTTER_API_KEY") or None,
+            api_key=certspotter_key,
             max_requests=certspotter_requests,
         )
-        if certspotter_requests > 0
+        if certspotter_requests > 0 and certspotter_key
         else None
     )
+    if certspotter_requests > 0 and not certspotter_key:
+        typer.secho(
+            "MAILAUTH_CERTSPOTTER_API_KEY が無いので CertSpotter は使わない"
+            "（鍵なしは個人利用・評価目的に限られている）",
+            fg="yellow",
+            err=True,
+        )
     report = backfill(
         cache_dir,
         run_id,

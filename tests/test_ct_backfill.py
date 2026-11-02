@@ -564,3 +564,15 @@ def test_米国の計測を二重に頼まない():
     monthly = (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(encoding="utf-8")
     run_name = yaml.safe_load(monthly)["run-name"]
     assert "inputs.population" in run_name and "inputs.run_id" in run_name
+
+
+def test_鍵が無ければ_CertSpotter_を使わない():
+    """SSLMate は鍵なしの利用を「個人利用か評価目的」に限り、本番では登録を
+    求めている（2026-11-02 に確認）。毎月の定期処理は本番である。
+    """
+    import inspect
+
+    from mailauth import cli
+
+    source = inspect.getsource(cli.ct_backfill_cmd)
+    assert "if certspotter_requests > 0 and certspotter_key" in source
