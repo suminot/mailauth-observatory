@@ -792,3 +792,30 @@ def test_crtsh_の組織名の先回りは間隔を共有したまま並行に�
     got = client.prefetch_org(["Alpha Corp", "Beta Inc", "Alpha Corp", ""])
     assert list(got) == ["Alpha Corp", "Beta Inc"], "入力順・重複なし"
     assert sorted(asked) == ["Alpha Corp", "Beta Inc"]
+
+
+def test_2回目の流し直しは取れた量が少なければ頼まない(tmp_path):
+    """**数件を埋めただけで2時間半の月次計測を頼まない。** その間は補充も止まる。
+
+    2026-11-02 の国内は、1回目の流し直しのあとに残った数件を補充で埋めただけで
+    2回目を頼んでいた。
+    """
+    from mailauth.ctlog import RERUN_MIN_FILLED
+
+    write_pending(tmp_path, MONTH, "jp-all-listed", ["a.jp", "b.jp"], total=1000)
+    mark_rerun_requested(tmp_path, MONTH, "jp-all-listed")
+    report = backfill(tmp_path, MONTH, crtsh=_crtsh_up(tmp_path), certspotter=None)
+    pop = report.populations["jp-all-listed"]
+    assert pop["filled"] == 2 < RERUN_MIN_FILLED
+    assert report.ready_for_rerun == []
+    assert "2 回目" in pop["rerun_held"]
+
+
+def test_2回目の流し直しも十分に取れれば頼む(tmp_path):
+    from mailauth.ctlog import RERUN_MIN_FILLED
+
+    domains = [f"d{i}.jp" for i in range(RERUN_MIN_FILLED)]
+    write_pending(tmp_path, MONTH, "jp-all-listed", domains, total=1000)
+    mark_rerun_requested(tmp_path, MONTH, "jp-all-listed")
+    report = backfill(tmp_path, MONTH, crtsh=_crtsh_up(tmp_path), certspotter=None)
+    assert report.ready_for_rerun == ["jp-all-listed"]
