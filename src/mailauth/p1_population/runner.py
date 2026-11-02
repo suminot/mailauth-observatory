@@ -216,6 +216,7 @@ def _apply_enrichment(
     *,
     limit: int | None = None,
     offline: bool = False,
+    kana: dict[str, str] | None = None,
 ) -> None:
     """enrich を順に適用する。認証情報が無いものはスキップして記録する。
 
@@ -318,7 +319,9 @@ def _apply_enrichment(
                 _fill_missing_urls_from_wikidata(entities, cfg, manifest)
 
             elif name == "co_jp_homepage":
-                _fill_from_co_jp_homepage(entities, manifest, limit=limit, offline=offline)
+                _fill_from_co_jp_homepage(
+                    entities, manifest, limit=limit, offline=offline, kana=kana
+                )
 
             else:
                 manifest.add_warning(
@@ -340,6 +343,7 @@ def _fill_from_co_jp_homepage(
     limit: int | None = None,
     offline: bool = False,
     guesser=None,
+    kana: dict[str, str] | None = None,
 ) -> None:
     """**まだ空欄の企業だけ**、英字社名から .co.jp を推測してサイトで確かめる。
 
@@ -381,7 +385,8 @@ def _fill_from_co_jp_homepage(
     # 2026-11 の国内は 606 社に 1,534 秒かかっていた。投げる間隔は
     # `_live_co_jp_guesser` の錠で全体 1 秒 2 本のまま変わらない
     results = in_input_order(
-        lambda e: guesser.domain_for(e.name, e.name_en),
+        # 英字社名が無い会社は、EDINET の読み（edinet_code で引く）から推測する
+        lambda e: guesser.domain_for(e.name, e.name_en, (kana or {}).get(e.edinet_code or "")),
         missing,
         concurrency=CO_JP_CONCURRENCY,
         window=64,
@@ -956,7 +961,14 @@ def run(
 
         # 5. enrich
         if not dry_run:
-            _apply_enrichment(entities, cfg, manifest, limit=limit, offline=offline)
+            _apply_enrichment(
+                entities,
+                cfg,
+                manifest,
+                limit=limit,
+                offline=offline,
+                kana={r.edinet_code: r.name_kana for r in listed if r.name_kana},
+            )
 
         # 6. 前月との差分
         if limit:

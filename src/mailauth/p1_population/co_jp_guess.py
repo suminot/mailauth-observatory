@@ -137,6 +137,91 @@ def guesses(name_en: str | None) -> list[str]:
     return list(dict.fromkeys(head + group + tail))
 
 
+# -- 読み（カナ）からの推測 ------------------------------------------------
+#
+# 英字社名が無い会社（2026-11 の国内で 606 社中 166 社）にも、EDINET コード
+# リストには「提出者名（ヨミ）」がある。和語の社名は、読みをヘボン式で
+# つなげた形をドメインにしていることが多い（タイヘイデンギョウ →
+# taiheidengyo、ムラキ → muraki）。外来語の社名（〜システム）は読みから
+# 綴りに戻せないので当たらないが、確かめはページで行うので害は無い。
+
+_KANA_DIGRAPHS = {
+    "キャ": "kya", "キュ": "kyu", "キョ": "kyo", "シャ": "sha", "シュ": "shu",
+    "ショ": "sho", "シェ": "she", "チャ": "cha", "チュ": "chu", "チョ": "cho",
+    "チェ": "che", "ニャ": "nya", "ニュ": "nyu", "ニョ": "nyo", "ヒャ": "hya",
+    "ヒュ": "hyu", "ヒョ": "hyo", "ミャ": "mya", "ミュ": "myu", "ミョ": "myo",
+    "リャ": "rya", "リュ": "ryu", "リョ": "ryo", "ギャ": "gya", "ギュ": "gyu",
+    "ギョ": "gyo", "ジャ": "ja", "ジュ": "ju", "ジョ": "jo", "ジェ": "je",
+    "ビャ": "bya", "ビュ": "byu", "ビョ": "byo", "ピャ": "pya", "ピュ": "pyu",
+    "ピョ": "pyo", "ティ": "ti", "ディ": "di", "デュ": "dyu", "ファ": "fa",
+    "フィ": "fi", "フェ": "fe", "フォ": "fo", "ウィ": "wi", "ウェ": "we",
+    "ウォ": "wo", "ヴァ": "va", "ヴィ": "vi", "ヴェ": "ve", "ヴォ": "vo",
+    "ツァ": "tsa", "トゥ": "tu", "ドゥ": "du",
+}
+_KANA = dict(
+    zip(
+        "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモ"
+        "ヤユヨラリルレロワヲガギグゲゴザジズゼゾダヂヅデドバビブベボパピプペポヴ"
+        "ァィゥェォャュョヮ",
+        "a i u e o ka ki ku ke ko sa shi su se so ta chi tsu te to na ni nu ne no "
+        "ha hi fu he ho ma mi mu me mo ya yu yo ra ri ru re ro wa o ga gi gu ge go "
+        "za ji zu ze zo da ji zu de do ba bi bu be bo pa pi pu pe po vu "
+        "a i u e o ya yu yo wa".split(),
+        strict=True,
+    )
+)
+#: 読みの中で、社名の語ではないもの
+_KANA_DROP = ("カブシキガイシャ", "カブシキカイシャ", "ホールディングス", "グループ")
+
+
+def kana_to_romaji(kana: str | None) -> str:
+    """カナ（ひらがなも可）をヘボン式でつなげる。読めない文字は落とす。
+
+    長音（ー）は落とす。促音（ッ）は次の子音を重ねる（ッチ → tchi）。
+    """
+    text = unicodedata.normalize("NFKC", kana or "")
+    text = "".join(chr(ord(c) + 0x60) if "ぁ" <= c <= "ゖ" else c for c in text)
+    for word in _KANA_DROP:
+        text = text.replace(word, "")
+    out: list[str] = []
+    double = False
+    i = 0
+    while i < len(text):
+        pair, ch = text[i : i + 2], text[i]
+        if pair in _KANA_DIGRAPHS:
+            roma, i = _KANA_DIGRAPHS[pair], i + 2
+        elif ch in _KANA:
+            roma, i = _KANA[ch], i + 1
+        elif ch == "ン":
+            out.append("n")
+            i += 1
+            continue
+        elif ch == "ッ":
+            double, i = True, i + 1
+            continue
+        else:
+            i += 1  # ー・中黒・空白・英数字以外
+            continue
+        if double:
+            roma = ("t" if roma.startswith("ch") else roma[0]) + roma
+            double = False
+        out.append(roma)
+    return "".join(out)
+
+
+def kana_guesses(kana: str | None) -> list[str]:
+    """読みから推測する .co.jp。**長音を詰めた形 → 詰めない形** の順。
+
+    ドメインでは「ou」「uu」を詰めることが多い（dengyou → dengyo、
+    kyouto → kyoto）。3文字未満は使わない。
+    """
+    full = kana_to_romaji(kana)
+    if len(full) < 3:
+        return []
+    short = full.replace("ou", "o").replace("uu", "u").replace("oo", "o")
+    return list(dict.fromkeys(f"{f}.co.jp" for f in (short, full) if len(f) >= 3))
+
+
 def name_core(name_ja: str | None) -> str:
     """日本語の商号から、ページで探す芯を取り出す（NFKC 済み）。"""
     text = unicodedata.normalize("NFKC", name_ja or "")
@@ -220,6 +305,10 @@ def page_names_company(page: str, core: str) -> bool:
 class GuessStats:
     attempted: int = 0
     no_english_name: int = 0
+    #: 英字社名が無く、読みから推測した
+    from_kana: int = 0
+    #: そのうち確かめられた
+    found_from_kana: int = 0
     #: 社名の芯が短すぎて、ページで確かめられない
     core_too_short: int = 0
     #: 推測が1つも DNS に無かった
@@ -237,6 +326,8 @@ class GuessStats:
         return {
             "attempted": self.attempted,
             "no_english_name": self.no_english_name,
+            "from_kana": self.from_kana,
+            "found_from_kana": self.found_from_kana,
             "core_too_short": self.core_too_short,
             "no_guess_exists": self.no_guess_exists,
             "page_unreachable": self.page_unreachable,
@@ -272,12 +363,20 @@ class CoJpGuesser:
         with self._lock:
             setattr(self.stats, name, getattr(self.stats, name) + n)
 
-    def domain_for(self, name_ja: str | None, name_en: str | None) -> str | None:
+    def domain_for(
+        self, name_ja: str | None, name_en: str | None, kana: str | None = None
+    ) -> str | None:
         self._bump("attempted")
         candidates = guesses(name_en)
+        by_kana = False
         if not candidates:
-            self._bump("no_english_name")
-            return None
+            # **英字社名が無ければ読みから。** 無ければ今までどおり諦める
+            candidates = kana_guesses(kana)
+            if not candidates:
+                self._bump("no_english_name")
+                return None
+            by_kana = True
+            self._bump("from_kana")
         core = name_core(name_ja)
         if len(core) < MIN_CORE_CHARS:
             self._bump("core_too_short")
@@ -312,6 +411,8 @@ class CoJpGuesser:
                 if page_names_company(page, core):
                     with self._lock:
                         self.stats.found += 1
+                        if by_kana:
+                            self.stats.found_from_kana += 1
                         if len(self.stats.sample_found) < 5:
                             self.stats.sample_found.append(domain)
                     return domain

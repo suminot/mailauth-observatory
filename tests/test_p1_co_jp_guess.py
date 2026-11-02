@@ -334,3 +334,91 @@ def test_並行に確かめても数え上げがずれない():
     assert g.stats.attempted == 60
     assert g.stats.found == 30
     assert g.stats.pages_fetched == len(fetched)
+
+
+# ---------------------------------------------------------------------------
+# 英字社名が無い会社は、EDINET の読み（ヨミ）から推測する
+# ---------------------------------------------------------------------------
+
+
+def test_読みをヘボン式でつなげる():
+    from mailauth.p1_population.co_jp_guess import kana_guesses, kana_to_romaji
+
+    assert kana_to_romaji("タイヘイデンギョウ") == "taiheidengyou"
+    assert kana_to_romaji("ムラキ") == "muraki"
+    assert kana_to_romaji("ニッケンコウガク") == "nikkenkougaku"
+    # 促音の後の ch は tch（ヘボン式）
+    assert kana_to_romaji("マッチ") == "matchi"
+    # ひらがな・半角カナ・長音・中黒
+    assert kana_to_romaji("たいへい") == "taihei"
+    assert kana_to_romaji("ﾑﾗｷ") == "muraki"
+    assert kana_to_romaji("ホールディングス") == ""
+    # 法人格は落とす
+    assert kana_to_romaji("カブシキガイシャムラキ") == "muraki"
+    # 長音を詰めた形を先に試す
+    assert kana_guesses("タイヘイデンギョウ") == [
+        "taiheidengyo.co.jp",
+        "taiheidengyou.co.jp",
+    ]
+    assert kana_guesses("ムラキ") == ["muraki.co.jp"]
+    assert kana_guesses("") == []
+    assert kana_guesses(None) == []
+
+
+def test_英字社名が無ければ読みから推測し_ページで確かめる():
+    web = _Web(
+        {"taiheidengyo.co.jp"},
+        {"https://www.taiheidengyo.co.jp/": "<title>太平電業株式会社</title>"},
+    )
+    g = CoJpGuesser(web.exists, web.fetch)
+    assert g.domain_for("太平電業株式会社", None, "タイヘイデンギョウ") == "taiheidengyo.co.jp"
+    assert (g.stats.from_kana, g.stats.found_from_kana, g.stats.no_english_name) == (1, 1, 0)
+    # 読みからの推測でも、商号が載っていなければ採らない
+    web2 = _Web({"taiheidengyo.co.jp"}, {"https://www.taiheidengyo.co.jp/": "<title>別</title>"})
+    g2 = CoJpGuesser(web2.exists, web2.fetch)
+    assert g2.domain_for("太平電業株式会社", None, "タイヘイデンギョウ") is None
+    assert g2.stats.name_not_on_page == 1
+    # 英字社名があれば読みは使わない
+    web3 = _Web(set(), {})
+    g3 = CoJpGuesser(web3.exists, web3.fetch)
+    g3.domain_for("ムラキ株式会社", "MURAKI CORPORATION", "ムラキ")
+    assert g3.stats.from_kana == 0
+
+
+def test_コードリストの読みを_P1_の推測に渡す(tmp_path):
+    """EDINET コードリストの「提出者名（ヨミ）」列を読み、edinet_code で引く。"""
+    from mailauth.contracts import Entity
+    from mailauth.manifest import RunManifest
+    from mailauth.p1_population.runner import _fill_from_co_jp_homepage
+
+    e = Entity(
+        entity_id="jp:3",
+        run_id="2026-11",
+        country="JP",
+        population_ids=["jp-all-listed"],
+        name="太平電業株式会社",
+        name_normalized="太平電業",
+        edinet_code="E00999",
+    )
+    web = _Web(
+        {"taiheidengyo.co.jp"},
+        {"https://www.taiheidengyo.co.jp/": "<title>太平電業株式会社</title>"},
+    )
+    manifest = RunManifest(run_id="2026-11", phase="p1_population", out_dir=str(tmp_path))
+    _fill_from_co_jp_homepage(
+        [e],
+        manifest,
+        guesser=CoJpGuesser(web.exists, web.fetch),
+        kana={"E00999": "タイヘイデンギョウ"},
+    )
+    assert e.official_domain == "taiheidengyo.co.jp"
+    assert manifest.breakdown["co_jp_homepage"]["found_from_kana"] == 1
+
+
+def test_コードリストのヨミ列を読む(edinet_sample):
+    from mailauth.config import load_population
+    from mailauth.p1_population.edinet import parse_code_list
+
+    cfg = load_population("configs/populations/jp-all-listed.yaml")
+    rows, _ = parse_code_list(edinet_sample, cfg.source.edinet_code_list)
+    assert rows[0].name_kana == "サンプルジョウホウシステム"
