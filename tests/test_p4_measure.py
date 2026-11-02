@@ -786,6 +786,21 @@ def test_一部だけ引けたドメインが数字から消えない():
     assert d["fully_observed"] + d["partially_observed"] + d["none_observed"] == 5
 
 
+def test_引けなかったクエリを用途別に残す():
+    """**一部だけ観測が DMARC の欠けか、他社 MX の DANE の欠けか** を判断できる
+    ようにする（2026-11 の米国で 2,239 ドメインが一部だけ観測だった）。"""
+    _five_domains()
+    b = run_p4(run_id=RUN, backend=_PartialBackend(dead={"d0."}, partial={"d1."}))["breakdown"]
+    unobserved = b["unobserved_by_purpose"]
+    # d1 は TXT だけ引けない → spf / dmarc などの TXT 系の用途に出る
+    assert "spf" in unobserved and unobserved["spf"].get("SERVFAIL", 0) >= 2
+    # 一部だけ観測のドメイン（d1 の1件）を用途ごとに数える
+    partial = b["partial_domains_by_purpose"]
+    assert partial.get("spf") == 1
+    assert partial.get("dmarc") == 1
+    assert "mx" not in partial, "MX は引けているのに欠けに数えた"
+
+
 def test_1ドメインの失敗がクエリの本数だけ膨らまない():
     """**1ドメインが全滅したとき、失敗は1件である。**
 
