@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from mailauth.p1_population.co_jp_guess import (
     CoJpGuesser,
+    decode_page,
     guesses,
     name_core,
     page_names_company,
@@ -128,8 +129,13 @@ def test_読めなかったのと載っていなかったのを分ける():
     g = CoJpGuesser(web.exists, web.fetch)
     assert g.domain_for("シンデン・ハイテックス株式会社", "Shinden Hightex Corporation") is None
     assert (g.stats.page_unreachable, g.stats.name_not_on_page) == (1, 0)
-    # www が読めなければ裸のドメインも試している
-    assert web.fetched == ["https://www.shinden.co.jp/", "https://shinden.co.jp/"]
+    # www が読めなければ裸のドメイン、https で読めなければ http も試している
+    assert web.fetched == [
+        "https://www.shinden.co.jp/",
+        "https://shinden.co.jp/",
+        "http://www.shinden.co.jp/",
+        "http://shinden.co.jp/",
+    ]
 
 
 def test_実在しない推測ではページを読まない():
@@ -264,3 +270,67 @@ def test_決まった形でも確かめはページで行う():
     assert g.domain_for("東急不動産ホールディングス株式会社", "Tokyu Fudosan Holdings") == (
         "tokyu-fudosan-hd.co.jp"
     )
+
+
+def test_https_で読めなければ_http_で確かめる():
+    """中間証明書を送っていないサイトや http だけのサイトが「読めない」に
+    入っていた（2026-11 の国内で 606 社中 97 社）。"""
+    web = _Web(
+        {"shinden.co.jp"},
+        {"http://www.shinden.co.jp/": "<title>シンデン・ハイテックス株式会社</title>"},
+    )
+    g = CoJpGuesser(web.exists, web.fetch)
+    assert g.domain_for("シンデン・ハイテックス株式会社", "Shinden Hightex") == "shinden.co.jp"
+    # https で読めた入口があれば http は見ない
+    web2 = _Web(
+        {"shinden.co.jp"},
+        {"https://www.shinden.co.jp/": "<title>別の会社</title>"},
+    )
+    g2 = CoJpGuesser(web2.exists, web2.fetch)
+    assert g2.domain_for("シンデン・ハイテックス株式会社", "Shinden Hightex") is None
+    assert web2.fetched == ["https://www.shinden.co.jp/"]
+    assert g2.stats.name_not_on_page == 1
+
+
+def test_charset_をヘッダに書かないサイトは_meta_で読む():
+    """ヘッダに charset が無いと HTTP ライブラリは UTF-8 で読み、Shift_JIS の
+    ページの商号が化けて「社名が載っていない」に数えていた。"""
+    page = '<html><head><meta charset="Shift_JIS"><title>株式会社ムラキ</title>'
+    body = page.encode("cp932")
+    text = decode_page(body, None)
+    assert "株式会社ムラキ" in text
+    assert page_names_company(text, "ムラキ")
+    # http-equiv の形
+    body2 = (
+        '<meta http-equiv="Content-Type" content="text/html; charset=EUC-JP">日本無線株式会社'
+    ).encode("euc_jp")
+    assert "日本無線株式会社" in decode_page(body2, None)
+    # 宣言が無くても、UTF-8 で読めなければ cp932 を試す
+    assert "株式会社ムラキ" in decode_page("株式会社ムラキ".encode("cp932"), None)
+    # ヘッダの宣言が先
+    assert decode_page("ムラキ".encode(), "utf-8") == "ムラキ"
+    # 知らない名前は無視して先へ進む
+    assert decode_page("ムラキ".encode(), "x-unknown") == "ムラキ"
+
+
+def test_並行に確かめても数え上げがずれない():
+    import threading
+
+    from mailauth.ordered import in_input_order
+
+    names = [(f"株式会社テスト{i:03d}", f"Test{i:03d} Corporation") for i in range(60)]
+    pages = {f"https://www.test{i:03d}.co.jp/": f"株式会社テスト{i:03d}" for i in range(0, 60, 2)}
+    lock = threading.Lock()
+    fetched: list[str] = []
+
+    def fetch(url):
+        with lock:
+            fetched.append(url)
+        return pages.get(url)
+
+    g = CoJpGuesser(lambda d: True, fetch)
+    got = list(in_input_order(lambda n: g.domain_for(*n), names, concurrency=8, window=16))
+    assert got == [f"test{i:03d}.co.jp" if i % 2 == 0 else None for i in range(60)]
+    assert g.stats.attempted == 60
+    assert g.stats.found == 30
+    assert g.stats.pages_fetched == len(fetched)
