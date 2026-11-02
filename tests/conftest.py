@@ -75,6 +75,15 @@ def no_real_network(monkeypatch):
     monkeypatch.setattr(httpx.HTTPTransport, "handle_request", refuse)
     monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", refuse)
 
+    # 公式サイトの証明書を読む経路は httpx を通らない（ssl で直接つなぐ）
+    def refuse_tls(host, *args, **kwargs):
+        raise AssertionError(
+            f"テストが証明書を読みに外へ出ようとした: {host}\n"
+            "TlsSanSource(fetch=...) で応答を模すこと"
+        )
+
+    monkeypatch.setattr("mailauth.tls_san.fetch_names", refuse_tls)
+
 
 @pytest.fixture(autouse=True)
 def no_network_in_subprocesses(monkeypatch):

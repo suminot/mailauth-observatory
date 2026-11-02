@@ -6,6 +6,7 @@
 四つの経路
   1. official_url  P1 が gBizINFO から取った公式サイトのドメイン
   2. ct_log        crt.sh の SAN から eTLD+1 を抽出
+     tls_san       公式サイトが出している TLS 証明書の SAN（tls_san.py）
   3. spf_redirect  SPF の redirect= が別組織を指していれば候補に
      spf_include   SPF の include: が自社サブドメインを指していれば候補に
   4. dmarc_rua     _dmarc の rua 宛先が自社ドメインなら候補に
@@ -56,6 +57,7 @@ from ..records import (
     spf_redirect,
 )
 from ..resolver import DnsAnswer, DnsResolver, Resolver, shuffled
+from ..tls_san import DisabledTlsSanSource, SanResult, TlsSanSource
 
 #: CT ログを何社ぶんまとめて先回りして取るか。
 #:
@@ -383,6 +385,7 @@ def run(
     resolver: Resolver | None = None,
     ct_source: CtSource | None = None,
     config: str = "configs/candidates.yaml",
+    tls_source: TlsSanSource | DisabledTlsSanSource | None = None,
 ) -> dict[str, Any]:
     """P2 を実行し manifest の内容を返す。
 
@@ -467,6 +470,24 @@ def run(
                 if discovery.get("ct_log") and not offline
                 else DisabledCtSource()
             )
+        # **公式サイトが出している証明書の SAN**（tls_san.py）。CT と同じ手がかりを、
+        # 第三者の検索サービスに頼らずに取る。offline では引かない
+        # 注入された源（検査）は offline でも使う。CT と同じ扱い
+        tls_enabled = bool(discovery.get("tls_san")) and (tls_source is not None or not offline)
+        if offline and discovery.get("tls_san") and tls_source is None:
+            manifest.add_warning(
+                "TLS_SAN_SKIPPED_OFFLINE",
+                message=(
+                    "MAILAUTH_OFFLINE のため公式サイトの証明書を読んでいない。"
+                    "**「証明書が無かった」ではなく「読んでいない」**（原則5）"
+                ),
+            )
+        if tls_source is None:
+            tls_source = (
+                TlsSanSource(concurrency=int(res_cfg.get("concurrency", 8)) * 2)
+                if tls_enabled
+                else DisabledTlsSanSource()
+            )
 
         manual = (
             load_manual_domains(cfg.get("manual_domains", "")) if discovery.get("manual") else {}
@@ -531,7 +552,21 @@ def run(
             "errors": 0,
             "raw_names": 0,
             "truncated": 0,
+            #: 共用の証明書とみなして捨てた証明書の数（ctlog._extract）
+            "shared_cert_skipped": 0,
         }
+        tls_stats: dict[str, Any] = {
+            "looked_up": 0,
+            "verified": 0,
+            "via_www": 0,
+            "shared_skipped": 0,
+            "errors_by_kind": {},
+            #: SAN から拾った、起点以外の登録ドメイン（重複あり、企業ごと）
+            "sibling_domains": 0,
+            "entities_with_siblings": 0,
+        }
+        tls_ready: dict[str, SanResult] = {}
+        tls_asked: set[str] = set()
         total = 0
         hit_total_limit = False
         #: 持ち時間に対して見込みが超えたときの、その見込み（秒）
@@ -683,6 +718,7 @@ def run(
                     ct = ct_ready.get(official) or ct_source.search(official)
                     ct_stats["searched"] += 1
                     ct_stats["raw_names"] += ct.raw_names
+                    ct_stats["shared_cert_skipped"] += getattr(ct, "shared_skipped", 0)
                     if ct.from_cache:
                         ct_stats["from_cache"] += 1
                         # **当月以外のキャッシュを「今月の観測」として数えない。**
@@ -706,6 +742,25 @@ def run(
                         collector.add(found, DiscoveryMethod.CT_LOG, f"{via} %.{official}")
                     if len(ct.found) > ct_max:
                         ct_stats["truncated"] += len(ct.found) - ct_max
+
+                if tls_enabled:
+                    san = tls_ready.get(official) or tls_source.lookup(official)
+                    tls_stats["looked_up"] += 1
+                    if san.error_kind:
+                        kinds = tls_stats["errors_by_kind"]
+                        kinds[san.error_kind] = kinds.get(san.error_kind, 0) + 1
+                    else:
+                        tls_stats["verified"] += 1
+                        if san.host and san.host != official:
+                            tls_stats["via_www"] += 1
+                    if san.shared:
+                        tls_stats["shared_skipped"] += 1
+                    siblings = [d for d in san.usable if d != official]
+                    for domain in siblings:
+                        collector.add(domain, DiscoveryMethod.TLS_SAN, f"TLS SAN {san.host}")
+                    if siblings:
+                        tls_stats["sibling_domains"] += len(siblings)
+                        tls_stats["entities_with_siblings"] += 1
 
                 _discover_from_dns(
                     official,
@@ -751,6 +806,10 @@ def run(
                 # 企業が別の塊に現れたときに取り直しになる（キャッシュには
                 # 当たるが、進捗の件数が合わなくなる）
                 ct_ready.update(ct_source.prefetch(wanted, on_result=_note_ct))
+            if tls_enabled:
+                tls_wanted = [d for d in (_seed(i) for i in chunk) if d and d not in tls_asked]
+                tls_asked.update(tls_wanted)
+                tls_ready.update(tls_source.prefetch(tls_wanted))
             # **起点の DNS も先回りする。** 1社ずつ引くと往復が積み上がる。
             # 取りすぎは CT と同じく最大1塊ぶん（候補総数の上限で止まったとき）
             dns_wanted = [
@@ -971,6 +1030,7 @@ def run(
             subdomain_candidates=subdomain_count,
             shared_subdomains_dropped=len(shared_subdomains),
             ct=ct_stats,
+            tls_san=tls_stats,
             # **crt.sh にどれだけ待たされたかを残す。** 2026-09 の実行は
             # P2 に4時間21分かかったが、残っていたのは失敗の件数だけで、
             # 時間切れだったのか重かったのかが分からなかった
