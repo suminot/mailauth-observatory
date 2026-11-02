@@ -318,6 +318,13 @@ def run(
 
         by_rcode: dict[str, int] = {}
         by_purpose: dict[str, int] = {}
+        # **引けなかったクエリが何の用途だったか。** 2026-11 の米国では
+        # 4,956 ドメイン中 2,239 が「一部だけ観測」だったが、それが DMARC の
+        # 欠けなのか、他社の MX に投げる DANE（TLSA）の欠けなのかが残って
+        # おらず、実害を判断できなかった
+        unobserved_by_purpose: dict[str, dict[str, int]] = {}
+        #: 一部だけ観測のドメインで、欠けた用途（ドメイン単位で数える）
+        partial_domains_by_purpose: dict[str, int] = {}
         wildcard_domains: list[str] = []
         dkim_detected_domains = 0
         tcp_fallback = 0
@@ -434,6 +441,9 @@ def run(
                     by_purpose[query.purpose] = by_purpose.get(query.purpose, 0) + 1
                     if answer.used_tcp:
                         tcp_fallback += 1
+                    if not answer.observed:
+                        kinds = unobserved_by_purpose.setdefault(query.purpose, {})
+                        kinds[answer.rcode] = kinds.get(answer.rcode, 0) + 1
 
                 # **観測できた本数ではなく、ドメインの状態で分ける。**
                 # 一部だけ引けたドメインを「成功」とだけ数えると、半分しか
@@ -443,6 +453,10 @@ def run(
                     fully_observed += 1
                 elif any(seen):
                     partially_observed += 1
+                    for purpose in {q.purpose for q, a in result.answers if not a.observed}:
+                        partial_domains_by_purpose[purpose] = (
+                            partial_domains_by_purpose.get(purpose, 0) + 1
+                        )
                 else:
                     none_observed += 1
                     # 1本も引けなかった理由を代表の rcode で残す。
@@ -533,6 +547,10 @@ def run(
             },
             by_rcode=dict(sorted(by_rcode.items())),
             by_purpose=dict(sorted(by_purpose.items())),
+            unobserved_by_purpose={
+                k: dict(sorted(v.items())) for k, v in sorted(unobserved_by_purpose.items())
+            },
+            partial_domains_by_purpose=dict(sorted(partial_domains_by_purpose.items())),
             queries_total=queries_written,
             bronze_records=total_records,
             tcp_fallback=tcp_fallback,
