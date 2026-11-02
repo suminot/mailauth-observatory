@@ -321,6 +321,11 @@ class GuessStats:
     dns_queries: int = 0
     pages_fetched: int = 0
     sample_found: list[str] = field(default_factory=list)
+    #: 読めたが社名が無かったページ（ドメインとタイトルの頭）。**何が外れたかを
+    #: 次の判断に使う**（2026-11 の国内で 129 社がここに入った）
+    sample_not_on_page: list[str] = field(default_factory=list)
+    #: 実在したがどの入口も読めなかったドメイン
+    sample_unreachable: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -336,6 +341,8 @@ class GuessStats:
             "dns_queries": self.dns_queries,
             "pages_fetched": self.pages_fetched,
             "sample_found": self.sample_found[:5],
+            "sample_not_on_page": self.sample_not_on_page[:20],
+            "sample_unreachable": self.sample_unreachable[:20],
         }
 
 
@@ -392,6 +399,7 @@ class CoJpGuesser:
             return None
 
         read_any = False
+        first_read: tuple[str, str] | None = None
         for domain in existing:
             # **https で読めなければ http も見る。** 中間証明書を送っていない
             # サイト（ブラウザは補うが、こちらの検証は通らない）や、http しか
@@ -408,6 +416,8 @@ class CoJpGuesser:
                 if page is None:
                     continue
                 read_any = True
+                if first_read is None:
+                    first_read = (domain, page_title(page)[:40])
                 if page_names_company(page, core):
                     with self._lock:
                         self.stats.found += 1
@@ -420,6 +430,15 @@ class CoJpGuesser:
                 break
         if read_any:
             self._bump("name_not_on_page")
+            if first_read is not None:
+                with self._lock:
+                    if len(self.stats.sample_not_on_page) < 20:
+                        self.stats.sample_not_on_page.append(
+                            f"{first_read[0]} 「{first_read[1]}」 ← {core}"
+                        )
         else:
             self._bump("page_unreachable")
+            with self._lock:
+                if len(self.stats.sample_unreachable) < 20:
+                    self.stats.sample_unreachable.append(existing[0])
         return None
