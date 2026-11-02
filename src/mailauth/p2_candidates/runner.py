@@ -669,8 +669,11 @@ def run(
         # 現れる。** 塊ごとの重複排除では取りこぼすので、全体でも覚えておく。
         # 覚えないと進捗が 100% を超えて表示される
         ct_asked: set[str] = set()
-        #: CT の先回り（prefetch）に使った実時間。持ち時間の見込みから分けて使う
-        ct_prefetch_sec = 0.0
+        #: crt.sh を待った実時間（先回りの prefetch と、組織名検索の search_org）。
+        #: 持ち時間の見込みから分けて使う。**組織名検索も数える** ── 2026-11-02
+        #: の国内の流し直しで、起点の無い企業の組織名検索（1本 40 秒前後）を
+        #: 「CT 以外」に数えたため、見込みが 240 分を超えて 297 社で打ち切った
+        ct_wait_sec = [0.0]
         if ct_enabled:
             n_seeds = len({d for d in (_seed(i) for i in order) if d})
             ct_tracker = Progress(n_seeds, "P2 CT取得")
@@ -720,7 +723,9 @@ def run(
                 if not name:
                     ct_org_stats["no_name"] += 1
                 else:
+                    org_started = time.monotonic()
                     found = ct_source.search_org(name)
+                    ct_wait_sec[0] += time.monotonic() - org_started
                     ct_org_stats["searched"] += 1
                     if found.from_cache:
                         ct_org_stats["from_cache"] += 1
@@ -839,7 +844,7 @@ def run(
                 # 当たるが、進捗の件数が合わなくなる）
                 ct_started = time.monotonic()
                 ct_ready.update(ct_source.prefetch(wanted, on_result=_note_ct))
-                ct_prefetch_sec += time.monotonic() - ct_started
+                ct_wait_sec[0] += time.monotonic() - ct_started
             if tls_enabled:
                 tls_wanted = [d for d in (_seed(i) for i in chunk) if d and d not in tls_asked]
                 tls_asked.update(tls_wanted)
@@ -871,7 +876,7 @@ def run(
                 tracker.projected_total_sec(),
                 done=tracker.done,
                 total=tracker.total,
-                ct_sec=ct_prefetch_sec,
+                ct_sec=ct_wait_sec[0],
                 ct_budget_sec=float(getattr(ct_source, "fetch_budget_sec", 0) or 0),
             )
             enough = len(collectors) >= budget_after * len(order)
@@ -1103,21 +1108,27 @@ def run(
         # （ctlog.py「積み残しと、月のあいだの補充」）
         ct_cache_dir = getattr(ct_source, "cache_dir", None)
         if ct_enabled and ct_cache_dir is not None and limit is None:
-            pending = [d for d, r in ct_ready.items() if r.error]
+            # **途中でやめた分の起点も積み残しに入れる。** 2026-11-02 の国内の
+            # 流し直しは 297 社で打ち切り、積み残しを「290 件中 12 件」と
+            # 書いた。補充はそれを「ほぼ片付いた」と読み、流し直しを頼み
+            # かねない。分母は母集団の起点全部である
+            all_seeds = list(dict.fromkeys(d for d in (_seed(i) for i in order) if d))
+            pending = [d for d in all_seeds if d not in ct_ready or ct_ready[d].error]
             population = _population_of(active)
             path = write_pending(
                 Path(ct_cache_dir),
                 run_id,
                 population,
                 pending,
-                total=len(ct_ready),
+                total=len(all_seeds),
                 config=f"configs/populations/{population}.yaml",
             )
             manifest.set_breakdown(
                 ct_pending={
                     "population": population,
                     "pending": len(pending),
-                    "total": len(ct_ready),
+                    "total": len(all_seeds),
+                    "not_reached": sum(1 for d in all_seeds if d not in ct_ready),
                     "path": str(path),
                 }
             )
