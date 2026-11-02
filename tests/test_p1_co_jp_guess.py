@@ -422,3 +422,17 @@ def test_コードリストのヨミ列を読む(edinet_sample):
     cfg = load_population("configs/populations/jp-all-listed.yaml")
     rows, _ = parse_code_list(edinet_sample, cfg.source.edinet_code_list)
     assert rows[0].name_kana == "サンプルジョウホウシステム"
+
+
+def test_外れた理由を見本として残す():
+    """「社名が載っていない」「読めない」の中身を次の判断に使う。"""
+    web = _Web(
+        {"shinden.co.jp", "muraki.co.jp"},
+        {"https://www.shinden.co.jp/": "<title>別の会社</title>"},
+    )
+    g = CoJpGuesser(web.exists, web.fetch)
+    g.domain_for("シンデン・ハイテックス株式会社", "Shinden Hightex")
+    g.domain_for("ムラキ株式会社", "MURAKI")
+    d = g.stats.to_dict()
+    assert d["sample_not_on_page"] == ["shinden.co.jp 「別の会社」 ← シンデンハイテックス"]
+    assert d["sample_unreachable"] == ["muraki.co.jp"]
