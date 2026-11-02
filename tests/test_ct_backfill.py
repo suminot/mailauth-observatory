@@ -694,3 +694,51 @@ def test_p2_は持ち時間で切ったことを警告に書く(seeded_run):  # 
     assert "ct-backfill" in warning["message"]
     # 相手が落ちていた月とは書かない
     assert "CT_UPSTREAM_UNAVAILABLE" not in [w["code"] for w in out["warnings"]]
+
+
+def test_p2_が途中でやめても_積み残しの分母は母集団の起点全部(seeded_run, tmp_path, monkeypatch):  # noqa: F811
+    """2026-11-02 の国内の流し直しは 297 社で打ち切り、積み残しを「290 件中
+    12 件」と書いた。補充はそれを「ほぼ片付いた」と読む。"""
+    import yaml
+    from test_p2_p3 import ANSWERS, RUN, SEED_DOMAINS
+
+    import mailauth.p2_candidates.runner as p2r
+    from mailauth.ctlog import StaticCtSource
+    from mailauth.p2_candidates.runner import run as run_p2
+    from mailauth.paths import config_path
+    from mailauth.resolver import StaticResolver
+
+    monkeypatch.setattr(p2r, "PREFETCH_CHUNK", 1)
+    cfg = yaml.safe_load(config_path("configs/candidates.yaml").read_text(encoding="utf-8"))
+    cfg["limits"]["max_phase_minutes"] = 0.0001
+    cfg["limits"]["budget_check_after_fraction"] = 0.0
+    path = tmp_path / "candidates-tight.yaml"
+    path.write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding="utf-8")
+
+    class Cached(StaticCtSource):
+        cache_dir = tmp_path / "crtsh"
+
+    out = run_p2(
+        run_id=RUN, resolver=StaticResolver(ANSWERS), ct_source=Cached(), config=str(path)
+    )
+    assert "PHASE_BUDGET_EXCEEDED" in [w["code"] for w in out["warnings"]]
+    ct_pending = out["breakdown"]["ct_pending"]
+    assert ct_pending["total"] == len(set(SEED_DOMAINS.values()))
+    assert ct_pending["not_reached"] > 0
+    # 取りにいっていない起点は積み残しに入る
+    assert ct_pending["pending"] == ct_pending["not_reached"]
+
+
+def test_組織名検索の待ちも_CT_の待ちとして見込みから分ける():
+    """組織名検索（1本 40 秒前後）を「CT 以外」に数え、見込みが 240 分を超えて
+    国内の流し直しが 297 社で打ち切られた（2026-11-02）。"""
+    import inspect
+
+    import mailauth.p2_candidates.runner as p2r
+
+    src = inspect.getsource(p2r.run)
+    org_call = src.index("found = ct_source.search_org(name)")
+    # 呼び出しの前後で時計を読み、CT の待ちに足している
+    window = src[org_call - 200 : org_call + 200]
+    assert "time.monotonic()" in window and "ct_wait_sec[0] +=" in window
+    assert "ct_sec=ct_wait_sec[0]" in src

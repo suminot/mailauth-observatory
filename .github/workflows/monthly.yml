@@ -212,15 +212,30 @@ jobs:
           for BACK in 1 2; do
             PREV=$(date -u -d "${{ steps.run.outputs.id }}-01 -$BACK month" +%Y-%m)
             NAME="silver-${{ steps.run.outputs.pop }}-$PREV"
-            RUN=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$NAME&per_page=1" \
-                    --jq '[.artifacts[] | select(.expired | not)][0].workflow_run.id // empty' || true)
-            if [ -z "$RUN" ]; then
-              echo "$PREV の silver が成果物に無い（前月比はその分出ない）" >> "$GITHUB_STEP_SUMMARY"
+            # 新しい順に見て、**P7 が gold を作った実行の silver だけ**を使う。
+            # 途中でやめた実行の silver（2026-11-02 の国内の流し直しで
+            # 430 ドメインぶんだけ残った）を前月として読まない
+            RUNS=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$NAME&per_page=20" \
+                    --jq '[.artifacts[] | select(.expired | not) | .workflow_run.id] | .[]' || true)
+            got=""
+            for RUN in $RUNS; do
+              TMP=$(mktemp -d)
+              gh run download "$RUN" --repo "$GITHUB_REPOSITORY" -n "$NAME" -D "$TMP" || continue
+              P7="$TMP/p7_aggregate/_manifest.json"
+              if [ ! -f "$P7" ] || [ "$(jq -r '.status' "$P7")" = "failed" ]; then
+                echo "$PREV の silver（run $RUN）は P7 が gold を作っていない実行のもの。使わない" >> "$GITHUB_STEP_SUMMARY"
+                continue
+              fi
+              mkdir -p "data/runs/$PREV"
+              cp -a "$TMP/." "data/runs/$PREV/"
+              got=$RUN
+              break
+            done
+            if [ -z "$got" ]; then
+              echo "$PREV の使える silver が成果物に無い（前月比はその分出ない）" >> "$GITHUB_STEP_SUMMARY"
               continue
             fi
-            mkdir -p "data/runs/$PREV"
-            gh run download "$RUN" --repo "$GITHUB_REPOSITORY" -n "$NAME" -D "data/runs/$PREV" || continue
-            echo "$PREV の silver を run $RUN から取った" >> "$GITHUB_STEP_SUMMARY"
+            echo "$PREV の silver を run $got から取った" >> "$GITHUB_STEP_SUMMARY"
             find "data/runs/$PREV" -name '*.parquet' | sed 's/^/  /'
           done
 
@@ -565,6 +580,18 @@ jobs:
              && jq -e '[.warnings[].code] | index("STOPPED_AT_TIME_BUDGET")' "$D/p4_measure/_manifest.json" >/dev/null; then
             keep=""
           fi
+          # **P2 が途中でやめた実行・P7 が gold を作らなかった実行も残さない。**
+          # 2026-11-02 の国内の流し直しは P2 が 297 社で打ち切り（PHASE_BUDGET_
+          # EXCEEDED）、P7 は正しく止まったが、ここは P4 と P6 しか見ておらず、
+          # 430 ドメインぶんの silver を「11 月の比較相手」として残した
+          if [ -f "$D/p2_candidates/_manifest.json" ] \
+             && jq -e '[.warnings[].code] | (index("PHASE_BUDGET_EXCEEDED") or index("CANDIDATE_LIMIT_REACHED"))' "$D/p2_candidates/_manifest.json" >/dev/null; then
+            keep=""
+          fi
+          if [ ! -f "$D/p7_aggregate/_manifest.json" ] \
+             || [ "$(jq -r '.status' "$D/p7_aggregate/_manifest.json")" = "failed" ]; then
+            keep=""
+          fi
           echo "keep=$keep" >> "$GITHUB_OUTPUT"
           [ -n "$keep" ] || echo "この月の silver は成果物に残さない（翌月の前月比の相手にしない）" >> "$GITHUB_STEP_SUMMARY"
 
@@ -578,6 +605,7 @@ jobs:
             data/runs/${{ steps.run.outputs.id }}/p1_population/entities.parquet
             data/runs/${{ steps.run.outputs.id }}/p5_parse/facts.parquet
             data/runs/${{ steps.run.outputs.id }}/p6_infer/inferences.parquet
+            data/runs/${{ steps.run.outputs.id }}/p7_aggregate/_manifest.json
           if-no-files-found: warn
           retention-days: 90
           overwrite: true

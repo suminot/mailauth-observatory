@@ -2379,3 +2379,11 @@ def test_previous_month_silver_survives_between_runs():
     assert "github.event.inputs.limit" in gate
     assert "STOPPED_AT_TIME_BUDGET" in gate
     assert "inferences.parquet" in gate
+    # **P2 が途中でやめた実行・P7 が gold を作らなかった実行も残さない**
+    # （2026-11-02 の国内の流し直しで 430 ドメインぶんの silver が残った）
+    assert "PHASE_BUDGET_EXCEEDED" in gate
+    assert "CANDIDATE_LIMIT_REACHED" in gate
+    assert "p7_aggregate/_manifest.json" in gate
+    # 取る側でも確かめる。P7 の manifest を一緒に上げ、失敗した実行のものは使わない
+    assert "p7_aggregate/_manifest.json" in paths
+    assert "p7_aggregate/_manifest.json" in run and '"failed"' in run
