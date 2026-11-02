@@ -345,7 +345,15 @@ recorded as different states.
 ### MTA-STS mode
 
 Whether the policy is `enforce` or `testing` cannot be determined from DNS.
-It requires fetching the policy file over HTTPS, which is not currently done.
+For domains with an `_mta-sts` TXT record, the policy file
+(`https://mta-sts.<domain>/.well-known/mta-sts.txt`) is fetched the same way a
+sending mail server would fetch it (RFC 8461: the certificate is validated and
+redirects are not followed). This began with the US measurement for 2026-11;
+earlier months have no breakdown by mode.
+
+Policies that could not be fetched or read are counted separately as having no
+effect, since senders cannot read them either. Each policy is fetched once, so
+a temporary outage also lands in this group.
 
 ### Forwarding paths
 

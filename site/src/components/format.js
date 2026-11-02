@@ -65,6 +65,9 @@ const L = {
     rEnforced: "DMARC が強制ポリシー", rEnforcedNote: "quarantine または reject",
     rEffective: "reject が実効している", rEffectiveNote: "pct 無し・t=n・rua 有",
     rMtaSts: "MTA-STS を公開している",
+    rMtaStsNote: "TXT の有無。強制しているとは限らない",
+    rMtaStsEnforce: "MTA-STS のポリシーが enforce",
+    rMtaStsEnforceNote: "ポリシーを取得して確認。testing・取得できないものを除く",
     rTlsRpt: "TLS-RPT を公開している",
     rBimi: "BIMI を公開している",
     rDnssec: "DNSSEC で署名されている",
@@ -91,6 +94,9 @@ const L = {
     rEnforced: "DMARC policy is enforcing", rEnforcedNote: "quarantine or reject",
     rEffective: "reject is in effect", rEffectiveNote: "no pct, t=n, rua present",
     rMtaSts: "Publishes MTA-STS",
+    rMtaStsNote: "the TXT record only; not necessarily enforcing",
+    rMtaStsEnforce: "MTA-STS policy is enforce",
+    rMtaStsEnforceNote: "policy fetched and read; excludes testing and unreadable policies",
     rTlsRpt: "Publishes TLS-RPT",
     rBimi: "Publishes BIMI",
     rDnssec: "Signed with DNSSEC",
@@ -146,7 +152,12 @@ export function indicators(stats, lang = "ja") {
     row(t.rDmarc, stats.dmarc_adopted_domains),
     row(t.rEnforced, stats.dmarc_enforced_domains, t.rEnforcedNote),
     row(t.rEffective, stats.enforced_reject_domains, t.rEffectiveNote),
-    row(t.rMtaSts, stats.mta_sts_domains),
+    row(t.rMtaSts, stats.mta_sts_domains, t.rMtaStsNote),
+    // **ポリシーを取得していない月は行ごと出さない。** 0 と出すと「enforce が
+    // 無い」と読める（gold では null。2026-11 の米国から取得している）
+    ...(Number.isFinite(stats.mta_sts_enforce_domains)
+      ? [row(t.rMtaStsEnforce, stats.mta_sts_enforce_domains, t.rMtaStsEnforceNote)]
+      : []),
     row(t.rTlsRpt, stats.tls_rpt_domains),
     row(t.rBimi, stats.bimi_domains),
     row(t.rDnssec, stats.dnssec_domains),
