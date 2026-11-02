@@ -8,6 +8,9 @@ discovery:
   ct_log: true            # crt.sh。重いので qps を絞る
   # **起点ドメインが無い企業だけに使う。** 証明書の O（組織名）で引く
   ct_org: true
+  # **公式サイトが出している TLS 証明書の SAN**（tls_san.py）。CT と同じ手がかりを
+  # 第三者の検索サービスに頼らずに取る。1社あたり最大2回の接続（起点と www.起点）
+  tls_san: true
   spf_redirect: true      # SPF の redirect= が別組織を指していれば候補に
   spf_include: true       # SPF の include: が自社サブドメインを指していれば候補に
   dmarc_rua: true         # rua 宛先が自社ドメインなら候補に
@@ -202,7 +205,7 @@ resolver:
 confidence:
   # 独立した裏付けと見なす発見経路。
   # spf_redirect と dmarc_rua は DNS 由来なので、DNS 一次実証からは独立でない
-  independent_methods: [official_url, ct_log, ct_org, manual]
+  independent_methods: [official_url, ct_log, ct_org, tls_san, manual]
 
 acceptance:
   # DESIGN.md P2 / P3 の受け入れ基準。満たさなくても止めず manifest に記録する

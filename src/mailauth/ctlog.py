@@ -102,6 +102,8 @@ class CtResult:
     #: どこから取ったか（crtsh / certspotter）。**取り方が違えば見え方も違う**
     #: ので、混ぜても数えられるようにしておく
     source: str = "crtsh"
+    #: 共用の証明書とみなして捨てた行（証明書）の数（`tls_san.SHARED_CERT_LIMIT`）
+    shared_skipped: int = 0
 
 
 #: 同時に応答を待つ本数の既定値。**投げる間隔（qps）とは別のつまみ。**
@@ -589,11 +591,22 @@ def _extract_org(key: str, name: str, rows: list[dict]) -> CtResult:
 
 
 def _extract(domain: str, rows: list[dict]) -> CtResult:
-    """crt.sh の行から eTLD+1 を取り出して重複排除する。"""
+    """crt.sh の行から eTLD+1 を取り出して重複排除する。
+
+    **共用の証明書の行は捨てる。** crt.sh の1行は証明書1枚で、CDN の共用 SAN
+    証明書には無関係な会社のドメインが数十並ぶ。そのまま採ると、他社の
+    ドメインをその企業の候補にする（P3 で MX と SPF があれば likely になり、
+    その企業のドメインとして測られる）。1枚に `SHARED_CERT_LIMIT` を超える
+    登録ドメインが載っていれば、その行からは何も拾わない（tls_san.py と同じ線）
+    """
+    from .tls_san import SHARED_CERT_LIMIT
+
     seen: dict[str, None] = {}
     raw = 0
+    shared = 0
     for row in rows or []:
         names = str(row.get("name_value") or "")
+        apexes: dict[str, None] = {}
         for fqdn in names.splitlines():
             candidate = fqdn.strip().lstrip("*.").rstrip(".").lower()
             if not candidate or " " in candidate:
@@ -601,8 +614,13 @@ def _extract(domain: str, rows: list[dict]) -> CtResult:
             raw += 1
             apex = etld_plus_one(candidate)
             if apex:
-                seen.setdefault(apex, None)
-    return CtResult(domain=domain, found=sorted(seen), raw_names=raw)
+                apexes.setdefault(apex, None)
+        if len(apexes) > SHARED_CERT_LIMIT:
+            shared += 1
+            continue
+        for apex in apexes:
+            seen.setdefault(apex, None)
+    return CtResult(domain=domain, found=sorted(seen), raw_names=raw, shared_skipped=shared)
 
 
 class StaticCtSource:
