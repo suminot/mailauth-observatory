@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import csv
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,7 @@ from ..normalize import (
     normalize_name,
     normalize_securities_code,
 )
+from ..ordered import in_input_order
 from ..paths import config_path, month_date, phase_dir, phase_output, previous_run_id
 from ..segments import load_segment_map
 from .edinet import EdinetError, fetch_code_list, parse_code_list
@@ -44,6 +46,8 @@ PHASE = "p1_population"
 OUTPUT_FILENAME = "entities.parquet"
 #: 母集団から外した事業会社でないもの（名前と理由）。P7 が gold に写す
 EXCLUDED_FILENAME = "excluded_entities.parquet"
+#: 公式サイトの推測で、同時に確かめる企業数。投げる間隔は別に全体 1 秒 2 本
+CO_JP_CONCURRENCY = 8
 
 
 class PopulationNotImplementedError(NotImplementedError):
@@ -212,6 +216,7 @@ def _apply_enrichment(
     *,
     limit: int | None = None,
     offline: bool = False,
+    kana: dict[str, str] | None = None,
 ) -> None:
     """enrich を順に適用する。認証情報が無いものはスキップして記録する。
 
@@ -314,7 +319,9 @@ def _apply_enrichment(
                 _fill_missing_urls_from_wikidata(entities, cfg, manifest)
 
             elif name == "co_jp_homepage":
-                _fill_from_co_jp_homepage(entities, manifest, limit=limit, offline=offline)
+                _fill_from_co_jp_homepage(
+                    entities, manifest, limit=limit, offline=offline, kana=kana
+                )
 
             else:
                 manifest.add_warning(
@@ -336,6 +343,7 @@ def _fill_from_co_jp_homepage(
     limit: int | None = None,
     offline: bool = False,
     guesser=None,
+    kana: dict[str, str] | None = None,
 ) -> None:
     """**まだ空欄の企業だけ**、英字社名から .co.jp を推測してサイトで確かめる。
 
@@ -372,8 +380,18 @@ def _fill_from_co_jp_homepage(
         guesser = _live_co_jp_guesser(contact)
 
     filled = 0
-    for entity in missing:
-        domain = guesser.domain_for(entity.name, entity.name_en)
+    # **企業ごとに並行に確かめる。** 相手はそれぞれ別の会社のサイトで、
+    # 1社ずつ待つと応答待ち（時間切れ 15 秒）がそのまま積み上がる。
+    # 2026-11 の国内は 606 社に 1,534 秒かかっていた。投げる間隔は
+    # `_live_co_jp_guesser` の錠で全体 1 秒 2 本のまま変わらない
+    results = in_input_order(
+        # 英字社名が無い会社は、EDINET の読み（edinet_code で引く）から推測する
+        lambda e: guesser.domain_for(e.name, e.name_en, (kana or {}).get(e.edinet_code or "")),
+        missing,
+        concurrency=CO_JP_CONCURRENCY,
+        window=64,
+    )
+    for entity, domain in zip(missing, results, strict=True):
         if domain:
             entity.official_url = f"https://{domain}/"
             entity.official_domain = domain
@@ -394,7 +412,7 @@ def _live_co_jp_guesser(contact: str):
 
     from ..config import load_yaml
     from ..resolver import DnsResolver
-    from .co_jp_guess import MAX_BYTES, CoJpGuesser
+    from .co_jp_guess import MAX_BYTES, CoJpGuesser, decode_page
 
     res_cfg = load_yaml("configs/candidates.yaml").get("resolver", {})
     resolver = DnsResolver(
@@ -409,17 +427,21 @@ def _live_co_jp_guesser(contact: str):
         headers={"User-Agent": f"mailauth-observatory/0.1 ({contact})"},
     )
     last = [0.0]
+    throttle = threading.Lock()
 
     def exists(name: str) -> bool:
         answer = resolver.query(name, "NS")
         return bool(answer.observed and answer.record_present)
 
     def fetch(url: str) -> str | None:
-        # **1秒に2本まで。** 相手は上場企業の公式サイトで、1社あたり数本しか読まない
-        wait = 0.5 - (time.monotonic() - last[0])
-        if wait > 0:
-            time.sleep(wait)
-        last[0] = time.monotonic()
+        # **1秒に2本まで（全体で）。** 相手は上場企業の公式サイトで、1社あたり
+        # 数本しか読まない。錠を持ったまま眠り、投げる瞬間だけを直列にする
+        # （応答を待つ時間は企業ごとに重なる。crt.sh の `_throttle` と同じ）
+        with throttle:
+            wait = 0.5 - (time.monotonic() - last[0])
+            if wait > 0:
+                time.sleep(wait)
+            last[0] = time.monotonic()
         try:
             with client.stream("GET", url) as resp:
                 if resp.status_code >= 400:
@@ -429,7 +451,8 @@ def _live_co_jp_guesser(contact: str):
                     body += chunk
                     if len(body) >= MAX_BYTES:
                         break
-                return body.decode(resp.encoding or "utf-8", errors="replace")
+                # **charset はヘッダに無ければ meta を見る**（decode_page）
+                return decode_page(body, resp.charset_encoding)
         except httpx.HTTPError:
             return None
 
@@ -938,7 +961,14 @@ def run(
 
         # 5. enrich
         if not dry_run:
-            _apply_enrichment(entities, cfg, manifest, limit=limit, offline=offline)
+            _apply_enrichment(
+                entities,
+                cfg,
+                manifest,
+                limit=limit,
+                offline=offline,
+                kana={r.edinet_code: r.name_kana for r in listed if r.name_kana},
+            )
 
         # 6. 前月との差分
         if limit:

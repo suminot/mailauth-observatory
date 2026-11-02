@@ -47,6 +47,8 @@ class EdinetRow:
     industry: str
     securities_code: str
     houjin_bangou: str
+    #: 提出者名（ヨミ）。英字社名が無い会社の公式サイトを推測するのに使う
+    name_kana: str = ""
 
 
 @dataclass
@@ -189,6 +191,7 @@ def parse_code_list(path: Path, cfg: EdinetSourceConfig) -> tuple[list[EdinetRow
                 listing_status=get(record, "listing_status"),
                 name=get(record, "name"),
                 name_en=get(record, "name_en"),
+                name_kana=get(record, "name_kana"),
                 address=get(record, "address"),
                 industry=get(record, "industry"),
                 securities_code=get(record, "securities_code"),

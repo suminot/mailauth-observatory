@@ -20,8 +20,10 @@
 守っていること
   - 確かめる語は**日本語の商号**（株式会社・ホールディングス等を除いた
     部分、3文字以上）。英字の語は他社のサイトにも出やすい
-  - 1社につきページは推測が DNS に実在したものだけ、各1回。連絡先つきの
-    User-Agent を付ける（SEC と同じ作法）
+  - 1社につきページは推測が DNS に実在したものだけ。各ドメインで最初に
+    読めた入口（https://www. → https:// → http://www. → http:// の順）を
+    1回だけ読む。連絡先つきの User-Agent を付ける（SEC と同じ作法）。
+    全体で1秒に2本まで
   - 試験（2026-10-31、30社）：WHOIS で確かめた 12 社と一致し、他社の
     ドメインを採ったものは無かった。WHOIS より多く拾った2社（社名変更・
     事業子会社）も正しかった
@@ -38,8 +40,10 @@
 
 from __future__ import annotations
 
+import codecs
 import html
 import re
+import threading
 import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -133,12 +137,138 @@ def guesses(name_en: str | None) -> list[str]:
     return list(dict.fromkeys(head + group + tail))
 
 
+# -- 読み（カナ）からの推測 ------------------------------------------------
+#
+# 英字社名が無い会社（2026-11 の国内で 606 社中 166 社）にも、EDINET コード
+# リストには「提出者名（ヨミ）」がある。和語の社名は、読みをヘボン式で
+# つなげた形をドメインにしていることが多い（タイヘイデンギョウ →
+# taiheidengyo、ムラキ → muraki）。外来語の社名（〜システム）は読みから
+# 綴りに戻せないので当たらないが、確かめはページで行うので害は無い。
+
+_KANA_DIGRAPHS = {
+    "キャ": "kya", "キュ": "kyu", "キョ": "kyo", "シャ": "sha", "シュ": "shu",
+    "ショ": "sho", "シェ": "she", "チャ": "cha", "チュ": "chu", "チョ": "cho",
+    "チェ": "che", "ニャ": "nya", "ニュ": "nyu", "ニョ": "nyo", "ヒャ": "hya",
+    "ヒュ": "hyu", "ヒョ": "hyo", "ミャ": "mya", "ミュ": "myu", "ミョ": "myo",
+    "リャ": "rya", "リュ": "ryu", "リョ": "ryo", "ギャ": "gya", "ギュ": "gyu",
+    "ギョ": "gyo", "ジャ": "ja", "ジュ": "ju", "ジョ": "jo", "ジェ": "je",
+    "ビャ": "bya", "ビュ": "byu", "ビョ": "byo", "ピャ": "pya", "ピュ": "pyu",
+    "ピョ": "pyo", "ティ": "ti", "ディ": "di", "デュ": "dyu", "ファ": "fa",
+    "フィ": "fi", "フェ": "fe", "フォ": "fo", "ウィ": "wi", "ウェ": "we",
+    "ウォ": "wo", "ヴァ": "va", "ヴィ": "vi", "ヴェ": "ve", "ヴォ": "vo",
+    "ツァ": "tsa", "トゥ": "tu", "ドゥ": "du",
+}
+_KANA = dict(
+    zip(
+        "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモ"
+        "ヤユヨラリルレロワヲガギグゲゴザジズゼゾダヂヅデドバビブベボパピプペポヴ"
+        "ァィゥェォャュョヮ",
+        "a i u e o ka ki ku ke ko sa shi su se so ta chi tsu te to na ni nu ne no "
+        "ha hi fu he ho ma mi mu me mo ya yu yo ra ri ru re ro wa o ga gi gu ge go "
+        "za ji zu ze zo da ji zu de do ba bi bu be bo pa pi pu pe po vu "
+        "a i u e o ya yu yo wa".split(),
+        strict=True,
+    )
+)
+#: 読みの中で、社名の語ではないもの
+_KANA_DROP = ("カブシキガイシャ", "カブシキカイシャ", "ホールディングス", "グループ")
+
+
+def kana_to_romaji(kana: str | None) -> str:
+    """カナ（ひらがなも可）をヘボン式でつなげる。読めない文字は落とす。
+
+    長音（ー）は落とす。促音（ッ）は次の子音を重ねる（ッチ → tchi）。
+    """
+    text = unicodedata.normalize("NFKC", kana or "")
+    text = "".join(chr(ord(c) + 0x60) if "ぁ" <= c <= "ゖ" else c for c in text)
+    for word in _KANA_DROP:
+        text = text.replace(word, "")
+    out: list[str] = []
+    double = False
+    i = 0
+    while i < len(text):
+        pair, ch = text[i : i + 2], text[i]
+        if pair in _KANA_DIGRAPHS:
+            roma, i = _KANA_DIGRAPHS[pair], i + 2
+        elif ch in _KANA:
+            roma, i = _KANA[ch], i + 1
+        elif ch == "ン":
+            out.append("n")
+            i += 1
+            continue
+        elif ch == "ッ":
+            double, i = True, i + 1
+            continue
+        else:
+            i += 1  # ー・中黒・空白・英数字以外
+            continue
+        if double:
+            roma = ("t" if roma.startswith("ch") else roma[0]) + roma
+            double = False
+        out.append(roma)
+    return "".join(out)
+
+
+def kana_guesses(kana: str | None) -> list[str]:
+    """読みから推測する .co.jp。**長音を詰めた形 → 詰めない形** の順。
+
+    ドメインでは「ou」「uu」を詰めることが多い（dengyou → dengyo、
+    kyouto → kyoto）。3文字未満は使わない。
+    """
+    full = kana_to_romaji(kana)
+    if len(full) < 3:
+        return []
+    short = full.replace("ou", "o").replace("uu", "u").replace("oo", "o")
+    return list(dict.fromkeys(f"{f}.co.jp" for f in (short, full) if len(f) >= 3))
+
+
 def name_core(name_ja: str | None) -> str:
     """日本語の商号から、ページで探す芯を取り出す（NFKC 済み）。"""
     text = unicodedata.normalize("NFKC", name_ja or "")
     for word in _JA_DROP:
         text = text.replace(unicodedata.normalize("NFKC", word), "")
     return text
+
+
+#: `<meta charset=...>` / `<meta http-equiv="Content-Type" content="...; charset=...">`
+_META_CHARSET = re.compile(rb"""<meta[^>]+charset\s*=\s*["']?\s*([A-Za-z0-9_.:-]+)""", re.I)
+
+
+def decode_page(body: bytes, header_charset: str | None = None) -> str:
+    """ページの本文を文字列にする。**ヘッダ → meta → UTF-8 → cp932 / EUC-JP** の順。
+
+    国内の企業サイトには、Content-Type に charset を付けず `<meta charset=
+    "Shift_JIS">` だけで宣言しているものがある。HTTP ライブラリは header に
+    charset が無いと UTF-8 で読むので、日本語の商号が化けて「社名が載って
+    いない」に数えていた（2026-11 の国内で 606 社中 107 社がそこに入った）。
+    """
+    for name in (header_charset, _meta_charset(body)):
+        codec = _codec(name)
+        if codec:
+            return body.decode(codec, errors="replace")
+    for codec in ("utf-8", "cp932", "euc_jp"):
+        try:
+            return body.decode(codec)
+        except UnicodeDecodeError:
+            continue
+    return body.decode("utf-8", errors="replace")
+
+
+def _meta_charset(body: bytes) -> str | None:
+    m = _META_CHARSET.search(body[:8192])
+    return m.group(1).decode("ascii", errors="ignore") if m else None
+
+
+def _codec(name: str | None) -> str | None:
+    """宣言された文字コードを Python の名前にする。**Shift_JIS は cp932 で読む**
+    （宣言が Shift_JIS でも、実際には機種依存文字を含む cp932 であることが多い）。"""
+    if not name:
+        return None
+    try:
+        codec = codecs.lookup(name.strip().lower()).name
+    except LookupError:
+        return None
+    return "cp932" if codec in ("shift_jis", "shift-jis") else codec
 
 
 def _squash(text: str) -> str:
@@ -175,6 +305,10 @@ def page_names_company(page: str, core: str) -> bool:
 class GuessStats:
     attempted: int = 0
     no_english_name: int = 0
+    #: 英字社名が無く、読みから推測した
+    from_kana: int = 0
+    #: そのうち確かめられた
+    found_from_kana: int = 0
     #: 社名の芯が短すぎて、ページで確かめられない
     core_too_short: int = 0
     #: 推測が1つも DNS に無かった
@@ -192,6 +326,8 @@ class GuessStats:
         return {
             "attempted": self.attempted,
             "no_english_name": self.no_english_name,
+            "from_kana": self.from_kana,
+            "found_from_kana": self.found_from_kana,
             "core_too_short": self.core_too_short,
             "no_guess_exists": self.no_guess_exists,
             "page_unreachable": self.page_unreachable,
@@ -208,6 +344,9 @@ class CoJpGuesser:
 
     `exists(name)` と `fetch(url)` を差し替えられる（検査はネットワークに出ない）。
     `fetch` は本文を返す。読めなければ None。
+
+    **複数の企業を並行に確かめてよい**（`domain_for` はスレッドから呼べる）。
+    数え上げは錠の内側で行う。`exists` と `fetch` も並行に呼ばれる。
     """
 
     def __init__(
@@ -218,44 +357,69 @@ class CoJpGuesser:
         self.exists = exists
         self.fetch = fetch
         self.stats = GuessStats()
+        self._lock = threading.Lock()
 
-    def domain_for(self, name_ja: str | None, name_en: str | None) -> str | None:
-        self.stats.attempted += 1
+    def _bump(self, name: str, n: int = 1) -> None:
+        with self._lock:
+            setattr(self.stats, name, getattr(self.stats, name) + n)
+
+    def domain_for(
+        self, name_ja: str | None, name_en: str | None, kana: str | None = None
+    ) -> str | None:
+        self._bump("attempted")
         candidates = guesses(name_en)
+        by_kana = False
         if not candidates:
-            self.stats.no_english_name += 1
-            return None
+            # **英字社名が無ければ読みから。** 無ければ今までどおり諦める
+            candidates = kana_guesses(kana)
+            if not candidates:
+                self._bump("no_english_name")
+                return None
+            by_kana = True
+            self._bump("from_kana")
         core = name_core(name_ja)
         if len(core) < MIN_CORE_CHARS:
-            self.stats.core_too_short += 1
+            self._bump("core_too_short")
             return None
 
         existing = []
         for domain in candidates:
-            self.stats.dns_queries += 1
+            self._bump("dns_queries")
             if self.exists(domain):
                 existing.append(domain)
         if not existing:
-            self.stats.no_guess_exists += 1
+            self._bump("no_guess_exists")
             return None
 
         read_any = False
         for domain in existing:
-            for url in (f"https://www.{domain}/", f"https://{domain}/"):
-                self.stats.pages_fetched += 1
+            # **https で読めなければ http も見る。** 中間証明書を送っていない
+            # サイト（ブラウザは補うが、こちらの検証は通らない）や、http しか
+            # 出していないサイトが「読めない」に入っていた（2026-11 の国内で
+            # 606 社中 97 社）。確かめる中身（日本語の商号）は同じである
+            for url in (
+                f"https://www.{domain}/",
+                f"https://{domain}/",
+                f"http://www.{domain}/",
+                f"http://{domain}/",
+            ):
+                self._bump("pages_fetched")
                 page = self.fetch(url)
                 if page is None:
                     continue
                 read_any = True
                 if page_names_company(page, core):
-                    self.stats.found += 1
-                    if len(self.stats.sample_found) < 5:
-                        self.stats.sample_found.append(domain)
+                    with self._lock:
+                        self.stats.found += 1
+                        if by_kana:
+                            self.stats.found_from_kana += 1
+                        if len(self.stats.sample_found) < 5:
+                            self.stats.sample_found.append(domain)
                     return domain
-                # www で読めて載っていなければ、裸のドメインは見ない
+                # 1つ読めて載っていなければ、同じドメインの別の入口は見ない
                 break
         if read_any:
-            self.stats.name_not_on_page += 1
+            self._bump("name_not_on_page")
         else:
-            self.stats.page_unreachable += 1
+            self._bump("page_unreachable")
         return None

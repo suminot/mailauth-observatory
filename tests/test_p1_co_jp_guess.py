@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from mailauth.p1_population.co_jp_guess import (
     CoJpGuesser,
+    decode_page,
     guesses,
     name_core,
     page_names_company,
@@ -128,8 +129,13 @@ def test_読めなかったのと載っていなかったのを分ける():
     g = CoJpGuesser(web.exists, web.fetch)
     assert g.domain_for("シンデン・ハイテックス株式会社", "Shinden Hightex Corporation") is None
     assert (g.stats.page_unreachable, g.stats.name_not_on_page) == (1, 0)
-    # www が読めなければ裸のドメインも試している
-    assert web.fetched == ["https://www.shinden.co.jp/", "https://shinden.co.jp/"]
+    # www が読めなければ裸のドメイン、https で読めなければ http も試している
+    assert web.fetched == [
+        "https://www.shinden.co.jp/",
+        "https://shinden.co.jp/",
+        "http://www.shinden.co.jp/",
+        "http://shinden.co.jp/",
+    ]
 
 
 def test_実在しない推測ではページを読まない():
@@ -264,3 +270,155 @@ def test_決まった形でも確かめはページで行う():
     assert g.domain_for("東急不動産ホールディングス株式会社", "Tokyu Fudosan Holdings") == (
         "tokyu-fudosan-hd.co.jp"
     )
+
+
+def test_https_で読めなければ_http_で確かめる():
+    """中間証明書を送っていないサイトや http だけのサイトが「読めない」に
+    入っていた（2026-11 の国内で 606 社中 97 社）。"""
+    web = _Web(
+        {"shinden.co.jp"},
+        {"http://www.shinden.co.jp/": "<title>シンデン・ハイテックス株式会社</title>"},
+    )
+    g = CoJpGuesser(web.exists, web.fetch)
+    assert g.domain_for("シンデン・ハイテックス株式会社", "Shinden Hightex") == "shinden.co.jp"
+    # https で読めた入口があれば http は見ない
+    web2 = _Web(
+        {"shinden.co.jp"},
+        {"https://www.shinden.co.jp/": "<title>別の会社</title>"},
+    )
+    g2 = CoJpGuesser(web2.exists, web2.fetch)
+    assert g2.domain_for("シンデン・ハイテックス株式会社", "Shinden Hightex") is None
+    assert web2.fetched == ["https://www.shinden.co.jp/"]
+    assert g2.stats.name_not_on_page == 1
+
+
+def test_charset_をヘッダに書かないサイトは_meta_で読む():
+    """ヘッダに charset が無いと HTTP ライブラリは UTF-8 で読み、Shift_JIS の
+    ページの商号が化けて「社名が載っていない」に数えていた。"""
+    page = '<html><head><meta charset="Shift_JIS"><title>株式会社ムラキ</title>'
+    body = page.encode("cp932")
+    text = decode_page(body, None)
+    assert "株式会社ムラキ" in text
+    assert page_names_company(text, "ムラキ")
+    # http-equiv の形
+    body2 = (
+        '<meta http-equiv="Content-Type" content="text/html; charset=EUC-JP">日本無線株式会社'
+    ).encode("euc_jp")
+    assert "日本無線株式会社" in decode_page(body2, None)
+    # 宣言が無くても、UTF-8 で読めなければ cp932 を試す
+    assert "株式会社ムラキ" in decode_page("株式会社ムラキ".encode("cp932"), None)
+    # ヘッダの宣言が先
+    assert decode_page("ムラキ".encode(), "utf-8") == "ムラキ"
+    # 知らない名前は無視して先へ進む
+    assert decode_page("ムラキ".encode(), "x-unknown") == "ムラキ"
+
+
+def test_並行に確かめても数え上げがずれない():
+    import threading
+
+    from mailauth.ordered import in_input_order
+
+    names = [(f"株式会社テスト{i:03d}", f"Test{i:03d} Corporation") for i in range(60)]
+    pages = {f"https://www.test{i:03d}.co.jp/": f"株式会社テスト{i:03d}" for i in range(0, 60, 2)}
+    lock = threading.Lock()
+    fetched: list[str] = []
+
+    def fetch(url):
+        with lock:
+            fetched.append(url)
+        return pages.get(url)
+
+    g = CoJpGuesser(lambda d: True, fetch)
+    got = list(in_input_order(lambda n: g.domain_for(*n), names, concurrency=8, window=16))
+    assert got == [f"test{i:03d}.co.jp" if i % 2 == 0 else None for i in range(60)]
+    assert g.stats.attempted == 60
+    assert g.stats.found == 30
+    assert g.stats.pages_fetched == len(fetched)
+
+
+# ---------------------------------------------------------------------------
+# 英字社名が無い会社は、EDINET の読み（ヨミ）から推測する
+# ---------------------------------------------------------------------------
+
+
+def test_読みをヘボン式でつなげる():
+    from mailauth.p1_population.co_jp_guess import kana_guesses, kana_to_romaji
+
+    assert kana_to_romaji("タイヘイデンギョウ") == "taiheidengyou"
+    assert kana_to_romaji("ムラキ") == "muraki"
+    assert kana_to_romaji("ニッケンコウガク") == "nikkenkougaku"
+    # 促音の後の ch は tch（ヘボン式）
+    assert kana_to_romaji("マッチ") == "matchi"
+    # ひらがな・半角カナ・長音・中黒
+    assert kana_to_romaji("たいへい") == "taihei"
+    assert kana_to_romaji("ﾑﾗｷ") == "muraki"
+    assert kana_to_romaji("ホールディングス") == ""
+    # 法人格は落とす
+    assert kana_to_romaji("カブシキガイシャムラキ") == "muraki"
+    # 長音を詰めた形を先に試す
+    assert kana_guesses("タイヘイデンギョウ") == [
+        "taiheidengyo.co.jp",
+        "taiheidengyou.co.jp",
+    ]
+    assert kana_guesses("ムラキ") == ["muraki.co.jp"]
+    assert kana_guesses("") == []
+    assert kana_guesses(None) == []
+
+
+def test_英字社名が無ければ読みから推測し_ページで確かめる():
+    web = _Web(
+        {"taiheidengyo.co.jp"},
+        {"https://www.taiheidengyo.co.jp/": "<title>太平電業株式会社</title>"},
+    )
+    g = CoJpGuesser(web.exists, web.fetch)
+    assert g.domain_for("太平電業株式会社", None, "タイヘイデンギョウ") == "taiheidengyo.co.jp"
+    assert (g.stats.from_kana, g.stats.found_from_kana, g.stats.no_english_name) == (1, 1, 0)
+    # 読みからの推測でも、商号が載っていなければ採らない
+    web2 = _Web({"taiheidengyo.co.jp"}, {"https://www.taiheidengyo.co.jp/": "<title>別</title>"})
+    g2 = CoJpGuesser(web2.exists, web2.fetch)
+    assert g2.domain_for("太平電業株式会社", None, "タイヘイデンギョウ") is None
+    assert g2.stats.name_not_on_page == 1
+    # 英字社名があれば読みは使わない
+    web3 = _Web(set(), {})
+    g3 = CoJpGuesser(web3.exists, web3.fetch)
+    g3.domain_for("ムラキ株式会社", "MURAKI CORPORATION", "ムラキ")
+    assert g3.stats.from_kana == 0
+
+
+def test_コードリストの読みを_P1_の推測に渡す(tmp_path):
+    """EDINET コードリストの「提出者名（ヨミ）」列を読み、edinet_code で引く。"""
+    from mailauth.contracts import Entity
+    from mailauth.manifest import RunManifest
+    from mailauth.p1_population.runner import _fill_from_co_jp_homepage
+
+    e = Entity(
+        entity_id="jp:3",
+        run_id="2026-11",
+        country="JP",
+        population_ids=["jp-all-listed"],
+        name="太平電業株式会社",
+        name_normalized="太平電業",
+        edinet_code="E00999",
+    )
+    web = _Web(
+        {"taiheidengyo.co.jp"},
+        {"https://www.taiheidengyo.co.jp/": "<title>太平電業株式会社</title>"},
+    )
+    manifest = RunManifest(run_id="2026-11", phase="p1_population", out_dir=str(tmp_path))
+    _fill_from_co_jp_homepage(
+        [e],
+        manifest,
+        guesser=CoJpGuesser(web.exists, web.fetch),
+        kana={"E00999": "タイヘイデンギョウ"},
+    )
+    assert e.official_domain == "taiheidengyo.co.jp"
+    assert manifest.breakdown["co_jp_homepage"]["found_from_kana"] == 1
+
+
+def test_コードリストのヨミ列を読む(edinet_sample):
+    from mailauth.config import load_population
+    from mailauth.p1_population.edinet import parse_code_list
+
+    cfg = load_population("configs/populations/jp-all-listed.yaml")
+    rows, _ = parse_code_list(edinet_sample, cfg.source.edinet_code_list)
+    assert rows[0].name_kana == "サンプルジョウホウシステム"
