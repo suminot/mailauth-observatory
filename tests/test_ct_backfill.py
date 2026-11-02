@@ -536,7 +536,9 @@ def test_補充の同時本数は_P2_より絞る():
         (repo_root() / "configs" / "candidates.yaml").read_text(encoding="utf-8")
     )["ct"]
     assert cfg["backfill_concurrency"] <= 4
-    assert cfg["backfill_concurrency"] < cfg["concurrency"]
+    # **P2 も同じ。** 同時本数を上げても crt.sh から取れる件数は増えず、
+    # 応答時間とエラーが増えるだけだった（BACKLOG 12）
+    assert cfg["concurrency"] <= 4
     assert 'ct_cfg.get("backfill_concurrency"' in inspect.getsource(cli.ct_backfill_cmd)
 
 
