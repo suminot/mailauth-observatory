@@ -196,6 +196,34 @@ jobs:
           restore-keys: |
             enrich-${{ steps.run.outputs.id }}-
 
+      # **前の月の出力を取ってくる。** 前月比（delta_prev_month）、母集団の
+      # 出入り（P1）、推定の連続月数（P6）は、前の月の entities / facts /
+      # inferences を読む（P7 は前々月の facts も読む）。月次計測は毎回別の
+      # ランナーで走り、Actions のキャッシュは7日で消えるので、**2026-11 まで
+      # 一度も前月比が出ていなかった**（NO_PREVIOUS_FACTS / NO_PREVIOUS_RUN /
+      # NO_STALE_HISTORY）。前の月・前々月の実行が成果物に残した silver を
+      # 取ってくる（下の「silver を成果物にする」）。無ければ今までどおり
+      # 差分なしで進む
+      - name: 前の月の silver を取ってくる
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for BACK in 1 2; do
+            PREV=$(date -u -d "${{ steps.run.outputs.id }}-01 -$BACK month" +%Y-%m)
+            NAME="silver-${{ steps.run.outputs.pop }}-$PREV"
+            RUN=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$NAME&per_page=1" \
+                    --jq '[.artifacts[] | select(.expired | not)][0].workflow_run.id // empty' || true)
+            if [ -z "$RUN" ]; then
+              echo "$PREV の silver が成果物に無い（前月比はその分出ない）" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            mkdir -p "data/runs/$PREV"
+            gh run download "$RUN" --repo "$GITHUB_REPOSITORY" -n "$NAME" -D "data/runs/$PREV" || continue
+            echo "$PREV の silver を run $RUN から取った" >> "$GITHUB_STEP_SUMMARY"
+            find "data/runs/$PREV" -name '*.parquet' | sed 's/^/  /'
+          done
+
       # 工程の出力そのものを実行間で持ち越す。**ここまで無かった。**
       # 2026-09 の実行は P4 で時間切れになり、P1（12分）・P2（4時間21分）・
       # P3（23分）の出力と、245ドメインぶんの bronze が**すべて消えた。**
@@ -513,6 +541,47 @@ jobs:
       #
       # 成果物なら実行中でも取れるし、公開とは無関係に残る。サイト用の
       # JSON / CSV も一緒に上げる ── **parquet は手元で開く道具が要る。**
+      # 翌月の前月比のために、**この月の silver を残す**（上の「前の月の silver を
+      # 取ってくる」が読む）。個社別の観測を含むが、公開リポジトリの成果物に
+      # 置くことは運営者の判断（2026-10-25、下の「個社別明細を作る」の注記）の
+      # 範囲である ── 中身は DNS など誰でも引ける公開情報から作ったもの。
+      # --limit の動作確認、P4 が持ち時間で止まった実行、P6 まで届かなかった
+      # 実行では残さない。**後の実行の成果物ほど優先して読まれる**ので、
+      # 途中で止まった実行が、同じ月の揃った silver を押しのけてしまう
+      - name: silver を残すか決める
+        id: silver
+        if: always()
+        continue-on-error: true
+        run: |
+          D="data/runs/${{ steps.run.outputs.id }}"
+          keep=1
+          [ -n "${{ github.event.inputs.limit }}" ] && keep=""
+          [ -f "$D/p6_infer/inferences.parquet" ] || keep=""
+          [ -f "$D/p5_parse/facts.parquet" ] || keep=""
+          if [ -f "$D/p6_infer/_manifest.json" ] && [ "$(jq -r '.status' "$D/p6_infer/_manifest.json")" = "failed" ]; then
+            keep=""
+          fi
+          if [ -f "$D/p4_measure/_manifest.json" ] \
+             && jq -e '[.warnings[].code] | index("STOPPED_AT_TIME_BUDGET")' "$D/p4_measure/_manifest.json" >/dev/null; then
+            keep=""
+          fi
+          echo "keep=$keep" >> "$GITHUB_OUTPUT"
+          [ -n "$keep" ] || echo "この月の silver は成果物に残さない（翌月の前月比の相手にしない）" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: silver を成果物にする
+        if: always() && steps.silver.outputs.keep == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: silver-${{ steps.run.outputs.pop }}-${{ steps.run.outputs.id }}
+          path: |
+            data/runs/${{ steps.run.outputs.id }}/p1_population/entities.parquet
+            data/runs/${{ steps.run.outputs.id }}/p5_parse/facts.parquet
+            data/runs/${{ steps.run.outputs.id }}/p6_infer/inferences.parquet
+          if-no-files-found: warn
+          retention-days: 90
+          overwrite: true
+
       - name: gold を成果物にする
         if: always()
         continue-on-error: true

@@ -2344,3 +2344,38 @@ def test_ワークフローは_pipefail_付きの_bash_で走る():
                     f"{path.name}:{job_name}: ステップ {step.get('name')} が別の shell を使っている"
                 )
 
+
+
+def test_previous_month_silver_survives_between_runs():
+    """**前月比が出るように、前の月の silver を持ち越す。**
+
+    2026-11 まで一度も前月比が出ていなかった（NO_PREVIOUS_FACTS /
+    NO_PREVIOUS_RUN / NO_STALE_HISTORY）。月次計測は毎回別のランナーで走り、
+    Actions のキャッシュは7日で消える。成果物（90日）に残して、翌月に取る。
+    """
+    steps = _monthly_steps()
+    names = [s.get("name", "") for s in steps]
+    fetch = names.index("前の月の silver を取ってくる")
+    # 復元の前に取る（取り方が工程の出力の復元とぶつからない）
+    assert fetch < names.index("工程の出力を復元")
+    run = steps[fetch]["run"]
+    assert "silver-${{ steps.run.outputs.pop }}-$PREV" in run
+    assert "for BACK in 1 2" in run  # P7 は前々月の facts も読む
+    assert "expired" in run  # 期限切れの成果物を拾わない
+    assert steps[fetch].get("continue-on-error") is True
+
+    upload = steps[names.index("silver を成果物にする")]
+    assert upload["with"]["name"] == (
+        "silver-${{ steps.run.outputs.pop }}-${{ steps.run.outputs.id }}"
+    )
+    assert upload["with"]["retention-days"] >= 60
+    paths = upload["with"]["path"]
+    for part in ("entities.parquet", "facts.parquet", "inferences.parquet"):
+        assert part in paths
+    # 決める段を通ったときだけ上げる
+    assert "steps.silver.outputs.keep == '1'" in upload["if"]
+    gate = steps[names.index("silver を残すか決める")]["run"]
+    # 動作確認・時間切れ・P6 まで届かない実行の silver で、揃った月を押しのけない
+    assert "github.event.inputs.limit" in gate
+    assert "STOPPED_AT_TIME_BUDGET" in gate
+    assert "inferences.parquet" in gate
