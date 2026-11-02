@@ -29,6 +29,7 @@
 | `index.or.jp` | 4 | 1 | `mskigw22.index.or.jp`, `mskigw21.index.or.jp`, `mskigw23.index.or.jp` |
 | `line-apps.com` | 4 | 1 | `mx2-common.line-apps.com`, `mx-common.line-apps.com`, `mx3-common.line-apps.com` |
 | `privateemail.com` | 4 | 1 | `mx1.privateemail.com`, `mx2.privateemail.com` |
+| `spaceship.net` | 4 | 1 | `mx1.efwd.spaceship.net`, `mx2.efwd.spaceship.net` |
 | `wni.co.jp` | 4 | 1 | `mx5.wni.co.jp`, `mx6.wni.co.jp` |
 | `aams6.jp` | 3 | 1 | `mx.aams6.jp`, `mx-0.aams6.jp`, `mx-1.aams6.jp` |
 | `cloudz.jp` | 3 | 1 | `mx-1.cloudz.jp`, `mx-0.cloudz.jp`, `mx.cloudz.jp` |
@@ -39,10 +40,10 @@
 | `mx.cloudflare.net` | 3 | 1 | `linda.mx.cloudflare.net`, `isaac.mx.cloudflare.net`, `amir.mx.cloudflare.net` |
 | `admiral.ne.jp` | 2 | 1 | `xmx01.admiral.ne.jp`, `zmx00.admiral.ne.jp` |
 | `aics.ne.jp` | 2 | 1 | `amxi.aics.ne.jp` |
+| `betrend.com` | 2 | 1 | `mail.jp.betrend.com` |
 | `cyberlinks.ad.jp` | 2 | 1 | `ppgw-a01.cyberlinks.ad.jp`, `ppgw-a02.cyberlinks.ad.jp` |
 | `daum.net` | 2 | 1 | `alt.aspmx.daum.net`, `aspmx.daum.net` |
 | `denso-ts.it` | 2 | 1 | `trendmail02.denso-ts.it`, `trendmail01.denso-ts.it` |
-| `falcom.co.jp` | 2 | 1 | `mx1.falcom.co.jp`, `mx2.falcom.co.jp` |
 | `fitweb.or.jp` | 2 | 1 | `mail02.van.fitweb.or.jp`, `mail01.van.fitweb.or.jp` |
 | `gol.com` | 2 | 1 | `mx2.mail.gol.com`, `mx.mail.gol.com` |
 | `hmng.net` | 2 | 1 | `sb03h.hmng.net`, `sb04h.hmng.net` |
@@ -74,7 +75,6 @@
 | `protonmail.ch` | 2 | 1 | `mailsec.protonmail.ch`, `mail.protonmail.ch` |
 | `sdx.ne.jp` | 2 | 1 | `scan-s1.sdx.ne.jp`, `scan-s2.sdx.ne.jp` |
 | `sendmail.ne.jp` | 2 | 1 | `acmf03.sendmail.ne.jp`, `acmf04.sendmail.ne.jp` |
-| `spaceship.net` | 2 | 1 | `mx1.efwd.spaceship.net`, `mx2.efwd.spaceship.net` |
 | `synapse.ne.jp` | 2 | 1 | `mx.synapse.ne.jp` |
 | `tdk.com` | 2 | 1 | `tdksf1.jp.tdk.com`, `tdksf2.jp.tdk.com` |
 | `thalesgroup.com` | 2 | 1 | `mx01.thalesgroup.com`, `mx02.thalesgroup.com` |
