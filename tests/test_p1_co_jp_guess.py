@@ -618,3 +618,24 @@ def test_meta_refreshで別のドメインへ飛ぶなら追わない():
     assert meta_refresh_target(page4, "https://www.abc.co.jp/", "abc.co.jp") == (
         "https://abc.co.jp/top/"
     )
+
+
+def test_少しずつ送り続ける相手は時間で切って読めた分で確かめる(monkeypatch):
+    """httpx の timeout は読み1回ごとの上限で、送り続ける相手には効かない。"""
+    import httpx
+
+    from mailauth.p1_population import runner
+
+    class Drip(httpx.SyncByteStream):
+        def __iter__(self):
+            yield "<title>株式会社テスト</title>".encode()
+            while True:  # 終わらない
+                yield b" "
+
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, stream=Drip(), headers={"content-type": "text/html"})
+    )
+    monkeypatch.setattr(runner, "CO_JP_PAGE_DEADLINE_SEC", 0)
+    g = runner._live_co_jp_guesser("ops@example.invalid", transport=transport)
+    page = g.fetch("https://www.example.co.jp/")
+    assert page is not None and "株式会社テスト" in page
