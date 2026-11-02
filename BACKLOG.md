@@ -1968,6 +1968,27 @@ silver から起点の無い会社だけを取り、P1 と同じ推測（DNS・�
 手元のコンテナからは測れなかった：UDP の DNS は答えが返らず、TLS は出口の
 中継が証明書を差し替える（組織名が Anthropic になる）。
 
+**probe の結果（run 41539074064、2026-11-02）。** 起点の無い 405 社に流して
+**50 社が埋まった**（うち .jp・.com が 48、.co.jp の証明書の組織名が 2）。
+
+| 内訳 | 本番 P1（606 社、.co.jp だけ） | probe（残りの 405 社） |
+|---|---|---|
+| 埋まった | 201 | 50 |
+| DNS に無い | 190 | 128 |
+| 読めて違った | 128 | 186 |
+| 読めなかった | 64 | 18 |
+| 所要 | 538 秒 | 1,020 秒 |
+
+.jp・.com で採った 48 件を全部見直した。exawizards.jp・medley.jp・
+kioxia-holdings.com・forcia.com・userlocal.jp・tobila.com・finatext.com・
+ridge-i.com・secuavail.com・comture.com など、どれもその会社のもの
+（daikokuya.com は持株会社の事業会社のブランド）。**他社を採ったものは
+無かった。** タイトルに商号を求めたので、modalis.com（フランスの別会社）、
+jaic.jp（学会）、mortgage.jp（売り物）は外れている。逃したのは
+netprotections.com（タイトルが商品名「NP後払い」だけ）のような会社。
+
+本番の P1 は次の国内の計測から .jp・.com を見る。所要は 8 分ほど延びる。
+
 ## 7. 規模に対する前提
 
 いまの国内 1 母集団では問題にならないが、DESIGN.md の 30,000 ドメインでは
