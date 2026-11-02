@@ -456,7 +456,35 @@ def _live_co_jp_guesser(contact: str):
         except httpx.HTTPError:
             return None
 
-    return CoJpGuesser(exists=exists, fetch=fetch)
+    def cert_org(domain: str) -> str | None:
+        """`www.<domain>`、だめなら `<domain>` の証明書の組織名（O）。
+
+        **検証に通った証明書だけ**を読む。HTTP は送らない（握手だけ）。
+        """
+        import socket
+        import ssl
+
+        for host in (f"www.{domain}", domain):
+            with throttle:
+                wait = 0.5 - (time.monotonic() - last[0])
+                if wait > 0:
+                    time.sleep(wait)
+                last[0] = time.monotonic()
+            try:
+                context = ssl.create_default_context()
+                with socket.create_connection((host, 443), timeout=10) as sock:
+                    with context.wrap_socket(sock, server_hostname=host) as tls:
+                        cert = tls.getpeercert() or {}
+            except (OSError, ssl.SSLError, ValueError):
+                continue
+            for rdn in cert.get("subject", ()):
+                for key, value in rdn:
+                    if key == "organizationName":
+                        return str(value)
+            return None
+        return None
+
+    return CoJpGuesser(exists=exists, fetch=fetch, cert_org=cert_org)
 
 
 def _fill_missing_urls_from_wikidata(

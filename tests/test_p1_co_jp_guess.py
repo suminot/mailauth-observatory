@@ -436,3 +436,55 @@ def test_外れた理由を見本として残す():
     d = g.stats.to_dict()
     assert d["sample_not_on_page"] == ["shinden.co.jp 「別の会社」 ← シンデンハイテックス"]
     assert d["sample_unreachable"] == ["muraki.co.jp"]
+
+
+# ---------------------------------------------------------------------------
+# ページが読めなければ、証明書の組織名（O）で確かめる
+# ---------------------------------------------------------------------------
+
+
+def test_証明書の組織名は法人格を除いて完全に一致したときだけ採る():
+    from mailauth.p1_population.co_jp_guess import org_matches
+
+    assert org_matches("SecuAvail Inc.", "SecuAvail Inc.")
+    assert org_matches("NIRECO CORPORATION", "Nireco Corporation")
+    # 部分一致は採らない
+    assert not org_matches("Yamato Transport Co., Ltd.", "YAMATO CORPORATION")
+    assert not org_matches("Yamato Holdings Co., Ltd.", "Yamato Transport Co., Ltd.")
+    # 短い社名は偶然に当たる
+    assert not org_matches("NAC Co., Ltd.", "NAC CO., LTD.")
+    assert not org_matches(None, "SecuAvail Inc.")
+    assert not org_matches("SecuAvail Inc.", None)
+
+
+def test_ページが読めないときは証明書の組織名で確かめる():
+    """WAF が見慣れない User-Agent を 403 で断っても、TLS の握手は終わっている。"""
+    web = _Web({"secuavail.co.jp"}, {})  # どの入口も読めない
+    orgs = {"secuavail.co.jp": "SecuAvail Inc."}
+    g = CoJpGuesser(web.exists, web.fetch, cert_org=orgs.get)
+    assert g.domain_for("株式会社セキュアヴェイル", "SecuAvail Inc.") == "secuavail.co.jp"
+    assert (g.stats.found, g.stats.found_by_cert_org, g.stats.page_unreachable) == (1, 1, 0)
+
+
+def test_証明書が別の会社なら採らず_読めないに数える():
+    web = _Web({"sansei.co.jp"}, {})
+    g = CoJpGuesser(web.exists, web.fetch, cert_org={"sansei.co.jp": "SANSEI LANDIC"}.get)
+    assert g.domain_for("株式会社三精テクノロジーズ", "SANSEI TECHNOLOGIES INC.") is None
+    assert g.stats.page_unreachable == 1
+    # DV 証明書（組織名が無い）でも同じ
+    g2 = CoJpGuesser(web.exists, web.fetch, cert_org=lambda d: None)
+    assert g2.domain_for("株式会社三精テクノロジーズ", "SANSEI TECHNOLOGIES INC.") is None
+
+
+def test_ページが読めたときは証明書を見ない():
+    """**ページに社名が無いのは「違った」である。** 証明書で上書きしない。"""
+    asked: list[str] = []
+
+    def cert_org(domain):
+        asked.append(domain)
+        return "Kanda Tsushinki Co., Ltd."
+
+    web = _Web({"kanda.co.jp"}, {"https://www.kanda.co.jp/": "<title>神田通信工業株式会社</title>"})
+    g = CoJpGuesser(web.exists, web.fetch, cert_org=cert_org)
+    assert g.domain_for("神田通信機株式会社", "Kanda Tsushinki Co., Ltd.") is None
+    assert asked == []

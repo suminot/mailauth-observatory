@@ -222,6 +222,21 @@ def kana_guesses(kana: str | None) -> list[str]:
     return list(dict.fromkeys(f"{f}.co.jp" for f in (short, full) if len(f) >= 3))
 
 
+#: 証明書の組織名で確かめるときに、これより短い社名は使わない（偶然の一致）
+MIN_ORG_CHARS = 4
+
+
+def org_matches(org: str | None, name_en: str | None) -> bool:
+    """証明書の組織名と英字社名が、法人格などを除いて**完全に**一致するか。
+
+    部分一致は採らない（「Yamato」は「Yamato Transport」の証明書にも
+    「Yamato Holdings」の証明書にも当たる）。
+    """
+    a = "".join(name_tokens(org))
+    b = "".join(name_tokens(name_en))
+    return len(b) >= MIN_ORG_CHARS and a == b
+
+
 def name_core(name_ja: str | None) -> str:
     """日本語の商号から、ページで探す芯を取り出す（NFKC 済み）。"""
     text = unicodedata.normalize("NFKC", name_ja or "")
@@ -318,6 +333,9 @@ class GuessStats:
     #: 読めたが、社名が載っていなかった（他社のもの、または別の構成）
     name_not_on_page: int = 0
     found: int = 0
+    #: ページは読めなかったが、証明書の組織名（O）が英字社名と一致した
+    found_by_cert_org: int = 0
+    cert_lookups: int = 0
     dns_queries: int = 0
     pages_fetched: int = 0
     sample_found: list[str] = field(default_factory=list)
@@ -338,6 +356,8 @@ class GuessStats:
             "page_unreachable": self.page_unreachable,
             "name_not_on_page": self.name_not_on_page,
             "found": self.found,
+            "found_by_cert_org": self.found_by_cert_org,
+            "cert_lookups": self.cert_lookups,
             "dns_queries": self.dns_queries,
             "pages_fetched": self.pages_fetched,
             "sample_found": self.sample_found[:5],
@@ -360,9 +380,12 @@ class CoJpGuesser:
         self,
         exists: Callable[[str], bool],
         fetch: Callable[[str], str | None],
+        cert_org: Callable[[str], str | None] | None = None,
     ) -> None:
         self.exists = exists
         self.fetch = fetch
+        #: ドメインの TLS 証明書の組織名（O）を返す。無い・読めなければ None
+        self.cert_org = cert_org
         self.stats = GuessStats()
         self._lock = threading.Lock()
 
@@ -437,6 +460,23 @@ class CoJpGuesser:
                             f"{first_read[0]} 「{first_read[1]}」 ← {core}"
                         )
         else:
+            # **ページが読めなくても、証明書は読める。** 企業サイトの WAF は
+            # 見慣れない User-Agent を 403 で断ることが多いが（ブラウザを
+            # 装うことはしない）、TLS の握手はその前に終わっている。OV / EV
+            # 証明書の組織名（O）は CA が法人を確かめて入れる欄なので、
+            # 英字社名と**完全に**一致すれば、そのドメインはその会社のもの
+            # と言える（2026-11 の国内で、読めなかった 64 社に secuavail.co.jp・
+            # nireco.co.jp など本物らしいものが並んでいた）
+            if self.cert_org is not None and name_en:
+                for domain in existing:
+                    self._bump("cert_lookups")
+                    if org_matches(self.cert_org(domain), name_en):
+                        with self._lock:
+                            self.stats.found += 1
+                            self.stats.found_by_cert_org += 1
+                            if len(self.stats.sample_found) < 5:
+                                self.stats.sample_found.append(domain)
+                        return domain
             self._bump("page_unreachable")
             with self._lock:
                 if len(self.stats.sample_unreachable) < 20:
