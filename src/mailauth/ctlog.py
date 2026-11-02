@@ -577,6 +577,28 @@ class CrtShClient:
         return out
 
 
+    def prefetch_org(self, names: Iterable[str]) -> dict[str, CtResult]:
+        """組織名をまとめて引く。`prefetch` と同じく**応答待ちだけを重ねる。**
+
+        P2 は起点の無い企業の組織名検索を1社ずつ順に投げていた。crt.sh が
+        応答している日は1本 40 秒前後かかり、国内の約 400 社で CT の持ち時間
+        （120 分）を食い尽くしていた（2026-11-02）。投げる間隔は `_throttle()`
+        が全スレッドで共有するので、crt.sh から見た本数の上限は変わらない。
+        """
+        ordered = list(dict.fromkeys(n for n in names if n))
+        if not ordered:
+            return {}
+        own = self._client is None
+        client = self._client or httpx.Client(timeout=self.timeout, follow_redirects=True)
+        try:
+            with ThreadPoolExecutor(max_workers=self.concurrency) as pool:
+                results = pool.map(lambda n: self.search_org(n, client=client), ordered)
+                return dict(zip(ordered, results, strict=True))
+        finally:
+            if own:
+                client.close()
+
+
 #: crt.sh が1回の応答で返す上限。これに達したら**取りこぼしている。**
 CRTSH_ROW_LIMIT = 10000
 

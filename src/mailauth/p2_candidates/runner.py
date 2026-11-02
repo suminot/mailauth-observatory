@@ -674,6 +674,8 @@ def run(
         #: の国内の流し直しで、起点の無い企業の組織名検索（1本 40 秒前後）を
         #: 「CT 以外」に数えたため、見込みが 240 分を超えて 297 社で打ち切った
         ct_wait_sec = [0.0]
+        #: 先回りして引いた組織名検索の結果（組織名 -> 結果）
+        org_ready: dict[str, CtResult] = {}
         if ct_enabled:
             n_seeds = len({d for d in (_seed(i) for i in order) if d})
             ct_tracker = Progress(n_seeds, "P2 CT取得")
@@ -723,9 +725,11 @@ def run(
                 if not name:
                     ct_org_stats["no_name"] += 1
                 else:
-                    org_started = time.monotonic()
-                    found = ct_source.search_org(name)
-                    ct_wait_sec[0] += time.monotonic() - org_started
+                    found = org_ready.get(name)
+                    if found is None:
+                        org_started = time.monotonic()
+                        found = ct_source.search_org(name)
+                        ct_wait_sec[0] += time.monotonic() - org_started
                     ct_org_stats["searched"] += 1
                     if found.from_cache:
                         ct_org_stats["from_cache"] += 1
@@ -836,6 +840,15 @@ def run(
 
         for start in range(0, len(order), PREFETCH_CHUNK):
             chunk = order[start : start + PREFETCH_CHUNK]
+            # **起点の無い企業の組織名検索も先回りする**（並行に、間隔は同じ）
+            if org_enabled and hasattr(ct_source, "prefetch_org"):
+                org_wanted = [
+                    n for n in (_org_name(i) for i in chunk if not _seed(i)) if n
+                ]
+                if org_wanted:
+                    org_started = time.monotonic()
+                    org_ready.update(ct_source.prefetch_org(org_wanted))
+                    ct_wait_sec[0] += time.monotonic() - org_started
             if ct_enabled:
                 wanted = [d for d in (_seed(i) for i in chunk) if d and d not in ct_asked]
                 ct_asked.update(wanted)

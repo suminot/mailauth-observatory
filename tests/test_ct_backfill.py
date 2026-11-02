@@ -742,3 +742,53 @@ def test_組織名検索の待ちも_CT_の待ちとして見込みから分け�
     window = src[org_call - 200 : org_call + 200]
     assert "time.monotonic()" in window and "ct_wait_sec[0] +=" in window
     assert "ct_sec=ct_wait_sec[0]" in src
+
+
+def test_組織名検索も先回りして並行に引く(seeded_run):  # noqa: F811
+    """1社ずつ順に投げると、応答している日の crt.sh（1本 40 秒前後）で国内の
+    約 400 社が CT の持ち時間を食い尽くしていた（2026-11-02）。"""
+    from test_p2_p3 import ANSWERS, RUN
+
+    from mailauth.ctlog import StaticCtSource
+    from mailauth.p2_candidates.runner import run as run_p2
+    from mailauth.resolver import StaticResolver
+
+    class Recording(StaticCtSource):
+        def __init__(self):
+            super().__init__({}, {})
+            self.batches: list[list[str]] = []
+
+        def prefetch_org(self, names):
+            names = list(names)
+            self.batches.append(names)
+            return {n: self.search_org(n) for n in names}
+
+    src = Recording()
+    out = run_p2(run_id=RUN, resolver=StaticResolver(ANSWERS), ct_source=src)
+    searched = out["breakdown"]["ct_org"]["searched"]
+    assert searched > 0, "起点の無い企業がいない fixture では何も見ていない"
+    # 先回りで引いた分だけで、1社ずつの呼び出しは追加で起きていない
+    prefetched = [n for b in src.batches for n in b]
+    assert len(src.org_calls) == len(prefetched)
+    assert sorted(set(prefetched)) == sorted(set(src.org_calls))
+
+
+def test_crtsh_の組織名の先回りは間隔を共有したまま並行に投げる(tmp_path):
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        name = request.url.params["O"]
+        asked.append(name)
+        return httpx.Response(200, json=[{"name_value": "a.example.jp", "issuer_ca_id": 1}])
+
+    client = CrtShClient(
+        cache_dir=tmp_path,
+        month=MONTH,
+        qps=0,
+        retries=0,
+        concurrency=4,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    got = client.prefetch_org(["Alpha Corp", "Beta Inc", "Alpha Corp", ""])
+    assert list(got) == ["Alpha Corp", "Beta Inc"], "入力順・重複なし"
+    assert sorted(asked) == ["Alpha Corp", "Beta Inc"]
