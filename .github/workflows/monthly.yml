@@ -752,8 +752,13 @@ jobs:
               echo "実行記録は runs/ に残っている。"
             } >> "$GITHUB_STEP_SUMMARY"
           else
+            publishing=1
             git add gold runs site/src/changelog.md site/src/en/changelog.md || true
           fi
+          # この母集団の報告と作業リストを退避する（下の作り直しで使う）
+          SAVED=$(mktemp -d)
+          [ -f "$REPORT" ] && cp "$REPORT" "$SAVED/report.md"
+          [ -f "$WORKLIST" ] && cp "$WORKLIST" "$SAVED/worklist.md"
           if git diff --cached --quiet; then
             # 空コミットを作る。60日で schedule が止まるのを防ぐのが目的で、
             # 「今月は数字が動かなかった」ことも記録として意味がある
@@ -763,18 +768,45 @@ jobs:
           fi
           # **実行中に main へ別の push が入ると非早送りで落ちる。**
           # 数時間かけた計測の成果を「押し出せなかった」という理由だけで
-          # 失うのは割に合わないので、rebase して数回やり直す。
-          # gold は月ごとのファイルなので、他人の変更と内容が衝突しない。
+          # 失うのは割に合わないので、数回やり直す。
+          #
+          # **同じ月の gold は母集団をまたいで1つのファイルである**
+          # （stats_overall.parquet などに国内と米国の行が並ぶ）。2026-11-02、
+          # 国内の流し直しが gold をコミットした直後に、その前の main から
+          # 始まった米国の実行が push で落ち、rebase は parquet（バイナリ）を
+          # 合わせられずに3回とも失敗した。**公開するはずの gold が消えた。**
+          #
+          # 公開する実行では rebase せず、**最新の main に揃えてから、その上で
+          # P7 以降を作り直す。** P7 は既にある gold の他の母集団の行を残す
+          # （GOLD_OTHER_POPULATIONS_KEPT）ので、先に入った国内の行は消えない。
+          # この母集団の報告と作業リストは退避した分を戻す（他の母集団の
+          # 報告は最新の main のものを残す）
           branch="$(git rev-parse --abbrev-ref HEAD)"
           for attempt in 1 2 3; do
             if git push origin "$branch"; then exit 0; fi
-            echo "push に失敗した（$attempt 回目）。rebase してやり直す"
-            # **--autostash が無いと、やり直しの仕組みがやり直せない。**
-            # 追跡済みファイルに未ステージの変更が1つでもあると
-            # `cannot pull with rebase: You have unstaged changes.` で
-            # 止まり、3回とも同じ理由で落ちる。上の git add を直しても、
-            # 将来また別のファイルが増えたときに同じことが起きる
-            git pull --rebase --autostash origin "$branch" || true
+            git rebase --abort 2>/dev/null || true
+            if [ -n "${publishing:-}" ]; then
+              echo "push に失敗した（$attempt 回目）。最新の main の上で gold を作り直す"
+              git fetch origin "$branch"
+              git reset --hard "origin/$branch"
+              if ! mailauth p7-aggregate --run "${{ steps.run.outputs.id }}"; then
+                echo "::error::最新の main の上で P7 を作り直せなかった"
+                break
+              fi
+              mailauth changelog || true
+              mailauth corrections || true
+              [ -f "$SAVED/report.md" ] && cp "$SAVED/report.md" "$REPORT"
+              [ -f "$SAVED/worklist.md" ] && cp "$SAVED/worklist.md" "$WORKLIST"
+              git add gold runs site/src/changelog.md site/src/en/changelog.md || true
+              git commit --allow-empty -m "月次計測 ${{ steps.run.outputs.id }}"
+            else
+              echo "push に失敗した（$attempt 回目）。rebase してやり直す"
+              # **--autostash が無いと、やり直しの仕組みがやり直せない。**
+              # 追跡済みファイルに未ステージの変更が1つでもあると
+              # `cannot pull with rebase: You have unstaged changes.` で
+              # 止まり、3回とも同じ理由で落ちる
+              git pull --rebase --autostash origin "$branch" || true
+            fi
             sleep $((attempt * 5))
           done
           echo "::error::gold と実行記録を push できなかった。成果物はこの実行のログにしか無い"

@@ -2387,3 +2387,27 @@ def test_previous_month_silver_survives_between_runs():
     # 取る側でも確かめる。P7 の manifest を一緒に上げ、失敗した実行のものは使わない
     assert "p7_aggregate/_manifest.json" in paths
     assert "p7_aggregate/_manifest.json" in run and '"failed"' in run
+
+
+def test_push_が落ちたら最新の_main_の上で_gold_を作り直す():
+    """**同じ月の gold は母集団をまたいで1つのファイル**（parquet、バイナリ）。
+
+    2026-11-02、国内の流し直しが gold をコミットした直後に、その前の main から
+    始まった米国の実行が push で落ち、rebase は parquet を合わせられずに3回とも
+    失敗した。公開するはずの米国の gold が消えた。
+    """
+    steps = _monthly_steps()
+    run = next(s for s in steps if s.get("name") == "gold と実行記録をコミット")["run"]
+    loop = run[run.index('for attempt in 1 2 3; do') :]
+    # 公開する実行では rebase せず、最新の main に揃えてから P7 を作り直す
+    assert 'git reset --hard "origin/$branch"' in loop
+    reset_at = loop.index('git reset --hard "origin/$branch"')
+    p7_at = loop.index("mailauth p7-aggregate")
+    assert reset_at < p7_at, "揃える前に作り直しても、また同じところで落ちる"
+    # 変更履歴・訂正履歴も作り直す（gold から作るので）
+    assert "mailauth changelog" in loop[p7_at:]
+    # この母集団の報告は退避した分を戻す。他の母集団の報告は main のものを残す
+    assert 'cp "$SAVED/report.md" "$REPORT"' in loop
+    assert "cp -a" not in loop, "runs/ を丸ごと戻すと、他の母集団の新しい報告を古いもので上書きする"
+    # 作りかけの rebase を残さない
+    assert "git rebase --abort" in loop
