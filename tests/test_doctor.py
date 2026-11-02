@@ -331,3 +331,37 @@ def test_落ちていなければその話をしない(monkeypatch, tmp_path):
     monkeypatch.setenv("MAILAUTH_DATA_ROOT", str(tmp_path / "data"))
 
     assert "落ちている" not in doctor.diagnose().next_action.headline
+
+
+def test_持ち時間切れの月は流し直しではなく補充を勧める(monkeypatch, tmp_path):
+    """**相手が答えていて時間が尽きたのなら、同じ持ち時間で流し直しても同じ所で止まる。**
+
+    埋めるのは CT の補充で、残りが 2% を切ると補充の方から月次計測を頼み直す。
+    「落ちている」と書くと、読み手は crt.sh の様子を見に行って待ってしまう。
+    """
+    _all_set_up(monkeypatch)
+    _write_gold_with_coverage(tmp_path, "2026-11", total=4871, with_domains=4000)
+    _write_p2_manifest(tmp_path, "2026-11", codes=["CT_FETCH_BUDGET_SPENT"])
+    monkeypatch.setenv("MAILAUTH_GOLD_ROOT", str(tmp_path / "gold"))
+    monkeypatch.setenv("MAILAUTH_DATA_ROOT", str(tmp_path / "data"))
+
+    action = doctor.diagnose().next_action
+    assert "2026-11" in action.headline
+    assert "持ち時間" in action.headline
+    assert "落ちている" not in action.headline
+    assert any("CT の補充" in s for s in action.steps), action.steps
+    # 分母の欠けより先に出す（落ちていた月と同じ理由）
+    assert "計測に現れていない" not in action.headline
+
+
+def test_落ちていて時間も尽きた月は落ちていた方を言う(monkeypatch, tmp_path):
+    """時間切れは、落ちていた間の待ちの結果であることが多い。**元の方を直す。**"""
+    _all_set_up(monkeypatch)
+    _write_gold_with_coverage(tmp_path, "2026-11", total=4871, with_domains=4000)
+    _write_p2_manifest(
+        tmp_path, "2026-11", codes=["CT_FETCH_BUDGET_SPENT", "CT_UPSTREAM_UNAVAILABLE"]
+    )
+    monkeypatch.setenv("MAILAUTH_GOLD_ROOT", str(tmp_path / "gold"))
+    monkeypatch.setenv("MAILAUTH_DATA_ROOT", str(tmp_path / "data"))
+
+    assert "落ちている" in doctor.diagnose().next_action.headline
