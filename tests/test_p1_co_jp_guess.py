@@ -23,11 +23,11 @@ def test_推測は_つなげた形_ハイフン_先頭の語の順():
         "plusalpha.co.jp",
     ]
     # 法人格とどの会社にも付く語は使わない
-    assert guesses("Yokogawa Bridge Holdings Corp.") == [
+    assert guesses("Yokogawa Bridge Holdings Corp.")[:2] == [
         "yokogawabridge.co.jp",
         "yokogawa-bridge.co.jp",
-        "yokogawa.co.jp",
     ]
+    assert guesses("Yokogawa Bridge Holdings Corp.")[-1] == "yokogawa.co.jp"
     assert guesses("") == []
     assert guesses(None) == []
 
@@ -228,3 +228,39 @@ def test_国内の母集団は最後にこの経路を使う():
             "source"
         ]["enrich"]
         assert enrich[-1] == "co_jp_homepage", f"{name}: 最後に置いていない（{enrich}）"
+
+
+def test_持株会社とフィナンシャルグループは決まった形も試す():
+    """`HOLDINGS` / `GROUP` は語として落とすので、つなげた形だけでは
+    tokyu-fudosan-hd.co.jp や mebuki-fg.co.jp に届かない。"""
+    got = guesses("Tokyu Fudosan Holdings Corporation")
+    assert got[:2] == ["tokyufudosan.co.jp", "tokyu-fudosan.co.jp"]
+    for form in (
+        "tokyu-fudosan-hd.co.jp",
+        "tokyufudosanhd.co.jp",
+        "tokyu-fudosan-holdings.co.jp",
+        "tokyufudosanholdings.co.jp",
+    ):
+        assert form in got
+    # 先頭の語だけの形（他社のことが多い）は、決まった形より後に試す
+    assert got.index("tokyu.co.jp") > got.index("tokyu-fudosan-hd.co.jp")
+
+    fg = guesses("Mebuki Financial Group, Inc.")
+    assert "mebuki-fg.co.jp" in fg and "mebukifg.co.jp" in fg
+
+    # 持株会社でなければ今までどおり
+    assert guesses("MURAKI CORPORATION") == ["muraki.co.jp"]
+
+
+def test_決まった形でも確かめはページで行う():
+    """推測が DNS に実在しても、日本語の商号が載っていなければ採らない。"""
+    pages = {
+        "https://www.tokyu-fudosan-hd.co.jp/": "<title>東急不動産ホールディングス株式会社</title>",
+    }
+    g = CoJpGuesser(
+        exists=lambda d: d in {"tokyu-fudosan-hd.co.jp", "tokyu.co.jp"},
+        fetch=lambda url: pages.get(url, "<title>別の会社</title>"),
+    )
+    assert g.domain_for("東急不動産ホールディングス株式会社", "Tokyu Fudosan Holdings") == (
+        "tokyu-fudosan-hd.co.jp"
+    )
