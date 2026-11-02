@@ -1,4 +1,9 @@
 name: 月次計測
+# 実行の一覧で、どの月のどの母集団かを読めるようにする。monthly-us.yml が
+# 「米国のその月をもう頼んだか」をこれで見分ける
+run-name: >-
+  月次計測 ${{ github.event.inputs.run_id || '当月' }}
+  ${{ github.event.inputs.population || 'jp-all-listed' }}
 
 # 人手を介さず月次で八工程を回す（DESIGN.md Sprint 8）。
 #

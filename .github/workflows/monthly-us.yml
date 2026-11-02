@@ -28,9 +28,30 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: 米国の月次計測を頼む
+      # **二重に頼まない。** schedule は数時間遅れることがあり（2026-11-01 は
+      # 7時間遅れ）、2026-11-02 は起動しなかったので手で頼んだ。遅れて起動した
+      # ときに、その月の米国の計測がもう走っていれば頼まない
+      - name: もう頼んでいないか確かめる
+        id: dup
         run: |
           RUN_ID=$(date -u +%Y-%m)
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          since=$(date -u -d '-20 hours' +%Y-%m-%dT%H:%M:%SZ)
+          n=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow monthly.yml --limit 30 \
+                --json displayTitle,createdAt,status \
+                --jq "[.[] | select(
+                         (.displayTitle | contains(\"us-all-listed\") and contains(\"$RUN_ID\"))
+                         or (.status != \"completed\" and .createdAt > \"$since\")
+                       )] | length")
+          echo "found=$n" >> "$GITHUB_OUTPUT"
+          if [ "$n" != "0" ]; then
+            echo "米国 $RUN_ID の計測はもう頼んであるか、月次計測が走っている。頼まない" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: 米国の月次計測を頼む
+        if: steps.dup.outputs.found == '0'
+        run: |
+          RUN_ID="${{ steps.dup.outputs.run_id }}"
           gh workflow run monthly.yml --repo "$GITHUB_REPOSITORY" --ref main \
             -f run_id="$RUN_ID" \
             -f population=configs/populations/us-all-listed.yaml \
