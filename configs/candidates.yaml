@@ -124,6 +124,16 @@ ct:
   concurrency: 4
   # 補充（ct-backfill）の同時本数。P2 と同じ理由で 4 より上げない
   backfill_concurrency: 4
+  # **P2 で crt.sh に取りにいくのは、最初に取りにいってから N 分だけ。**
+  # 過ぎたらキャッシュだけで進め、取れなかった起点は積み残しにして月の
+  # あいだの補充（ct-backfill）に回す。警告 CT_FETCH_BUDGET_SPENT。
+  #
+  # 同時本数を上げても件数が増えない以上、応答の続く限り待つと工程全体の
+  # 持ち時間（limits.max_phase_minutes: 240）を超え、**CT ではなく企業が
+  # 丸ごと抜ける**（PHASE_BUDGET_EXCEEDED）。4本・中央値 37 秒なら 120 分で
+  # 約 800 件。CT 以外（DNS・TLS の SAN・組織名）の分を残して 120 にする。
+  # 0 で無効
+  fetch_budget_minutes: 120
   # **相手が落ちているなら叩き続けない。**
   #
   # 2026-09-24、crt.sh は**トップページごと 502 Bad Gateway** を返していた

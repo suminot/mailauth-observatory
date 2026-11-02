@@ -578,3 +578,119 @@ def test_鍵が無ければ_CertSpotter_を使わない():
 
     source = inspect.getsource(cli.ct_backfill_cmd)
     assert "if certspotter_requests > 0 and certspotter_key" in source
+
+
+# ---------------------------------------------------------------------------
+# P2 で CT を取りにいく持ち時間（ct.fetch_budget_minutes）
+# ---------------------------------------------------------------------------
+
+
+def test_持ち時間を過ぎたら_crtsh_に取りにいかずキャッシュだけ返す(tmp_path, monkeypatch):
+    """同時本数を上げても crt.sh から取れる件数は増えない（BACKLOG 12）。応答の
+    続く限り待つと P2 全体の持ち時間を超え、企業が丸ごと抜ける。"""
+    import mailauth.ctlog as ctlog
+
+    now = [1000.0]
+    monkeypatch.setattr(ctlog.time, "monotonic", lambda: now[0])
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        domain = request.url.params["q"].removeprefix("%.")
+        asked.append(domain)
+        return httpx.Response(200, json=[{"name_value": domain}])
+
+    client = CrtShClient(
+        cache_dir=tmp_path,
+        month=MONTH,
+        qps=0,
+        retries=0,
+        fetch_budget_sec=60,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    assert client.search("a.jp").found == ["a.jp"]  # 最初の1本で時計を始める
+    now[0] += 59
+    assert client.search("b.jp").found == ["b.jp"]
+    now[0] += 2  # 61 秒経った
+    late = client.search("c.jp")
+    assert late.error_kind == "fetch_budget"
+    assert late.attempts == 0
+    assert asked == ["a.jp", "b.jp"], "持ち時間を過ぎても取りにいっている"
+    # **キャッシュにあるものは引き続き返す**
+    assert client.search("a.jp").from_cache
+    # **相手が落ちているのではない。** 落ちた月の扱い（upstream_down）にしない
+    assert client.upstream_down is None
+    assert client.fetch_budget_skipped == 1
+    assert client.response_stats()["fetch_budget_skipped"] == 1
+
+
+def test_持ち時間_0_なら切らない(tmp_path, monkeypatch):
+    import mailauth.ctlog as ctlog
+
+    now = [0.0]
+    monkeypatch.setattr(ctlog.time, "monotonic", lambda: now[0])
+    client = _crtsh_up(tmp_path)
+    assert client.fetch_budget_sec == 0
+    client.search("a.jp")
+    now[0] += 10**6
+    assert client.search("b.jp").error is None
+
+
+def test_持ち時間で切った分は積み残しに入り_落ちた月と同じく_gold_を縮めない():
+    from mailauth.p7_aggregate.runner import DEGRADATION_WARNINGS
+
+    assert "CT_FETCH_BUDGET_SPENT" in DEGRADATION_WARNINGS
+
+
+def test_p2_の_ct_持ち時間は工程の持ち時間の内側():
+    import yaml
+
+    from mailauth.paths import repo_root
+
+    cfg = yaml.safe_load(
+        (repo_root() / "configs" / "candidates.yaml").read_text(encoding="utf-8")
+    )
+    budget = cfg["ct"]["fetch_budget_minutes"]
+    assert 0 < budget < cfg["limits"]["max_phase_minutes"], (
+        "CT の持ち時間が工程の持ち時間を食い尽くすと、CT 以外の経路の時間が残らない"
+    )
+
+
+def test_見込みは_ct_の待ちを持ち時間で頭打ちにする():
+    """序盤に crt.sh を待つ時間がそのまま全体に引き延ばされると、CT は
+    持ち時間で切れるのに、工程ごと止めてしまう。"""
+    from mailauth.p2_candidates.runner import project_with_ct_budget
+
+    # 100 社中 10 社で 1000 秒（うち CT 900 秒）。素朴な見込みは 10000 秒
+    naive = 10_000.0
+    got = project_with_ct_budget(naive, done=10, total=100, ct_sec=900, ct_budget_sec=1800)
+    # CT 以外 100 秒 → 1000 秒、CT は 1800 秒で頭打ち
+    assert got == pytest.approx(1000 + 1800)
+    # 持ち時間が無ければ素朴な見込みのまま
+    assert project_with_ct_budget(naive, done=10, total=100, ct_sec=900, ct_budget_sec=0) == naive
+    # CT が速く終わる調子なら、持ち時間より短く見込む
+    fast = project_with_ct_budget(1000.0, done=10, total=100, ct_sec=10, ct_budget_sec=1800)
+    assert fast == pytest.approx(900 + 100)
+    assert project_with_ct_budget(None, done=0, total=100, ct_sec=0, ct_budget_sec=60) is None
+
+
+def test_p2_は持ち時間で切ったことを警告に書く(seeded_run):  # noqa: F811
+    """**黙って欠けない。** 持ち時間で切った月の CT 由来の候補は欠けている。"""
+    from test_p2_p3 import ANSWERS, RUN
+
+    from mailauth.ctlog import StaticCtSource
+    from mailauth.p2_candidates.runner import run as run_p2
+    from mailauth.resolver import StaticResolver
+
+    class BudgetSpent(StaticCtSource):
+        fetch_budget_sec = 60.0
+        fetch_budget_skipped = 2
+
+        def search(self, domain: str) -> CtResult:
+            return CtResult(domain=domain, error="持ち時間切れ", error_kind="fetch_budget")
+
+    out = run_p2(run_id=RUN, resolver=StaticResolver(ANSWERS), ct_source=BudgetSpent())
+    warning = next(w for w in out["warnings"] if w["code"] == "CT_FETCH_BUDGET_SPENT")
+    assert warning["count"] == 2
+    assert "ct-backfill" in warning["message"]
+    # 相手が落ちていた月とは書かない
+    assert "CT_UPSTREAM_UNAVAILABLE" not in [w["code"] for w in out["warnings"]]
