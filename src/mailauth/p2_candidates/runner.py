@@ -20,6 +20,7 @@ import datetime as dt
 import hashlib
 import re
 import statistics
+import time
 from pathlib import Path
 from typing import Any
 
@@ -362,6 +363,33 @@ def _prefetch_dns(
     )
 
 
+def project_with_ct_budget(
+    projected: float | None,
+    *,
+    done: int,
+    total: int,
+    ct_sec: float,
+    ct_budget_sec: float,
+) -> float | None:
+    """**CT の待ちを、CT の持ち時間で頭打ちにした見込み。**
+
+    `Progress.projected_total_sec` は「これまでと同じ調子なら」で、序盤に
+    crt.sh を待っている時間がそのまま全体に引き延ばされる。CT は
+    `ct.fetch_budget_minutes` を過ぎると取りにいかなくなるので、序盤の
+    遅さで工程ごと止める（PHASE_BUDGET_EXCEEDED、企業が丸ごと抜ける）と
+    取り違えになる。CT の分は持ち時間を上限にし、残りだけを引き延ばす。
+
+    持ち時間が無い（0）か、見込みが出せないなら、元の見込みをそのまま返す。
+    """
+    if projected is None or ct_budget_sec <= 0 or not done or not total:
+        return projected
+    elapsed = projected * done / total
+    ct_sec = min(max(ct_sec, 0.0), elapsed)
+    rest = (elapsed - ct_sec) / done * total
+    ct_total = min(ct_sec / done * total, max(ct_budget_sec, ct_sec))
+    return rest + ct_total
+
+
 def _population_of(entities) -> str:
     """企業の表から母集団の名前を取る。1回の P1 は1つの母集団なので、
     **全行に共通するもの**を選ぶ。決まらなければ "mixed"。"""
@@ -466,6 +494,8 @@ def run(
                     concurrency=int(ct_cfg.get("concurrency", DEFAULT_CONCURRENCY)),
                     # **相手が落ちているなら叩き続けない。** 0 で無効
                     down_after=int(ct_cfg.get("down_after", DEFAULT_DOWN_AFTER)),
+                    # **CT を取りにいくのは最初の N 分だけ。** 0 で無効
+                    fetch_budget_sec=float(ct_cfg.get("fetch_budget_minutes", 0) or 0) * 60,
                 )
                 if discovery.get("ct_log") and not offline
                 else DisabledCtSource()
@@ -639,6 +669,8 @@ def run(
         # 現れる。** 塊ごとの重複排除では取りこぼすので、全体でも覚えておく。
         # 覚えないと進捗が 100% を超えて表示される
         ct_asked: set[str] = set()
+        #: CT の先回り（prefetch）に使った実時間。持ち時間の見込みから分けて使う
+        ct_prefetch_sec = 0.0
         if ct_enabled:
             n_seeds = len({d for d in (_seed(i) for i in order) if d})
             ct_tracker = Progress(n_seeds, "P2 CT取得")
@@ -805,7 +837,9 @@ def run(
                 # **前の塊で取ったものは持ち越す。** 捨てると、同じ起点を持つ
                 # 企業が別の塊に現れたときに取り直しになる（キャッシュには
                 # 当たるが、進捗の件数が合わなくなる）
+                ct_started = time.monotonic()
                 ct_ready.update(ct_source.prefetch(wanted, on_result=_note_ct))
+                ct_prefetch_sec += time.monotonic() - ct_started
             if tls_enabled:
                 tls_wanted = [d for d in (_seed(i) for i in chunk) if d and d not in tls_asked]
                 tls_asked.update(tls_wanted)
@@ -833,7 +867,13 @@ def run(
             # 時計を読む回数だけ増える）。見込みは「これまでと同じ調子なら」
             # でしかないので、**超えたら止めるのであって、超えそうだから
             # 急ぐのではない。**
-            projected = tracker.projected_total_sec()
+            projected = project_with_ct_budget(
+                tracker.projected_total_sec(),
+                done=tracker.done,
+                total=tracker.total,
+                ct_sec=ct_prefetch_sec,
+                ct_budget_sec=float(getattr(ct_source, "fetch_budget_sec", 0) or 0),
+            )
             enough = len(collectors) >= budget_after * len(order)
             # **もう全部終わっているなら止めない。** 「残り0社でやめた」と
             # いう当てはまらない警告を出すことになる
@@ -1080,6 +1120,19 @@ def run(
                     "total": len(ct_ready),
                     "path": str(path),
                 }
+            )
+        budget_skipped = int(getattr(ct_source, "fetch_budget_skipped", 0) or 0)
+        if budget_skipped:
+            manifest.add_warning(
+                "CT_FETCH_BUDGET_SPENT",
+                count=budget_skipped,
+                message=(
+                    f"CT を取りにいく持ち時間（ct.fetch_budget_minutes）を使い切り、"
+                    f"{budget_skipped} 件の起点ドメインはキャッシュに無いまま進めた。"
+                    "**この月の CT 由来の候補はその分欠けている。** 積み残しに"
+                    "書いたので、月のあいだに ct-backfill が取り、同じ run_id の"
+                    "流し直しで使われる"
+                ),
             )
         if down:
             manifest.add_warning(

@@ -156,6 +156,7 @@ class CrtShClient:
         retries: int = 2,
         concurrency: int = DEFAULT_CONCURRENCY,
         down_after: int = DEFAULT_DOWN_AFTER,
+        fetch_budget_sec: float = 0.0,
         client: httpx.Client | None = None,
     ) -> None:
         self.cache_dir = cache_dir
@@ -188,6 +189,12 @@ class CrtShClient:
         self.down_after = int(down_after) if int(down_after) > 0 else 0
         #: 落ちていると判断したあと、ここに理由を入れる
         self._down_reason: str | None = None
+        #: **取りにいくのは、最初に取りにいってからこの秒数まで。** 0 なら
+        #: 切らない。過ぎたらキャッシュだけを返す（下の `_budget_check`）
+        self.fetch_budget_sec = max(float(fetch_budget_sec or 0), 0.0)
+        self._fetch_started: float | None = None
+        #: 持ち時間を使い切ったために取りにいかなかった本数
+        self._budget_skipped = 0
 
     def _throttle(self) -> None:
         """次の1本を投げてよい時刻まで待つ。**全スレッドで1つの間隔。**
@@ -252,6 +259,32 @@ class CrtShClient:
                     f"答えが返った回数（{self._succeeded}）を上回っている"
                 )
 
+    def _budget_spent(self) -> bool:
+        """取りにいく持ち時間を使い切ったか。**最初の1本で時計を始める。**
+
+        crt.sh の速さの上限は相手側にあり、同時本数を上げても件数は増えない
+        （BACKLOG 12）。P2 が応答の続く限り待つと、工程全体の持ち時間
+        （`limits.max_phase_minutes`）を超えて**企業ごと打ち切られる**。
+        CT だけを先に切り、残りは積み残しとして月のあいだの補充に回す。
+        """
+        if self.fetch_budget_sec <= 0:
+            return False
+        now = time.monotonic()
+        with self._stats_lock:
+            if self._fetch_started is None:
+                self._fetch_started = now
+                return False
+            if now - self._fetch_started <= self.fetch_budget_sec:
+                return False
+            self._budget_skipped += 1
+            return True
+
+    @property
+    def fetch_budget_skipped(self) -> int:
+        """持ち時間を使い切ったために取りにいかなかった本数。"""
+        with self._stats_lock:
+            return self._budget_skipped
+
     @property
     def upstream_down(self) -> str | None:
         """相手が落ちていると判断した理由。判断していなければ None。
@@ -300,6 +333,8 @@ class CrtShClient:
             "timeout_sec": self.timeout,
             # **「取れなかった」のか「相手が落ちていた」のかを残す**（原則5）
             "upstream_down": down_reason,
+            "fetch_budget_sec": self.fetch_budget_sec or None,
+            "fetch_budget_skipped": self.fetch_budget_skipped,
         }
 
     def _cache_path(self, domain: str) -> Path | None:
@@ -388,6 +423,18 @@ class CrtShClient:
                 domain=domain,
                 error=f"crt.sh が応答していないため取りにいっていない（{down}）",
                 error_kind="upstream_down",
+                attempts=0,
+            )
+        # **持ち時間を過ぎたら取りにいかない。** 相手が落ちているのではない
+        # ので `upstream_down` とは分ける。積み残しには入る
+        if self._budget_spent():
+            return CtResult(
+                domain=domain,
+                error=(
+                    f"CT を取りにいく持ち時間（{self.fetch_budget_sec / 60:.0f} 分）を"
+                    "使い切ったため取りにいっていない"
+                ),
+                error_kind="fetch_budget",
                 attempts=0,
             )
 

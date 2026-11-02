@@ -69,7 +69,9 @@ class DegradedRunError(RuntimeError):
 
 #: これが P2 に出ていたら、CT 由来の候補はキャッシュにあった分だけである。
 #: 母集団は最後まで回っているので `TRUNCATION_WARNINGS` とは扱いが違う
-DEGRADATION_WARNINGS = ("CT_UPSTREAM_UNAVAILABLE",)
+#: CT_FETCH_BUDGET_SPENT は、相手ではなくこちらの持ち時間で CT を切った月。
+#: 欠け方は同じなので、既にある gold を小さく上書きしないのも同じ
+DEGRADATION_WARNINGS = ("CT_UPSTREAM_UNAVAILABLE", "CT_FETCH_BUDGET_SPENT")
 
 
 def _p2_warning_codes(run_id: str) -> list[str]:

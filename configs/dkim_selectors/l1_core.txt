@@ -66,6 +66,8 @@ everlytickey1     # Everlytic
 everlytickey2
 
 # --- 日本国内で観測されやすいもの ---
+# 事業者の公式資料に固定の名前として書かれているもの（2026-11-02 確認）
+bizmw             # NTT Bizメール＆ウェブ プレミアム（support.ntt.com/mw-premiumr3/information/detail/pid2500002h0b/）
 biglobe
 sakura
 xserver
