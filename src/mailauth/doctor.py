@@ -335,7 +335,7 @@ def _worst_entity_gap() -> tuple[str, int, int] | None:
     return worst
 
 
-def _ct_outage_months() -> list[str]:
+def _ct_outage_months() -> list[tuple[str, str]]:
     """CT ログの取得先が落ちていた月。新しい順。
 
     **「候補が少ない月」と「CT が使えなかった月」は別である**（原則5）。
@@ -348,7 +348,7 @@ def _ct_outage_months() -> list[str]:
     root = runs_root()
     if not root.is_dir():
         return []
-    months: list[str] = []
+    months: list[tuple[str, str]] = []
     for d in sorted(root.iterdir(), reverse=True):
         m = d / "p2_candidates" / "_manifest.json"
         if not m.is_file():
@@ -358,8 +358,12 @@ def _ct_outage_months() -> list[str]:
         except (json.JSONDecodeError, OSError):
             continue
         codes = {w.get("code") for w in payload.get("warnings", [])}
+        # 相手が落ちていたのか、こちらの持ち時間が尽きたのか。**直し方が違う。**
+        # 両方あれば落ちていた方を言う（時間切れはその結果であることが多い）
         if "CT_UPSTREAM_UNAVAILABLE" in codes:
-            months.append(d.name)
+            months.append((d.name, "CT_UPSTREAM_UNAVAILABLE"))
+        elif "CT_FETCH_BUDGET_SPENT" in codes:
+            months.append((d.name, "CT_FETCH_BUDGET_SPENT"))
     return months
 
 
@@ -616,8 +620,28 @@ def _next_action(
     # 分母の欠けは「そういう月だった」と読めるが、こちらは計測が成立して
     # いない。しかも**キャッシュが温かいうちに流し直す**のが一番安い
     outages = _ct_outage_months()
+    if outages and outages[0][1] == "CT_FETCH_BUDGET_SPENT":
+        month = outages[0][0]
+        # 相手は答えていたが、P2 の持ち時間（ct.fetch_budget_minutes）では
+        # 引き切れなかった。**流し直しても同じところで止まる。** 埋めるのは
+        # CT の補充で、残りが 2% を切れば補充の方から月次計測を頼み直す
+        return NextAction(
+            headline=f"{month} は CT ログを引き切る前に持ち時間が尽きている",
+            why=(
+                "crt.sh は答えていたが、P2 の持ち時間の中では全社分を引けなかった。"
+                "引けなかった会社の CT 由来の候補は空のままで、**少ないのは実態ではない**"
+                "（原則5）。同じ持ち時間で流し直しても同じところで止まる"
+            ),
+            steps=[
+                "Actions → CT の補充 が続きを引いているか見る（自分で次の回を頼む）",
+                "**残りが 2% を切ると、補充の方から月次計測を頼み直す**",
+                "補充が止まっていたら Actions → CT の補充 を手で流す",
+                f"runs/{month}.md の CT_FETCH_BUDGET_SPENT と "
+                "breakdown.ct_response.fetch_budget_skipped に引けなかった件数が残っている",
+            ],
+        )
     if outages:
-        month = outages[0]
+        month = outages[0][0]
         return NextAction(
             headline=f"{month} は CT ログの取得先が落ちている最中に回っている",
             why=(
