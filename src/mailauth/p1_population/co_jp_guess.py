@@ -8,6 +8,9 @@
   - .co.jp は**1つの組織が1つしか持てない**（JPRS の登録規則）
   - 上場企業の大半は英字社名の語をそのまま .co.jp にしている
     （MURAKI CORPORATION → muraki.co.jp）
+  - **.co.jp に無ければ .jp・.com も見る**（2026-11-02）。ただしこの2つは
+    1組織1つの決まりが無いので、社名の長さに関わらず、タイトルに商号の形
+    （「株式会社◯◯」など）で載っていることを求める
 
 なぜ「サイトに社名が載っているか」で確かめるか
   - **推測は推測でしかない。** 短い語ほど他社が持っている（2026-10-31 の
@@ -135,6 +138,19 @@ def guesses(name_en: str | None) -> list[str]:
     group = [f"{f}.co.jp" for f in _group_forms(name_en, words) if len(f) >= 3]
     head, tail = base[:2], base[2:]
     return list(dict.fromkeys(head + group + tail))
+
+
+#: .co.jp に無いときに見る TLD。**順に見る**
+OTHER_TLDS = ("jp", "com")
+
+#: 確かめられなかった理由の、分かったことの多さ
+_OUTCOME_RANK = {"none": 0, "unreachable": 1, "not_on_page": 2}
+
+
+def other_tld_guesses(candidates: list[str]) -> list[str]:
+    """.co.jp の推測を .jp・.com に置き換えた形。**推測の順 → TLD の順**。"""
+    stems = [c[: -len(".co.jp")] for c in candidates if c.endswith(".co.jp")]
+    return [f"{stem}.{tld}" for tld in OTHER_TLDS for stem in stems]
 
 
 # -- 読み（カナ）からの推測 ------------------------------------------------
@@ -302,15 +318,16 @@ def page_title(page: str) -> str:
     return "".join(_squash(p) for p in parts)
 
 
-def page_names_company(page: str, core: str) -> bool:
+def page_names_company(page: str, core: str, *, strict: bool = False) -> bool:
     """ページに社名が載っているか。空白の違いは無視する。
 
     芯が短い（SHORT_CORE_CHARS 以下）ときは、タイトルに商号の形で載って
-    いることを求める（モジュールの説明）。
+    いることを求める（モジュールの説明）。`strict` なら芯の長さに関わらず
+    タイトルで確かめる（.jp・.com。1組織1つの決まりが無い）。
     """
     if len(core) < MIN_CORE_CHARS:
         return False
-    if len(core) <= SHORT_CORE_CHARS:
+    if strict or len(core) <= SHORT_CORE_CHARS:
         title = page_title(page).lower()
         return any(form.format(c=core.lower()) in title for form in _TITLE_FORMS)
     return core in _squash(page)
@@ -336,6 +353,8 @@ class GuessStats:
     #: ページは読めなかったが、証明書の組織名（O）が英字社名と一致した
     found_by_cert_org: int = 0
     cert_lookups: int = 0
+    #: .co.jp に無く、.jp・.com で確かめられた（`found` の内数）
+    found_other_tld: int = 0
     dns_queries: int = 0
     pages_fetched: int = 0
     sample_found: list[str] = field(default_factory=list)
@@ -344,6 +363,9 @@ class GuessStats:
     sample_not_on_page: list[str] = field(default_factory=list)
     #: 実在したがどの入口も読めなかったドメイン
     sample_unreachable: list[str] = field(default_factory=list)
+    #: .jp・.com で確かめたもの。**1組織1つの決まりが無いので、全部見直せる
+    #: ように残す**
+    sample_found_other_tld: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -358,11 +380,13 @@ class GuessStats:
             "found": self.found,
             "found_by_cert_org": self.found_by_cert_org,
             "cert_lookups": self.cert_lookups,
+            "found_other_tld": self.found_other_tld,
             "dns_queries": self.dns_queries,
             "pages_fetched": self.pages_fetched,
             "sample_found": self.sample_found[:5],
             "sample_not_on_page": self.sample_not_on_page[:20],
             "sample_unreachable": self.sample_unreachable[:20],
+            "sample_found_other_tld": self.sample_found_other_tld[:20],
         }
 
 
@@ -412,14 +436,61 @@ class CoJpGuesser:
             self._bump("core_too_short")
             return None
 
+        outcome = self._attempt(candidates, core, name_en, by_kana=by_kana, strict=False)
+        if isinstance(outcome, str):
+            return outcome
+        # **.co.jp に無ければ .jp・.com も見る。** 2026-11 の国内で起点が
+        # 取れなかった 341 社には、ricksoft.jp・modalis.com・cyfuse.com の
+        # ように .co.jp を持たない新しめの会社が並んでいた。ただし .jp・.com は
+        # 1組織1つの決まりが無く、同じ語を他社や個人が持っている。**社名の長さに
+        # 関わらずタイトルに商号の形で載っていることを求める**（`strict`）
+        other = self._attempt(
+            other_tld_guesses(candidates), core, name_en, by_kana=by_kana, strict=True
+        )
+        if isinstance(other, str):
+            with self._lock:
+                self.stats.found_other_tld += 1
+                if len(self.stats.sample_found_other_tld) < 20:
+                    self.stats.sample_found_other_tld.append(f"{other} ← {core}")
+            return other
+        # 確かめられなかった理由は1つに数える。**読めて違った > 読めなかった >
+        # DNS に無かった** の順に、分かったことの多い方を採る
+        final = max(outcome, other, key=lambda o: _OUTCOME_RANK[o[0]])
+        kind, detail = final
+        if kind == "not_on_page":
+            self._bump("name_not_on_page")
+            if detail is not None:
+                with self._lock:
+                    if len(self.stats.sample_not_on_page) < 20:
+                        self.stats.sample_not_on_page.append(
+                            f"{detail[0]} 「{detail[1]}」 ← {core}"
+                        )
+        elif kind == "unreachable":
+            self._bump("page_unreachable")
+            with self._lock:
+                if len(self.stats.sample_unreachable) < 20:
+                    self.stats.sample_unreachable.append(detail)
+        else:
+            self._bump("no_guess_exists")
+        return None
+
+    def _attempt(
+        self,
+        candidates: list[str],
+        core: str,
+        name_en: str | None,
+        *,
+        by_kana: bool,
+        strict: bool,
+    ) -> str | tuple[str, Any]:
+        """推測の並びを1つ確かめる。見つかればドメイン、だめなら (理由, 詳細)。"""
         existing = []
         for domain in candidates:
             self._bump("dns_queries")
             if self.exists(domain):
                 existing.append(domain)
         if not existing:
-            self._bump("no_guess_exists")
-            return None
+            return ("none", None)
 
         read_any = False
         first_read: tuple[str, str] | None = None
@@ -441,7 +512,7 @@ class CoJpGuesser:
                 read_any = True
                 if first_read is None:
                     first_read = (domain, page_title(page)[:40])
-                if page_names_company(page, core):
+                if page_names_company(page, core, strict=strict):
                     with self._lock:
                         self.stats.found += 1
                         if by_kana:
@@ -452,33 +523,22 @@ class CoJpGuesser:
                 # 1つ読めて載っていなければ、同じドメインの別の入口は見ない
                 break
         if read_any:
-            self._bump("name_not_on_page")
-            if first_read is not None:
-                with self._lock:
-                    if len(self.stats.sample_not_on_page) < 20:
-                        self.stats.sample_not_on_page.append(
-                            f"{first_read[0]} 「{first_read[1]}」 ← {core}"
-                        )
-        else:
-            # **ページが読めなくても、証明書は読める。** 企業サイトの WAF は
-            # 見慣れない User-Agent を 403 で断ることが多いが（ブラウザを
-            # 装うことはしない）、TLS の握手はその前に終わっている。OV / EV
-            # 証明書の組織名（O）は CA が法人を確かめて入れる欄なので、
-            # 英字社名と**完全に**一致すれば、そのドメインはその会社のもの
-            # と言える（2026-11 の国内で、読めなかった 64 社に secuavail.co.jp・
-            # nireco.co.jp など本物らしいものが並んでいた）
-            if self.cert_org is not None and name_en:
-                for domain in existing:
-                    self._bump("cert_lookups")
-                    if org_matches(self.cert_org(domain), name_en):
-                        with self._lock:
-                            self.stats.found += 1
-                            self.stats.found_by_cert_org += 1
-                            if len(self.stats.sample_found) < 5:
-                                self.stats.sample_found.append(domain)
-                        return domain
-            self._bump("page_unreachable")
-            with self._lock:
-                if len(self.stats.sample_unreachable) < 20:
-                    self.stats.sample_unreachable.append(existing[0])
-        return None
+            return ("not_on_page", first_read)
+        # **ページが読めなくても、証明書は読める。** 企業サイトの WAF は
+        # 見慣れない User-Agent を 403 で断ることが多いが（ブラウザを
+        # 装うことはしない）、TLS の握手はその前に終わっている。OV / EV
+        # 証明書の組織名（O）は CA が法人を確かめて入れる欄なので、
+        # 英字社名と**完全に**一致すれば、そのドメインはその会社のもの
+        # と言える（2026-11 の国内で、読めなかった 64 社に secuavail.co.jp・
+        # nireco.co.jp など本物らしいものが並んでいた）
+        if self.cert_org is not None and name_en:
+            for domain in existing:
+                self._bump("cert_lookups")
+                if org_matches(self.cert_org(domain), name_en):
+                    with self._lock:
+                        self.stats.found += 1
+                        self.stats.found_by_cert_org += 1
+                        if len(self.stats.sample_found) < 5:
+                            self.stats.sample_found.append(domain)
+                    return domain
+        return ("unreachable", existing[0])

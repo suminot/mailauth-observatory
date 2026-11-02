@@ -488,3 +488,94 @@ def test_ページが読めたときは証明書を見ない():
     g = CoJpGuesser(web.exists, web.fetch, cert_org=cert_org)
     assert g.domain_for("神田通信機株式会社", "Kanda Tsushinki Co., Ltd.") is None
     assert asked == []
+
+
+# -- .co.jp に無ければ .jp・.com ------------------------------------------------
+#
+# 2026-11 の国内で起点が取れなかった会社には、ricksoft.jp・modalis.com の
+# ように .co.jp を持たない会社が並んでいた。.jp・.com は1組織1つの決まりが
+# 無いので、**社名の長さに関わらずタイトルに商号の形を求める。**
+
+
+def test_co_jpに無ければcomを見る():
+    from mailauth.p1_population.co_jp_guess import CoJpGuesser
+
+    web = _Web(
+        {"modalis.com"},
+        {"https://www.modalis.com/": "<title>株式会社モダリス | Modalis</title>"},
+    )
+    g = CoJpGuesser(web.exists, web.fetch)
+    assert g.domain_for("株式会社モダリス", "Modalis Therapeutics Corporation") == "modalis.com"
+    assert g.stats.found == 1
+    assert g.stats.found_other_tld == 1
+    assert g.stats.sample_found_other_tld == ["modalis.com ← モダリス"]
+
+
+def test_co_jpが当たればjpもcomも見ない():
+    """**.co.jp が先。** 1組織1つの決まりがある方で確かめられれば、それで足りる。"""
+    from mailauth.p1_population.co_jp_guess import CoJpGuesser
+
+    web = _Web(
+        {"muraki.co.jp", "muraki.jp", "muraki.com"},
+        {
+            "https://www.muraki.co.jp/": "<title>ムラキ株式会社</title>",
+            "https://www.muraki.com/": "<title>ムラキ株式会社</title>",
+        },
+    )
+    g = CoJpGuesser(web.exists, web.fetch)
+    assert g.domain_for("ムラキ株式会社", "MURAKI CORPORATION") == "muraki.co.jp"
+    assert not any("muraki.com" in u or "muraki.jp" in u for u in web.fetched)
+    assert g.stats.found_other_tld == 0
+
+
+def test_jpとcomは長い社名でも本文だけでは採らない():
+    """他社の「導入事例」や取引先一覧にも、長い社名は載る。
+
+    .co.jp なら持ち主は1組織に限られるが、.jp・.com はそうではない。
+    """
+    from mailauth.p1_population.co_jp_guess import CoJpGuesser
+
+    page = "<title>導入事例</title><li>株式会社ネットプロテクションズ 様</li>"
+    web = _Web({"netprotections.com"}, {"https://www.netprotections.com/": page})
+    g = CoJpGuesser(web.exists, web.fetch)
+    got = g.domain_for("株式会社ネットプロテクションズホールディングス", "Net Protections Inc.")
+    assert got is None
+    assert g.stats.name_not_on_page == 1
+    assert g.stats.found_other_tld == 0
+
+
+def test_jpはcomより先に見る():
+    from mailauth.p1_population.co_jp_guess import other_tld_guesses
+
+    assert other_tld_guesses(["ricksoft.co.jp", "rick-soft.co.jp"]) == [
+        "ricksoft.jp",
+        "rick-soft.jp",
+        "ricksoft.com",
+        "rick-soft.com",
+    ]
+
+
+def test_確かめられなかった理由は分かったことの多い方を1つ数える():
+    """.co.jp は DNS に無く、.com は読めて違った ── **「違った」に1つだけ数える。**
+
+    両方を数えると、内訳の合計が試した社数を超えて読めなくなる。
+    """
+    from mailauth.p1_population.co_jp_guess import CoJpGuesser
+
+    web = _Web(
+        {"porters.com"},
+        {"https://www.porters.com/": "<title>Porters Pizza</title>"},
+    )
+    g = CoJpGuesser(web.exists, web.fetch)
+    assert g.domain_for("ポーターズ株式会社", "PORTERS CORPORATION") is None
+    s = g.stats
+    assert (s.no_guess_exists, s.name_not_on_page, s.page_unreachable) == (0, 1, 0)
+    assert s.sample_not_on_page == ["porters.com 「PortersPizza」 ← ポーターズ"]
+
+
+def test_どこにも無ければDNSに無かったと数える():
+    from mailauth.p1_population.co_jp_guess import CoJpGuesser
+
+    g = CoJpGuesser(lambda d: False, lambda u: None)
+    assert g.domain_for("ポーターズ株式会社", "PORTERS CORPORATION") is None
+    assert g.stats.no_guess_exists == 1
