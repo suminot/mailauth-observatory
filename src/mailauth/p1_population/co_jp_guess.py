@@ -91,11 +91,35 @@ def name_tokens(name_en: str | None) -> list[str]:
     return [w.lower() for w in words if w not in _STOP]
 
 
+def _group_forms(name_en: str | None, words: list[str]) -> list[str]:
+    """持株会社・フィナンシャルグループの決まった形（`-hd` `-holdings` `-fg`）。
+
+    上場の持株会社は `<名>-hd.co.jp` / `<名>-holdings.co.jp`、地銀の
+    フィナンシャルグループは `<名>-fg.co.jp` を使うことが多い（例:
+    tokyu-fudosan-hd.co.jp、jfe-holdings.co.jp、mebuki-fg.co.jp、
+    kyushu-fg.co.jp）。`HOLDINGS` / `GROUP` は `_STOP` で落としているので、
+    つなげた形だけでは届かない。確かめはほかの推測と同じくページで行う。
+    """
+    raw = set(re.sub(r"[^A-Z0-9 ]", " ", (name_en or "").upper()).split())
+    forms: list[str] = []
+    if raw & {"HOLDINGS", "HOLDING"}:
+        joined, hyphen = "".join(words), "-".join(words)
+        forms += [f"{hyphen}-hd", f"{joined}hd", f"{hyphen}-holdings", f"{joined}holdings"]
+    if "FINANCIAL" in raw and "GROUP" in raw:
+        base = [w for w in words if w != "financial"]
+        if base:
+            forms += [f"{'-'.join(base)}-fg", f"{''.join(base)}fg"]
+    return forms
+
+
 def guesses(name_en: str | None) -> list[str]:
     """推測する .co.jp の候補。**つなげた形 → ハイフン → 先頭の語** の順。
 
     先頭の語だけの形は他社のものであることが多いが、候補には入れる
     （確かめはページで行う）。3文字未満の語は使わない。
+
+    持株会社・フィナンシャルグループは、その決まった形（`_group_forms`）を
+    ハイフンの形の次に試す。この分は `MAX_GUESSES` の外に数える。
     """
     words = name_tokens(name_en)
     if not words:
@@ -103,8 +127,10 @@ def guesses(name_en: str | None) -> list[str]:
     forms = ["".join(words), "-".join(words), words[0]]
     if len(words) >= 2:
         forms.append(words[0] + words[1])
-    out = list(dict.fromkeys(f"{f}.co.jp" for f in forms if len(f) >= 3))
-    return out[:MAX_GUESSES]
+    base = list(dict.fromkeys(f"{f}.co.jp" for f in forms if len(f) >= 3))[:MAX_GUESSES]
+    group = [f"{f}.co.jp" for f in _group_forms(name_en, words) if len(f) >= 3]
+    head, tail = base[:2], base[2:]
+    return list(dict.fromkeys(head + group + tail))
 
 
 def name_core(name_ja: str | None) -> str:
