@@ -405,7 +405,8 @@ def test_米国も毎月測る():
     on = wf.get("on") or wf.get(True)
     minute, hour, day = on["schedule"][0]["cron"].split()[:3]
     assert day == "2", "国内（1日）と同じ日にしない"
-    run = wf["jobs"]["dispatch"]["steps"][0]["run"]
+    steps = {st["name"]: st for st in wf["jobs"]["dispatch"]["steps"]}
+    run = steps["米国の月次計測を頼む"]["run"]
     assert "configs/populations/us-all-listed.yaml" in run
     assert "publish=yes" in run
     # 頼む先の選択肢に米国があること（選べない値を渡すと起動に失敗する）
@@ -537,3 +538,29 @@ def test_補充の同時本数は_P2_より絞る():
     assert cfg["backfill_concurrency"] <= 4
     assert cfg["backfill_concurrency"] < cfg["concurrency"]
     assert 'ct_cfg.get("backfill_concurrency"' in inspect.getsource(cli.ct_backfill_cmd)
+
+
+def test_米国の計測を二重に頼まない():
+    """schedule は数時間遅れることがある（2026-11-01 は7時間遅れ）。遅れて
+    起動したときに、その月の米国の計測が走っていれば頼まない。
+
+    見分けるために、monthly.yml の実行名に月と母集団を入れる。
+    """
+    import yaml
+
+    from mailauth.paths import repo_root
+
+    wf = yaml.safe_load(
+        (repo_root() / ".github" / "workflows" / "monthly-us.yml").read_text(encoding="utf-8")
+    )
+    steps = wf["jobs"]["dispatch"]["steps"]
+    names = [st["name"] for st in steps]
+    assert names.index("もう頼んでいないか確かめる") < names.index("米国の月次計測を頼む")
+    check = steps[names.index("もう頼んでいないか確かめる")]["run"]
+    assert 'contains(\\"us-all-listed\\")' in check
+    assert ".status != " in check, "走っている月次計測があれば頼まない"
+    assert steps[names.index("米国の月次計測を頼む")]["if"] == "steps.dup.outputs.found == '0'"
+
+    monthly = (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(encoding="utf-8")
+    run_name = yaml.safe_load(monthly)["run-name"]
+    assert "inputs.population" in run_name and "inputs.run_id" in run_name
