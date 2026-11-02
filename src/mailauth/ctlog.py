@@ -1043,6 +1043,12 @@ class BackfillReport:
 RERUN_PENDING_RATE = 0.02
 #: 1か月に頼む流し直しの上限。**頼み続けない**
 MAX_RERUNS_PER_MONTH = 2
+#: 2回目からの流し直しは、この割合（分母は起点全部）か `RERUN_MIN_FILLED`
+#: の大きい方だけ新しく取れたときに限る。月次計測は国内で2時間半かかり、
+#: その間は補充が止まる（ほかの母集団の補充も待つ）。2026-11-02 の国内は、
+#: 1回目の流し直しのあとに残った数件を補充で埋めただけで2回目を頼んでいた
+RERUN_MIN_FILLED_RATE = 0.005
+RERUN_MIN_FILLED = 10
 
 
 def backfill(
@@ -1144,13 +1150,21 @@ def backfill(
         # **取れたものがあり、積み残しがほぼ無くなったら流し直してよい。**
         # 回数に上限を置く（取れないまま残るドメインで頼み続けない）
         filled = len(before) - len(after)
+        reruns = int(payload.get("reruns_requested", 0))
+        # 1回目は取れたものがあればよい。**2回目からは取れた量を見る**
+        need = 1 if reruns == 0 else max(RERUN_MIN_FILLED, int(total * RERUN_MIN_FILLED_RATE))
+        report.populations[pop]["filled"] = filled
         if (
             before
-            and filled > 0
+            and filled >= need
             and rate <= RERUN_PENDING_RATE
-            and int(payload.get("reruns_requested", 0)) < MAX_RERUNS_PER_MONTH
+            and reruns < MAX_RERUNS_PER_MONTH
         ):
             report.ready_for_rerun.append(pop)
+        elif before and filled > 0 and rate <= RERUN_PENDING_RATE and reruns < MAX_RERUNS_PER_MONTH:
+            report.populations[pop]["rerun_held"] = (
+                f"取れたのは {filled} 件で、{reruns + 1} 回目の流し直しには {need} 件要る"
+            )
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
     return report
 
