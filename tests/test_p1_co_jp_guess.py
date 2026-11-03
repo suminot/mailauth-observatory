@@ -644,16 +644,36 @@ def test_少しずつ送り続ける相手は時間で切って読めた分で�
 # -- 英字だけのタイトル・フレーム・スクリプトで飛ばす入口 ------------------------
 
 
-def test_タイトルに英字社名がそのまま載っていれば採る():
-    """sumida.com のタイトルは「SUMIDA CORPORATION」で、日本語の商号が無い。"""
+def test_co_jpならタイトルの英字社名で採る():
+    """.co.jp は日本で登記した組織しか持てない。英字だけのタイトルでも認める。"""
     from mailauth.p1_population.co_jp_guess import CoJpGuesser
 
     web = _Web(
-        {"sumida.com"},
-        {"https://www.sumida.com/": "<title>SUMIDA CORPORATION</title>"},
+        {"medialinks.co.jp"},
+        {"https://www.medialinks.co.jp/": "<title>MEDIA LINKS CO.,LTD.</title>"},
     )
     g = CoJpGuesser(web.exists, web.fetch)
-    assert g.domain_for("スミダコーポレーション株式会社", "SUMIDA CORPORATION") == "sumida.com"
+    assert g.domain_for("株式会社メディアリンクス", "MEDIA LINKS CO.,LTD.") == "medialinks.co.jp"
+
+
+def test_comとjpでは英字社名のタイトルだけでは採らない():
+    """**海外の同名の別会社を採る。** 2026-11-03 の probe で、
+    globalsecurityexperts.com（米国の防犯機器会社。英字社名は法人格まで同じ）・
+    intertrade.com・quantum-solutions.com を採っていた。
+    """
+    from mailauth.p1_population.co_jp_guess import CoJpGuesser
+
+    web = _Web(
+        {"globalsecurityexperts.com"},
+        {
+            "https://www.globalsecurityexperts.com/": (
+                "<title>Best Home Security Products – Global Security Experts Inc.</title>"
+            )
+        },
+    )
+    g = CoJpGuesser(web.exists, web.fetch)
+    got = g.domain_for("グローバルセキュリティエキスパート株式会社", "Global Security Experts Inc.")
+    assert got is None
 
 
 def test_短い英字社名だけのタイトルでは決めない():
