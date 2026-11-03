@@ -169,6 +169,53 @@ def meta_refresh_target(page: str, base_url: str, domain: str) -> str | None:
     return target
 
 
+#: フレームで組んだトップページ（`<frameset><frame src="main.html">`）
+_FRAME_SRC = re.compile(r"<frame\b[^>]*\bsrc=[\"']?([^\"'>\s]+)", re.I)
+
+#: スクリプトだけで飛ばすトップページ（`location.href = "/jp/"` など）
+_JS_LOCATION = re.compile(
+    r"(?:window\.|document\.|top\.)?location(?:\.href)?\s*=\s*[\"']([^\"']+)[\"']"
+    r"|location\.replace\(\s*[\"']([^\"']+)[\"']",
+    re.I,
+)
+
+
+def _same_domain(target: str, base_url: str, domain: str) -> str | None:
+    parts = urlsplit(target)
+    host = (parts.hostname or "").lower().rstrip(".")
+    if parts.scheme not in ("http", "https"):
+        return None
+    if host != domain and not host.endswith("." + domain):
+        return None
+    if target.rstrip("/") == base_url.rstrip("/"):
+        return None
+    return target
+
+
+def entry_redirect_target(page: str, base_url: str, domain: str) -> str | None:
+    """入口から飛ぶ先。meta refresh → フレーム → スクリプトの順に見る。
+
+    **同じドメインの中**のときだけ返す（`meta_refresh_target` と同じ理由）。
+    フレームとスクリプトは、入口のページで社名が確かめられなかったときだけ
+    使う（呼ぶ側）。スクリプトの `location.href = ...` は普通のページにも
+    書かれていて、それを先に追うと正しいページを捨てることになる。
+    """
+    target = meta_refresh_target(page, base_url, domain)
+    if target is not None:
+        return target
+    text = page or ""
+    m = _FRAME_SRC.search(text)
+    if m:
+        found = _same_domain(urljoin(base_url, html.unescape(m.group(1))), base_url, domain)
+        if found:
+            return found
+    m = _JS_LOCATION.search(text)
+    if m:
+        raw = m.group(1) or m.group(2)
+        return _same_domain(urljoin(base_url, html.unescape(raw)), base_url, domain)
+    return None
+
+
 #: .co.jp に無いときに見る TLD。**順に見る**
 OTHER_TLDS = ("jp", "com")
 
@@ -347,13 +394,52 @@ def page_title(page: str) -> str:
     return "".join(_squash(p) for p in parts)
 
 
-def page_names_company(page: str, core: str, *, strict: bool = False) -> bool:
+#: 英字社名でタイトルを確かめるときの、法人格を除いた長さの下限
+MIN_EN_TITLE_CHARS = 10
+
+_EN_SUFFIX = re.compile(
+    r"(?:CO(?:MPANY)?)?(?:LTD|LIMITED|INC|INCORPORATED|CORP|CORPORATION|KK|HOLDINGS?)$"
+)
+
+
+def _alnum_upper(text: str) -> str:
+    return re.sub(r"[^A-Z0-9]", "", unicodedata.normalize("NFKC", text or "").upper())
+
+
+def title_names_company_en(page: str, name_en: str | None) -> bool:
+    """タイトルに**英字社名がそのまま**載っているか（「SUMIDA CORPORATION」）。
+
+    日本語の商号を書かず英字だけのサイトがある（2026-11、sumida.com）。
+    社名全体（法人格込み）か、法人格を除いて 10 文字以上の部分が
+    タイトルにあるときだけ採る。短い英字（「RISE」「FUJI」）では決めない。
+    """
+    full = _alnum_upper(name_en or "")
+    if not full:
+        return False
+    title = _alnum_upper(html.unescape(" ".join(re.findall(
+        r"<title[^>]*>(.*?)</title>", page or "", re.S | re.I
+    ))))
+    if not title:
+        return False
+    core = _EN_SUFFIX.sub("", full)
+    if len(core) >= MIN_EN_TITLE_CHARS and core in title:
+        return True
+    return len(core) >= MIN_CORE_CHARS + 3 and full in title and full != core
+
+
+def page_names_company(
+    page: str, core: str, *, strict: bool = False, name_en: str | None = None
+) -> bool:
     """ページに社名が載っているか。空白の違いは無視する。
 
     芯が短い（SHORT_CORE_CHARS 以下）ときは、タイトルに商号の形で載って
     いることを求める（モジュールの説明）。`strict` なら芯の長さに関わらず
     タイトルで確かめる（.jp・.com。1組織1つの決まりが無い）。
+    英字社名がタイトルにそのまま載っていれば、それでも認める
+    （`title_names_company_en`）。
     """
+    if title_names_company_en(page, name_en):
+        return True
     if len(core) < MIN_CORE_CHARS:
         return False
     if strict or len(core) <= SHORT_CORE_CHARS:
@@ -384,7 +470,7 @@ class GuessStats:
     cert_lookups: int = 0
     #: .co.jp に無く、.jp・.com で確かめられた（`found` の内数）
     found_other_tld: int = 0
-    #: 入口が meta refresh だけのページで、飛び先を読んだ
+    #: 入口が飛ばすだけのページ（meta refresh・フレーム・スクリプト）で、飛び先を読んだ
     meta_refresh_followed: int = 0
     dns_queries: int = 0
     pages_fetched: int = 0
@@ -542,21 +628,27 @@ class CoJpGuesser:
                 if page is None:
                     continue
                 read_any = True
+                named = page_names_company(page, core, strict=strict, name_en=name_en)
                 # **入口が「飛ばすだけのページ」なら、飛び先を1回だけ読む。**
-                # `<meta http-equiv="refresh" content="0;URL=/top/">` だけで
-                # タイトルも本文も無いトップページがある（2026-11 の国内で、
-                # 読めて違ったものの見本 20 件中 3 件がタイトル空だった）。
-                # 飛び先が同じドメインの中のときだけ
-                target = meta_refresh_target(page, url, domain)
-                if target is not None:
-                    self._bump("pages_fetched")
-                    self._bump("meta_refresh_followed")
-                    followed = self.fetch(target)
-                    if followed is not None:
-                        page = followed
+                # `<meta http-equiv="refresh" content="0;URL=/top/">`、フレーム、
+                # スクリプトの location だけでタイトルも本文も無いトップページが
+                # ある（2026-11 の国内で、読めて違ったものの見本 20 件中 3 件が
+                # タイトル空だった）。入口で確かめられなかったときだけ、飛び先が
+                # 同じドメインの中のときだけ
+                if not named:
+                    target = entry_redirect_target(page, url, domain)
+                    if target is not None:
+                        self._bump("pages_fetched")
+                        self._bump("meta_refresh_followed")
+                        followed = self.fetch(target)
+                        if followed is not None:
+                            page = followed
+                            named = page_names_company(
+                                page, core, strict=strict, name_en=name_en
+                            )
                 if first_read is None:
                     first_read = (domain, page_title(page)[:40])
-                if page_names_company(page, core, strict=strict):
+                if named:
                     with self._lock:
                         self.stats.found += 1
                         if by_kana:
