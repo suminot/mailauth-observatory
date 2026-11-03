@@ -25,12 +25,12 @@
 | `ddreams.jp` | 4 | 1 | `mail-swp1.ddreams.jp`, `mail-swp2.ddreams.jp` |
 | `denso.co.jp` | 4 | 1 | `ma-dnext03.denso.co.jp`, `ma-dnext02.denso.co.jp`, `ma-dnext00.denso.co.jp` |
 | `dnsv.jp` | 4 | 1 | `mailforward.dnsv.jp` |
-| `hostinger.com` | 4 | 1 | `mx2.hostinger.com`, `mx1.hostinger.com` |
 | `index.or.jp` | 4 | 1 | `mskigw22.index.or.jp`, `mskigw21.index.or.jp`, `mskigw23.index.or.jp` |
 | `line-apps.com` | 4 | 1 | `mx2-common.line-apps.com`, `mx-common.line-apps.com`, `mx3-common.line-apps.com` |
 | `privateemail.com` | 4 | 1 | `mx1.privateemail.com`, `mx2.privateemail.com` |
 | `spaceship.net` | 4 | 1 | `mx1.efwd.spaceship.net`, `mx2.efwd.spaceship.net` |
 | `wni.co.jp` | 4 | 1 | `mx5.wni.co.jp`, `mx6.wni.co.jp` |
+| `aams.jp` | 3 | 1 | `bbsec-1.aams.jp`, `bbsec-0.aams.jp`, `bbsec.aams.jp` |
 | `aams6.jp` | 3 | 1 | `mx.aams6.jp`, `mx-0.aams6.jp`, `mx-1.aams6.jp` |
 | `cloudz.jp` | 3 | 1 | `mx-1.cloudz.jp`, `mx-0.cloudz.jp`, `mx.cloudz.jp` |
 | `enets.ne.jp` | 3 | 1 | `spamcs1.enets.ne.jp` |
@@ -48,6 +48,7 @@
 | `gol.com` | 2 | 1 | `mx2.mail.gol.com`, `mx.mail.gol.com` |
 | `hmng.net` | 2 | 1 | `sb03h.hmng.net`, `sb04h.hmng.net` |
 | `hostedemail.com` | 2 | 1 | `mx.hover.com.cust.hostedemail.com` |
+| `hostinger.com` | 2 | 1 | `mx2.hostinger.com`, `mx1.hostinger.com` |
 | `hostpoint.ch` | 2 | 1 | `mx2.mail.hostpoint.ch`, `mx1.mail.hostpoint.ch` |
 | `ichinen.co.jp` | 2 | 1 | `mx1.ichinen.co.jp`, `mx2.ichinen.co.jp` |
 | `icloud.com` | 2 | 1 | `mx01.mail.icloud.com`, `mx02.mail.icloud.com` |
@@ -104,7 +105,6 @@
 | `h-email.net` | 1 | 1 | `mail.h-email.net` |
 | `hammock.co.jp` | 1 | 1 | `mail.hammock.co.jp` |
 | `hetemail.jp` | 1 | 1 | `mx.hetemail.jp` |
-| `holo.ne.jp` | 1 | 1 | `rabbit.holo.ne.jp` |
 
 ## 調査済み・同定できなかったもの（7 件）
 
