@@ -380,6 +380,24 @@ jobs:
             data/cache/wikidata
           key: enrich-${{ steps.run.outputs.id }}-${{ github.run_id }}
 
+      # **CT の補充が走っている間は crt.sh を叩かない。** 補充は月次計測が
+      # 走っているのを見て始めないが、逆向きの確かめが無かった。重なると
+      # 相手から見た本数が倍になる（crt.sh は 0.5 qps の約束）。補充は1回
+      # 45 分ほどで終わり、次の回は月次計測が走っているのを見て止まる
+      - name: CT の補充が終わるのを待つ
+        if: github.event.inputs.start_from != 'p4'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for i in $(seq 1 120); do
+            n=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ct-backfill.yml \
+                  --json status --jq '[.[] | select(.status == "in_progress")] | length')
+            [ "$n" = "0" ] && exit 0
+            [ "$i" = "1" ] && echo "CT の補充が走っている。終わるのを待つ" >> "$GITHUB_STEP_SUMMARY"
+            sleep 30
+          done
+          echo "CT の補充が 60 分たっても終わらない。待たずに進む" >> "$GITHUB_STEP_SUMMARY"
+
       - name: P2 ドメイン候補生成
         if: github.event.inputs.start_from != 'p4'
         continue-on-error: true
