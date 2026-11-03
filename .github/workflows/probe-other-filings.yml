@@ -1,0 +1,170 @@
+name: 年次報告書以外の届出から公式サイトが取れるか調べる
+
+# BACKLOG 28。米国 2026-11 で年次報告書とプレスリリースのあとも起点が無い
+# 220 社は、CIK が 20 億番台（ここ 1〜2 年の新規上場）が多い。まだ年次
+# 報告書を出していない会社は、目論見書（S-1 / F-1 / 424B4）の
+# 「Corporate Information」に「Our website address is …」と書く。
+#
+# 起点の無い会社について、最新の目論見書・委任状説明書（DEF 14A）・四半期
+# 報告書（10-Q）を1本ずつ読み、年次報告書と同じ読み方（annual_report の
+# stated_domains）で自社サイトが取れるかを様式ごとに数える。手で起こすとき
+# だけ動く。
+#
+# SEC の作法は P1 と同じ：連絡先つきの User-Agent、10 req/s 未満
+# （SecEdgarClient）。1社あたり最大 4 本、1本あたりの量に上限を置く。結果
+# （社名・ドメイン）は成果物（7日）、ログには件数だけ出す。
+
+on:
+  workflow_dispatch:
+    inputs:
+      month:
+        description: 起点の無い会社を取る月（その月の silver を使う）
+        required: false
+        default: "2026-11"
+      sample:
+        description: 調べる社数の上限
+        required: false
+        default: "300"
+
+permissions:
+  contents: read
+  actions: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      MAILAUTH_CONTACT_EMAIL: ${{ secrets.MAILAUTH_CONTACT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 入れる
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: その月の silver を取ってくる
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NAME: silver-us-all-listed-${{ inputs.month }}
+        run: |
+          RUNS=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$NAME&per_page=20" \
+                  --jq '[.artifacts[] | select(.expired | not) | .workflow_run.id] | .[]')
+          for RUN in $RUNS; do
+            TMP=$(mktemp -d)
+            gh run download "$RUN" --repo "$GITHUB_REPOSITORY" -n "$NAME" -D "$TMP" || continue
+            P7="$TMP/p7_aggregate/_manifest.json"
+            if [ -f "$P7" ] && [ "$(jq -r '.status' "$P7")" != "failed" ]; then
+              mkdir -p silver && cp -a "$TMP/." silver/
+              echo "$NAME を run $RUN から取った" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          done
+          echo "$NAME の使える silver が無い" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: 届出を様式ごとに読んで比べる
+        env:
+          SAMPLE: ${{ inputs.sample }}
+        run: |
+          if [ -z "$MAILAUTH_CONTACT_EMAIL" ]; then
+            echo "MAILAUTH_CONTACT_EMAIL が無い（SEC は連絡先つきの User-Agent を必須とする）" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          mkdir -p out
+          python - <<'PY'
+          import json, os, re
+          from collections import Counter
+          import pandas as pd
+          from mailauth.p1_population.annual_report import (
+              ARCHIVE_URL, MAX_BYTES, _plain_text, pick_domain, stated_domains,
+          )
+          from mailauth.p1_population.sec_edgar import SUBMISSIONS_URL, SecEdgarClient
+
+          GROUPS = {
+              "annual": ("10-K", "20-F", "40-F"),
+              "prospectus": ("424B4", "424B1", "424B3", "424B5", "S-1", "S-1/A", "F-1",
+                             "F-1/A", "S-11", "S-11/A", "F-4", "F-4/A", "S-4", "S-4/A",
+                             "10-12B", "10-12B/A", "10-12G", "10-12G/A", "1-A", "253G2"),
+              "proxy": ("DEF 14A", "DEFM14A", "PRE 14A"),
+              "quarterly": ("10-Q",),
+          }
+          df = pd.read_parquet("silver/p1_population/entities.parquet")
+          rows = df[df["official_domain"].isna() & df["cik"].notna()]
+          rows = rows.head(int(os.environ["SAMPLE"]))
+          sec = SecEdgarClient()
+          out = []
+          counts = Counter()
+          counts["companies"] = len(rows)
+          for _, r in rows.iterrows():
+              rec = {"name": r["name"], "cik": r["cik"], "by_group": {}}
+              try:
+                  sub = sec.get_json(SUBMISSIONS_URL.format(cik=int(r["cik"])))
+              except Exception as exc:  # noqa: BLE001
+                  counts["submissions_failed"] += 1
+                  rec["error"] = str(exc)
+                  out.append(rec)
+                  continue
+              recent = ((sub or {}).get("filings") or {}).get("recent") or {}
+              forms = recent.get("form") or []
+              acc = recent.get("accessionNumber") or []
+              docs = recent.get("primaryDocument") or []
+              rec["forms_seen"] = dict(Counter(forms).most_common(12))
+              any_found = None
+              for group, wanted in GROUPS.items():
+                  idx = next((i for i, f in enumerate(forms)
+                              if f in wanted and i < len(docs) and docs[i]), None)
+                  if idx is None:
+                      rec["by_group"][group] = "none_filed"
+                      counts[f"{group}.none_filed"] += 1
+                      continue
+                  url = ARCHIVE_URL.format(cik=int(r["cik"]),
+                                           accession=acc[idx].replace("-", ""),
+                                           document=docs[idx])
+                  try:
+                      raw = sec.get_text(url, max_bytes=MAX_BYTES) or ""
+                  except Exception as exc:  # noqa: BLE001
+                      rec["by_group"][group] = f"fetch_failed: {exc}"
+                      counts[f"{group}.fetch_failed"] += 1
+                      continue
+                  found, hosts, _ = stated_domains(raw, r["name"])
+                  dom = pick_domain(found)
+                  entry = {"form": forms[idx], "url": url, "domain": dom}
+                  if not dom:
+                      text = _plain_text(raw)
+                      entry["snippets"] = [
+                          text[max(0, x.start() - 150): x.end() + 150]
+                          for x in re.finditer(r"web\s*site|internet address|home\s*page", text, re.I)
+                      ][:3]
+                      counts[f"{group}.read_not_found"] += 1
+                  else:
+                      counts[f"{group}.found"] += 1
+                      any_found = any_found or (group, dom)
+                  rec["by_group"][group] = entry
+              if any_found:
+                  counts["companies_found_any"] += 1
+                  counts[f"first_found_in.{any_found[0]}"] += 1
+                  rec["first_found"] = list(any_found)
+              out.append(rec)
+          sec.close()
+          counts = dict(sorted(counts.items()))
+          json.dump({"counts": counts, "rows": out}, open("out/probe.json", "w"),
+                    ensure_ascii=False, indent=1)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write("```\n" + json.dumps(counts, ensure_ascii=False, indent=1) + "\n```\n")
+          print(json.dumps(counts, ensure_ascii=False))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-other-filings-${{ inputs.month }}
+          path: out/
+          retention-days: 7
