@@ -60,6 +60,7 @@ source:
     # **最後に置く。まだ空欄の企業だけ。** 英字社名から .co.jp を推測し、
     # そのサイトに日本語の商号が載っているかで確かめる（co_jp_guess.py）
     - co_jp_homepage
+    - jawiki_infobox
 
   # 法人番号（P3225）で突合して公式サイト（P856）を補う。CC0
   wikidata_identity_query: configs/populations/_sparql/jp_houjin_identity.rq
@@ -90,3 +91,4 @@ attribution:
   - "出典：国税庁法人番号公表サイト（国税庁）"
   - "出典：経済産業省gBizINFO"
   - "Source: Wikidata (CC0)"
+  - "出典：ウィキペディア日本語版（CC BY-SA 4.0）── 公式サイトの URL のみ"

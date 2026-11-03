@@ -233,7 +233,8 @@ def test_国内の母集団は最後にこの経路を使う():
         enrich = yaml.safe_load(open(f"configs/populations/{name}.yaml", encoding="utf-8"))[
             "source"
         ]["enrich"]
-        assert enrich[-1] == "co_jp_homepage", f"{name}: 最後に置いていない（{enrich}）"
+        # 推測は政府の情報と Wikidata のあと。そのあとはウィキペディアの基礎情報だけ
+        assert enrich[-2:] == ["co_jp_homepage", "jawiki_infobox"], f"{name}: 順が違う（{enrich}）"
 
 
 def test_持株会社とフィナンシャルグループは決まった形も試す():
