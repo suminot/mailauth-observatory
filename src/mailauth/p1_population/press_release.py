@@ -38,7 +38,8 @@ MAX_RELEASES = 3
 MAX_BYTES = 1_000_000
 
 #: 読み方を変えたら上げる。版が違うキャッシュは読み直す
-EXTRACTOR_VERSION = 1
+#: 2 で新しい gTLD を読むようにした（annual_report._candidate、BACKLOG 28）
+EXTRACTOR_VERSION = 2
 
 INDEX_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/index.json"
 FILE_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/{name}"

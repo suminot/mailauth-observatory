@@ -2172,6 +2172,32 @@ Fund II に `robinhood.com`（ファンドなので本来は外す対象。N-2 �
 
 順は 年次報告書 → 目論見書・登録届出 → 委任状説明書 → プレスリリース。
 
+### 新しい gTLD を捨てていた（版 4）
+
+どの届出でも取れなかった 78 社の抜き書きを読むと、**自社サイトの句の直後に
+書いてあるのに捨てていた**ものがあった：`www.sab.bio`・`www.tyra.bio`・
+`www.kardigan.bio`・`www.braveheart.bio`・`trex.bio`・`www.nocera.company`・
+`www.beta.team`・`www.br.coffee`・`c3is.pro`・`www.chct.reit`・
+`investors.nautilus.bio`。TLD を手で並べた許可リストに無かった。
+
+- `www.` か `https://` が付いていれば、**公開接尾辞リストにある TLD は
+  すべて読む**
+- 付いていないときは、許可リストに `.bio`・`.reit`・`.pro` など英語の文頭に
+  来ない語だけを足した。**`.report` も `.company` も実在の TLD** なので、
+  「report.Company」の詰まりを拾わないようにしてある
+- 「The Company maintains an internet address at」も読む
+- 年次報告書の版を 4、プレスリリースの版を 2 に。取れていなかったものだけ
+  読み直す
+
+### 国内の再 probe（本番の読み方、run 41652784874）
+
+**72 社**（記事が無い 248、基礎情報の無い記事 25、コードが合わない 10、外部
+リンクが無い 1）。1回目から外れた 5 社のうち、ビジョナル → `bizreach.co.jp` と
+日本創発グループ → `lithmatic.net` は**市場情報の欄に証券コードが無かった**
+（別の記事だった）。増えた 8 社は `{{URL|…}}` の書き方を読んだもの
+（ダブルスタンダード → `double-std.com`。.jp の推測が誤って採った
+`doublestandard.jp` とは別）。
+
 ## 7. 規模に対する前提
 
 いまの国内 1 母集団では問題にならないが、DESIGN.md の 30,000 ドメインでは

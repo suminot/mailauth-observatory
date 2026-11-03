@@ -66,7 +66,10 @@ MAX_BYTES = 24_000_000
 #: 3 から、**取れていた結果は読み直さない**（`_stale`）。読み方を広げた
 #: だけなので、取れていたものは変わらない。全部読み直すと SEC から
 #: 数 GB を引き直すことになる
-EXTRACTOR_VERSION = 3
+#:
+#: 4 で新しい gTLD（`.bio`・`.company`・`.coffee` など）を読むようにした
+#: （BACKLOG 28）。取れていなかったものだけ読み直す
+EXTRACTOR_VERSION = 4
 
 #: 「自社の」サイトであることを示す書き方。**ここが所有の根拠になる。**
 #:
@@ -84,7 +87,7 @@ _SELF_PHRASE = re.compile(
     # 2026-11-03 の probe で、取れなかった 123 社の多くがこの書き方だった
     r"|\b(?:we|the\s+(?:company|corporation|registrant|partnership|bank))\s+"
     r"(?:also\s+)?(?:maintains?|ha(?:s|ve)\s+established)\s+(?:a|an)\s+"
-    r"(?:corporate\s+|internet\s+)?(?:website|web\s+site|internet\s+site)",
+    r"(?:corporate\s+|internet\s+)?(?:website|web\s+site|internet\s+(?:site|address))",
     re.I,
 )
 
@@ -114,6 +117,16 @@ _TLD_ALLOW = re.compile(
     r"energy|capital|financial|insurance|holdings|gov|edu|[a-z]{2})$",
     re.I,
 )
+
+#: 新しい gTLD のうち、`www.` も `https://` も付けずに書かれていても読むもの。
+#: **英語の文頭に来る語は入れない**（「report.Company」の詰まりを拾わない。
+#: `.report` も `.company` も実在の TLD）。`www.` か `https://` が付いて
+#: いれば、公開接尾辞リストにある TLD はすべて読む。
+#:
+#: 2026-11-03 の probe で、`www.sab.bio`・`www.tyra.bio`・`trex.bio`・
+#: `www.nocera.company`・`www.beta.team`・`www.br.coffee`・`c3is.pro`・
+#: `www.chct.reit` を、自社サイトの句の直後なのに捨てていた
+_BARE_NEW_GTLD = frozenset({"bio", "reit", "pro", "app", "dev", "xyz", "cloud"})
 
 #: 「自社の」の直後に書かれていても、その会社のものではないドメイン
 THIRD_PARTY = frozenset(
@@ -301,6 +314,13 @@ def _plain_text(raw: str) -> str:
 _GENERIC_CC = frozenset({"us", "io", "ai", "co", "tv", "me"})
 
 
+def _known_tld(tld: str) -> bool:
+    """公開接尾辞リストにある TLD か（「Inc.All」の `all` を通さない）。"""
+    from ..normalize import _psl
+
+    return _psl().publicsuffix(tld, accept_unknown=False) is not None
+
+
 def _candidate(token: str) -> tuple[str, str] | None:
     """ドメインに見える語を (書かれたホスト, eTLD+1) にする。使えなければ None。
 
@@ -313,7 +333,8 @@ def _candidate(token: str) -> tuple[str, str] | None:
         return None
     tld = host.rsplit(".", 1)[-1]
     if not _TLD_ALLOW.match(tld):
-        return None
+        if not (explicit or tld in _BARE_NEW_GTLD) or not _known_tld(tld):
+            return None
     if len(tld) == 2 and tld not in _GENERIC_CC and not explicit:
         return None
     domain = etld_plus_one(host)

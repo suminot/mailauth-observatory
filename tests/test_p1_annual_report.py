@@ -514,3 +514,38 @@ def test_主語が自社でなければ_maintains_を読まない():
     assert pick_domain(stated_domains(text)[0]) is None
     text2 = "The agency maintains a website at www.example-agency.org with rules."
     assert pick_domain(stated_domains(text2)[0]) is None
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        # 2026-11-03 の probe で、自社サイトの句の直後なのに捨てていたもの
+        ("Our corporate website address is www.sab.bio.", {"sab.bio": 1}),
+        ("We maintain a website at www.tyra.bio, to which we post", {"tyra.bio": 1}),
+        ("Our corporate website address is trex.bio. Information", {"trex.bio": 1}),
+        ("Available Information Our website address is www.nocera.company .",
+         {"nocera.company": 1}),
+        ("our website is www.beta.team because we", {"beta.team": 1}),
+        ("Our website address is https://www.br.coffee. Our Form 10-K", {"br.coffee": 1}),
+        ("Our website address is http://c3is.pro. The information", {"c3is.pro": 1}),
+        ("the Investor Relations tab of the Company's website (www.chct.reit).",
+         {"chct.reit": 1}),
+        ("The Company maintains an internet address at https://www.nclogistics.com.hk/ .",
+         {"nclogistics.com.hk": 1}),
+    ],
+)
+def test_新しい_gTLD_も自社サイトとして読む(text, expected):
+    assert _domains(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # `.report` も `.company` も実在の TLD。www. も https:// も無い詰まりは読まない
+        "Our website is not part of this annual report.Company filings are",
+        "Our website address is listed in this Inc.All rights reserved",
+        "Our website, as described in the report.The Company",
+    ],
+)
+def test_文の詰まりを新しい_gTLD_と取り違えない(text):
+    assert _domains(text) == {}
