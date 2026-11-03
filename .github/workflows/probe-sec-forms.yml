@@ -1,0 +1,114 @@
+name: SEC の届出の種類から事業会社でないものの判定を確かめる
+
+# BACKLOG 28。米国の母集団に、業種コードが無く社名が Fund のもの（NUVEEN
+# MUNICIPAL VALUE FUND INC・GABELLI CONVERTIBLE & INCOME SECURITIES FUND INC
+# など）が残っている。登録投資会社は N-CSR / NPORT-P を出すので外れるはずで、
+# submissions の recent に何が入っているかを見る。
+#
+# SEC の作法は P1 と同じ（SecEdgarClient：連絡先つきの User-Agent、10 req/s
+# 未満）。手で起こすときだけ動く。結果は成果物（7日）、ログは件数だけ。
+
+on:
+  workflow_dispatch:
+    inputs:
+      month:
+        description: 母集団を取る月（その月の silver を使う）
+        required: false
+        default: "2026-11"
+      pattern:
+        description: 調べる社名（正規表現、大文字小文字を区別しない）
+        required: false
+        default: "\\b(fund|trust|etf|etp)\\b"
+
+permissions:
+  contents: read
+  actions: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MAILAUTH_CONTACT_EMAIL: ${{ secrets.MAILAUTH_CONTACT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 入れる
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: その月の silver を取ってくる
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NAME: silver-us-all-listed-${{ inputs.month }}
+        run: |
+          RUNS=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$NAME&per_page=20" \
+                  --jq '[.artifacts[] | select(.expired | not) | .workflow_run.id] | .[]')
+          for RUN in $RUNS; do
+            TMP=$(mktemp -d)
+            gh run download "$RUN" --repo "$GITHUB_REPOSITORY" -n "$NAME" -D "$TMP" || continue
+            P7="$TMP/p7_aggregate/_manifest.json"
+            if [ -f "$P7" ] && [ "$(jq -r '.status' "$P7")" != "failed" ]; then
+              mkdir -p silver && cp -a "$TMP/." silver/
+              exit 0
+            fi
+          done
+          exit 1
+
+      - name: 届出の種類を見る
+        env:
+          PATTERN: ${{ inputs.pattern }}
+        run: |
+          if [ -z "$MAILAUTH_CONTACT_EMAIL" ]; then
+            echo "MAILAUTH_CONTACT_EMAIL が無い" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          mkdir -p out
+          python - <<'PY'
+          import json, os, re
+          import pandas as pd
+          from mailauth.p1_population.non_operating import (
+              FUND_FORMS, OPERATING_FORMS, classify,
+          )
+          from mailauth.p1_population.sec_edgar import SecEdgarClient
+
+          pat = re.compile(os.environ["PATTERN"], re.I)
+          df = pd.read_parquet("silver/p1_population/entities.parquet")
+          rows = df[df["name"].str.contains(pat) & df["cik"].notna()]
+          # 業種コードがあり、事業会社らしい（REIT 6798 など）ものは見ない
+          rows = rows[rows["industry_code"].isna()]
+          sec = SecEdgarClient()
+          out, counts = [], {"companies": len(rows), "would_exclude": 0}
+          for _, r in rows.iterrows():
+              facts = sec.facts_for_cik(str(r["cik"]))
+              forms = sorted(facts.forms)
+              reason = classify(None, facts.forms, r["name"])
+              if reason:
+                  counts["would_exclude"] += 1
+              out.append({
+                  "name": r["name"], "cik": r["cik"], "reason_now": reason,
+                  "fund_forms": sorted(set(forms) & FUND_FORMS),
+                  "operating_forms": sorted(set(forms) & OPERATING_FORMS),
+                  "forms": forms[:40],
+              })
+          sec.close()
+          json.dump({"counts": counts, "rows": out}, open("out/probe.json", "w"),
+                    ensure_ascii=False, indent=1)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write("```\n" + json.dumps(counts, ensure_ascii=False) + "\n```\n")
+          print(json.dumps(counts))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-sec-forms-${{ inputs.month }}
+          path: out/
+          retention-days: 7
