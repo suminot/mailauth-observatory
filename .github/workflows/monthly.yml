@@ -192,6 +192,7 @@ jobs:
             data/cache/houjin_bangou
             data/cache/sec_edgar
             data/cache/edinet
+            data/cache/wikidata
           key: enrich-${{ steps.run.outputs.id }}-${{ github.run_id }}
           restore-keys: |
             enrich-${{ steps.run.outputs.id }}-
@@ -376,6 +377,7 @@ jobs:
             data/cache/houjin_bangou
             data/cache/sec_edgar
             data/cache/edinet
+            data/cache/wikidata
           key: enrich-${{ steps.run.outputs.id }}-${{ github.run_id }}
 
       - name: P2 ドメイン候補生成

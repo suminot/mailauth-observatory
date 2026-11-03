@@ -73,12 +73,17 @@ class DegradedRunError(RuntimeError):
 #: 欠け方は同じなので、既にある gold を小さく上書きしないのも同じ
 DEGRADATION_WARNINGS = ("CT_UPSTREAM_UNAVAILABLE", "CT_FETCH_BUDGET_SPENT")
 
+#: P1 の補完が引けなかった印。公式サイトの欠けが増え、起点が無い企業は
+#: P2 で候補ゼロになる。2026-11-02 の国内の流し直しは Wikidata の
+#: StreamReset 1回で欠けが 405 → 1,021 社になり、そのまま公開しかけた
+P1_DEGRADATION_WARNINGS = ("ENRICH_FAILED_WIKIDATA",)
 
-def _p2_warning_codes(run_id: str) -> list[str]:
-    """P2 の manifest に出ている警告コード。manifest が無い・読めなければ空。"""
+
+def _phase_warning_codes(run_id: str, phase: str) -> list[str]:
+    """その工程の manifest に出ている警告コード。manifest が無い・読めなければ空。"""
     from ..manifest import MANIFEST_FILENAME
 
-    path = phase_dir(run_id, "p2_candidates") / MANIFEST_FILENAME
+    path = phase_dir(run_id, phase) / MANIFEST_FILENAME
     if not path.is_file():
         return []
     try:
@@ -88,10 +93,19 @@ def _p2_warning_codes(run_id: str) -> list[str]:
     return [str(w.get("code") or "") for w in data.get("warnings") or []]
 
 
+def _p2_warning_codes(run_id: str) -> list[str]:
+    return _phase_warning_codes(run_id, "p2_candidates")
+
+
 def degraded_by(run_id: str) -> str | None:
-    """P2 が「相手が落ちていた」と書いていたら、その警告コードを返す。"""
+    """P2 が「相手が落ちていた」、P1 が「補完を引けなかった」と書いていたら、
+    その警告コードを返す。"""
     codes = _p2_warning_codes(run_id)
-    return next((c for c in codes if c in DEGRADATION_WARNINGS), None)
+    found = next((c for c in codes if c in DEGRADATION_WARNINGS), None)
+    if found:
+        return found
+    p1 = _phase_warning_codes(run_id, "p1_population")
+    return next((c for c in p1 if c in P1_DEGRADATION_WARNINGS), None)
 
 
 def shrinking_populations(new_rows: list[dict], existing_path: Path) -> list[str]:
@@ -499,10 +513,10 @@ def run(
                 )
                 if shrinking:
                     raise DegradedRunError(
-                        f"{run_id} の P2 は相手が落ちていた（{degraded}）。"
+                        f"{run_id} は相手が落ちていた・引けなかった（{degraded}）。"
                         "**既にある gold より分母が小さくなるので上書きしない:** "
                         + "、".join(shrinking)
-                        + "。縮んだのは実態ではなく、CT を引けなかったためである。"
+                        + "。縮んだのは実態ではなく、CT か補完を引けなかったためである。"
                         "相手が戻ってから同じ run_id で流し直すこと"
                     )
                 manifest.add_warning(
