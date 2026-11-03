@@ -40,10 +40,10 @@
 | `mx.cloudflare.net` | 3 | 1 | `linda.mx.cloudflare.net`, `isaac.mx.cloudflare.net`, `amir.mx.cloudflare.net` |
 | `admiral.ne.jp` | 2 | 1 | `xmx01.admiral.ne.jp`, `zmx00.admiral.ne.jp` |
 | `aics.ne.jp` | 2 | 1 | `amxi.aics.ne.jp` |
-| `betrend.com` | 2 | 1 | `mail.jp.betrend.com` |
 | `cyberlinks.ad.jp` | 2 | 1 | `ppgw-a01.cyberlinks.ad.jp`, `ppgw-a02.cyberlinks.ad.jp` |
 | `daum.net` | 2 | 1 | `alt.aspmx.daum.net`, `aspmx.daum.net` |
 | `denso-ts.it` | 2 | 1 | `trendmail02.denso-ts.it`, `trendmail01.denso-ts.it` |
+| `falcom.co.jp` | 2 | 1 | `mx1.falcom.co.jp`, `mx2.falcom.co.jp` |
 | `fitweb.or.jp` | 2 | 1 | `mail02.van.fitweb.or.jp`, `mail01.van.fitweb.or.jp` |
 | `gol.com` | 2 | 1 | `mx2.mail.gol.com`, `mx.mail.gol.com` |
 | `hmng.net` | 2 | 1 | `sb03h.hmng.net`, `sb04h.hmng.net` |
@@ -101,10 +101,10 @@
 | `gmocloud.com` | 1 | 1 | `mx.gmocloud.com` |
 | `greatsimplex.com` | 1 | 1 | `mx2.greatsimplex.com` |
 | `gungho.jp` | 1 | 1 | `mail.gungho.jp` |
+| `h-email.net` | 1 | 1 | `mail.h-email.net` |
 | `hammock.co.jp` | 1 | 1 | `mail.hammock.co.jp` |
+| `hetemail.jp` | 1 | 1 | `mx.hetemail.jp` |
 | `holo.ne.jp` | 1 | 1 | `rabbit.holo.ne.jp` |
-| `home-s.net` | 1 | 1 | `ns-01.home-s.net` |
-| `housei-inc.com` | 1 | 1 | `tokyo-proxy.housei-inc.com` |
 
 ## 調査済み・同定できなかったもの（7 件）
 
