@@ -27,9 +27,14 @@
   ロイヤルティ信託・    業種コード 6189（資産担保証券）すべてと、6792（石油ロイヤルティ）
   仕組み債の信託        のうち名称に Trust があるもの。受託銀行が管理するだけの器で、
                        Texas Pacific Land など 6792 の事業会社は残す
-  登録投資会社          投資会社の届出（N-CSR・NPORT-P・N-2 など）を出していて、
-                       10-K / 10-Q / 20-F / 40-F を出していない
-                       （BDC は 10-K を出す会社なので残る）
+  登録投資会社          **登録投資会社だけが出す届出**（N-CSR・N-CSRS・NPORT-P・
+                       N-CEN など）を出していれば、10-K / 10-Q が混じっていても
+                       外す（2026-11、Nuveen Municipal Value Fund と Gabelli
+                       Convertible & Income Securities Fund は過去の 10-K / 10-Q
+                       が1本ずつ混じっていて残っていた）。N-2 だけなら、
+                       10-K / 10-Q / 20-F / 40-F を出していないときだけ外す
+                       （BDC は N-2 と 10-K を出すが、N-CSR / NPORT-P は出さない
+                       ので残る）
 """
 
 from __future__ import annotations
@@ -68,6 +73,11 @@ FUND_FORMS = frozenset(
     {"N-CSR", "N-CSRS", "NPORT-P", "N-CEN", "N-2", "N-2/A", "N-1A", "485BPOS", "N-30D", "N-Q"}
 )
 
+#: 1940年投資会社法の登録投資会社だけが出す定期報告。**BDC は出さない**
+#: （BDC は 1940年法の登録を免れ、10-K / 10-Q を出す）。これを出していれば、
+#: 過去の 10-K / 10-Q が混じっていても登録投資会社と見なす
+REGISTERED_ONLY_FORMS = frozenset({"N-CSR", "N-CSRS", "NPORT-P", "N-CEN", "N-30D", "N-Q"})
+
 #: 事業会社が出す定期報告。これを出していれば登録投資会社とは見なさない
 OPERATING_FORMS = frozenset({"10-K", "10-K/A", "10-Q", "20-F", "40-F"})
 
@@ -97,6 +107,8 @@ def classify(sic: str | None, forms: Iterable[str] | None, name: str | None) -> 
     if code == ASSET_BACKED_SIC or (code == ROYALTY_SIC and _TRUST_NAME.search(name or "")):
         return PASSIVE_TRUST
     filed = set(forms or ())
+    if filed & REGISTERED_ONLY_FORMS:
+        return REGISTERED_FUND
     if filed & FUND_FORMS and not filed & OPERATING_FORMS:
         return REGISTERED_FUND
     return None
