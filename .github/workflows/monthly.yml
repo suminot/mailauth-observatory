@@ -390,11 +390,28 @@ jobs:
         if: github.event.inputs.start_from != 'p4'
         env:
           GH_TOKEN: ${{ github.token }}
+        # **待つのは、補充が crt.sh を叩くと決めたあとだけ。** 補充は始めに
+        # 「月次計測が走っていないか」を最大 10 分待って確かめる。その間に
+        # こちらも待つと、お互いを待って 7 分空いた（2026-11-03、run 59）。
+        # 確かめ終えて「補充」がまだ終わっていない実行だけを数える
+        # （月次計測を見て止めた実行は「補充」が skipped で終わる）
         run: |
+          busy() {
+            local n=0 id
+            for id in $(gh run list --repo "$GITHUB_REPOSITORY" --workflow ct-backfill.yml \
+                          --status in_progress --json databaseId --jq '.[].databaseId'); do
+              if gh run view "$id" --repo "$GITHUB_REPOSITORY" --json jobs --jq '
+                  [.jobs[].steps] | any(
+                    (map(select(.name == "月次計測が走っていないか確かめる" and .status == "completed")) | length > 0)
+                    and (map(select(.name == "補充" and .status != "completed")) | length > 0))' \
+                  | grep -q true; then
+                n=$((n + 1))
+              fi
+            done
+            echo "$n"
+          }
           for i in $(seq 1 120); do
-            n=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ct-backfill.yml \
-                  --json status --jq '[.[] | select(.status == "in_progress")] | length')
-            [ "$n" = "0" ] && exit 0
+            [ "$(busy)" = "0" ] && exit 0
             [ "$i" = "1" ] && echo "CT の補充が走っている。終わるのを待つ" >> "$GITHUB_STEP_SUMMARY"
             sleep 30
           done
