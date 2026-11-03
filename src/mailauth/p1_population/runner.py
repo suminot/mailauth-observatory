@@ -1382,7 +1382,7 @@ def _run_sec(
         missing = [e for e in entities if not e.official_domain]
         found: list[tuple[Any, str, str]] = []
         for entity in missing:
-            website = reader.website_for(annual_reports.get(entity.cik or ""))
+            website = reader.website_for(annual_reports.get(entity.cik or ""), entity.name)
             domain = domain_from_url(website) if website else None
             if domain:
                 found.append((entity, website, domain))

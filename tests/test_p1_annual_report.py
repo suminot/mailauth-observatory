@@ -391,7 +391,7 @@ def test_読み方が変わったらキャッシュを読み直す(tmp_path):
     path = client.cache_dir / "annual_website" / f"{report.accession}.json"
     path.parent.mkdir(parents=True)
     path.write_text(
-        json.dumps({"domain": "stale.com", "extractor_version": EXTRACTOR_VERSION - 1})
+        json.dumps({"domain": "stale.com", "extractor_version": 1})
     )
     reader = AnnualReportWebsites(client)
     assert reader.website_for(report) == "https://www.acme.com"
@@ -447,3 +447,70 @@ def test_複数社に書かれたドメインは社名と合う会社にだけ�
     codes = {w["code"] for w in result["warnings"]}
     assert "SEC_ANNUAL_REPORT_SHARED_DOMAIN" in codes
     assert result["breakdown"]["sec_annual_report"]["shared_dropped"] == 2
+
+
+def test_版2で取れていた結果は読み直さない_取れていなかったものだけ読む(tmp_path):
+    """読み方を広げただけなので、取れていたものは変わらない。**SEC から引き直さない。**"""
+    found, missing = _report(1), _report(2)
+    client = _FakeClient(
+        tmp_path,
+        {
+            found.url: "Our website is www.new.com.",
+            missing.url: "We maintain a website at www.acme.com.",
+        },
+    )
+    base = client.cache_dir / "annual_website"
+    base.mkdir(parents=True)
+    (base / f"{found.accession}.json").write_text(
+        json.dumps({"domain": "acme.com", "host": "www.acme.com", "extractor_version": 2})
+    )
+    (base / f"{missing.accession}.json").write_text(
+        json.dumps({"domain": None, "extractor_version": 2})
+    )
+    reader = AnnualReportWebsites(client)
+    assert reader.website_for(found) == "https://www.acme.com"
+    assert reader.website_for(missing) == "https://www.acme.com"
+    assert reader.stats.stale_cache == 1
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Available Information The Company maintains a website at www.acme.com. The Company",
+        "AVAILABLE INFORMATION We maintain a website at www.acme.com. Annual reports",
+        "We maintain an internet website at www.acme.com. We make available",
+        "We also maintain an internet website at www.acme.com, where we make",
+        "We have established a website at www.acme.com that contains",
+        "Our main corporate website address is http://www.acme.com . We make",
+        "The Corporation's website address is www.acme.com . Information",
+        "The Bank’s website is www.acme.com. Financial conducts",
+        "We maintain a website with the address www.acme.com. We are not",
+    ],
+)
+def test_2026_11_の_probe_で取りこぼしていた書き方(text):
+    assert pick_domain(stated_domains(text)[0]) == "acme.com"
+
+
+def test_自社の名前を所有格にした書き方は名前が合うときだけ読む():
+    text = "OGE Energy's website address is www.oge.com. Through OGE Energy's website"
+    assert pick_domain(stated_domains(text, "OGE ENERGY CORP.")[0]) == "oge.com"
+    pge = "available free of charge on PG&E Corporation’s website, www.pgecorp.com, as"
+    assert pick_domain(stated_domains(pge, "PG&E Corp")[0]) == "pgecorp.com"
+    # 名前が無ければ読まない
+    assert pick_domain(stated_domains(text)[0]) is None
+
+
+def test_他者の所有格は読まない():
+    """「Capella University’s website」は子会社の大学、「the SEC's」は第三者。"""
+    text = (
+        "Capella University’s website www.capella.edu describes the requirements. "
+        "The SEC's website is at www.sec.gov. NHC's website is not part of this report."
+    )
+    assert pick_domain(stated_domains(text, "Strategic Education, Inc.")[0]) is None
+
+
+def test_主語が自社でなければ_maintains_を読まない():
+    text = "The SEC maintains a website at www.sec.gov that contains reports."
+    assert pick_domain(stated_domains(text)[0]) is None
+    text2 = "The agency maintains a website at www.example-agency.org with rules."
+    assert pick_domain(stated_domains(text2)[0]) is None
