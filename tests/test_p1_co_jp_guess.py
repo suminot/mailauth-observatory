@@ -639,3 +639,77 @@ def test_少しずつ送り続ける相手は時間で切って読めた分で�
     g = runner._live_co_jp_guesser("ops@example.invalid", transport=transport)
     page = g.fetch("https://www.example.co.jp/")
     assert page is not None and "株式会社テスト" in page
+
+
+# -- 英字だけのタイトル・フレーム・スクリプトで飛ばす入口 ------------------------
+
+
+def test_タイトルに英字社名がそのまま載っていれば採る():
+    """sumida.com のタイトルは「SUMIDA CORPORATION」で、日本語の商号が無い。"""
+    from mailauth.p1_population.co_jp_guess import CoJpGuesser
+
+    web = _Web(
+        {"sumida.com"},
+        {"https://www.sumida.com/": "<title>SUMIDA CORPORATION</title>"},
+    )
+    g = CoJpGuesser(web.exists, web.fetch)
+    assert g.domain_for("スミダコーポレーション株式会社", "SUMIDA CORPORATION") == "sumida.com"
+
+
+def test_短い英字社名だけのタイトルでは決めない():
+    from mailauth.p1_population.co_jp_guess import title_names_company_en
+
+    assert not title_names_company_en("<title>RISE</title>", "RISE CO., LTD.")
+    assert not title_names_company_en("<title>FUJI</title>", "FUJI SEAL INTERNATIONAL,INC.")
+    # 法人格込みでも、社名部分が短すぎれば採らない
+    assert not title_names_company_en("<title>RISE CO.,LTD.</title>", "RISE CO., LTD.")
+    # 長い英字社名は法人格が無くても採る
+    assert title_names_company_en(
+        "<title>Fuji Seal International | Top</title>", "FUJI SEAL INTERNATIONAL,INC."
+    )
+
+
+def test_フレームで組んだ入口は同じドメインの中の中身を読む():
+    from mailauth.p1_population.co_jp_guess import CoJpGuesser
+
+    web = _Web(
+        {"medialinks.co.jp"},
+        {
+            "https://www.medialinks.co.jp/": (
+                '<frameset rows="*"><frame src="top/index.html"></frameset>'
+            ),
+            "https://www.medialinks.co.jp/top/index.html": (
+                "<title>株式会社メディアリンクス</title>"
+            ),
+        },
+    )
+    g = CoJpGuesser(web.exists, web.fetch)
+    assert g.domain_for("株式会社メディアリンクス", "Medialinks Co.,Ltd.") == "medialinks.co.jp"
+
+
+def test_スクリプトで飛ばす入口は同じドメインの中なら読む():
+    from mailauth.p1_population.co_jp_guess import entry_redirect_target
+
+    page = "<script>location.href = '/jp/index.html';</script>"
+    assert entry_redirect_target(page, "https://www.abc.co.jp/", "abc.co.jp") == (
+        "https://www.abc.co.jp/jp/index.html"
+    )
+    page2 = '<script>window.location.replace("https://other.example/")</script>'
+    assert entry_redirect_target(page2, "https://www.abc.co.jp/", "abc.co.jp") is None
+
+
+def test_入口で確かめられたら飛び先は読まない():
+    """普通のページにも location.href はある。**先に追うと正しいページを捨てる。**"""
+    from mailauth.p1_population.co_jp_guess import CoJpGuesser
+
+    web = _Web(
+        {"muraki.co.jp"},
+        {
+            "https://www.muraki.co.jp/": (
+                "<title>ムラキ株式会社</title><script>location.href='/other/'</script>"
+            ),
+        },
+    )
+    g = CoJpGuesser(web.exists, web.fetch)
+    assert g.domain_for("ムラキ株式会社", "MURAKI CORPORATION") == "muraki.co.jp"
+    assert web.fetched == ["https://www.muraki.co.jp/"]
