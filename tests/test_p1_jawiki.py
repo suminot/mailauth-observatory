@@ -110,6 +110,13 @@ def test_基礎情報の無い記事からは取らない():
     assert reader.stats.no_company_infobox == 1
 
 
+def test_会社以外の基礎情報は数えて残す():
+    bank = "{{基礎情報 銀行\n| 銀行名 = テスト銀行\n| 外部リンク = https://www.test-bank.co.jp/\n}}"
+    reader = _reader({"テスト銀行": bank})
+    assert reader.websites_for([("jp:1", "株式会社テスト銀行", "83000")], taken=set()) == {}
+    assert reader.stats.to_dict()["other_infoboxes"] == {"基礎情報 銀行": 1}
+
+
 def test_他社に付いているドメインと_SNS_は採らない():
     pages = {
         "子会社": _article("1111", "https://www.parent.co.jp/"),

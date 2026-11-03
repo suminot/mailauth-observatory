@@ -43,6 +43,7 @@ RETRY_WAITS = (5.0, 20.0)
 
 _LEGAL_FORM = re.compile(r"^(株式会社|\(株\)|（株）)\s*|\s*(株式会社|\(株\)|（株）)$")
 _INFOBOX = re.compile(r"\{\{\s*基礎情報[ _]会社")
+_ANY_INFOBOX = re.compile(r"\{\{\s*((?:基礎情報|Infobox)[ _][^|}\n]{1,30})")
 _URL = re.compile(r"https?://[^\s\]\}|<>\"']+")
 _URL_TEMPLATE = re.compile(r"\{\{\s*URL\s*\|\s*([^|}\s]+)", re.IGNORECASE)
 
@@ -153,6 +154,8 @@ class JawikiStats:
     fetch_failed: int = 0
     requests: int = 0
     samples: list[str] = field(default_factory=list)
+    #: 会社の基礎情報が無い記事が使っていた基礎情報の名前と数
+    other_infoboxes: Counter[str] = field(default_factory=Counter)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -167,6 +170,7 @@ class JawikiStats:
             "fetch_failed": self.fetch_failed,
             "requests": self.requests,
             "sample_found": self.samples[:10],
+            "other_infoboxes": dict(self.other_infoboxes.most_common(10)),
         }
 
 
@@ -267,6 +271,11 @@ class JawikiWebsites:
             boxes = [b for b in (_infobox(t) for t in texts) if b is not None]
             if not boxes:
                 self.stats.no_company_infobox += 1
+                # どの基礎情報を使っている記事か（銀行・放送局など、会社以外の
+                # 形を使う記事を次に読むかの判断材料）
+                for t in texts:
+                    for m in _ANY_INFOBOX.finditer(t[:4000]):
+                        self.stats.other_infoboxes[m.group(1).strip()] += 1
                 continue
             mine = [b for b in boxes if code_listed(b, code)]
             if not mine:
