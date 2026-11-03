@@ -1,0 +1,151 @@
+name: 年次報告書から公式サイトが取れない理由を調べる
+
+# BACKLOG 27。米国の P1 で年次報告書から自社サイトが取れなかった会社
+# （2026-11 は not_stated 487、最後まで起点が無いのは 370 社）に、OGE Energy・
+# Telephone & Data Systems・Park National のような老舗が並んでいた。
+#
+# 読む先頭 4 MB（annual_report.MAX_BYTES）に「Available Information」が
+# 入っていないのか（inline XBRL の隠し見出しが先頭に数 MB ある）、書き方を
+# 拾えていないのかを分ける。手で起こすときだけ動く。
+#
+# SEC の作法は P1 と同じ：連絡先つきの User-Agent、10 req/s 未満
+# （SecEdgarClient）。読む社数と1本あたりの量に上限を置く。結果（社名・
+# ドメイン・本文の抜き書き）は成果物（7日）、ログには件数だけ出す。
+
+on:
+  workflow_dispatch:
+    inputs:
+      month:
+        description: 起点の無い会社を取る月（その月の silver を使う）
+        required: false
+        default: "2026-11"
+      sample:
+        description: 調べる社数の上限
+        required: false
+        default: "150"
+
+permissions:
+  contents: read
+  actions: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      MAILAUTH_CONTACT_EMAIL: ${{ secrets.MAILAUTH_CONTACT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 入れる
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: その月の silver を取ってくる
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NAME: silver-us-all-listed-${{ inputs.month }}
+        run: |
+          RUNS=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$NAME&per_page=20" \
+                  --jq '[.artifacts[] | select(.expired | not) | .workflow_run.id] | .[]')
+          for RUN in $RUNS; do
+            TMP=$(mktemp -d)
+            gh run download "$RUN" --repo "$GITHUB_REPOSITORY" -n "$NAME" -D "$TMP" || continue
+            P7="$TMP/p7_aggregate/_manifest.json"
+            if [ -f "$P7" ] && [ "$(jq -r '.status' "$P7")" != "failed" ]; then
+              mkdir -p silver && cp -a "$TMP/." silver/
+              echo "$NAME を run $RUN から取った" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          done
+          echo "$NAME の使える silver が無い" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: 年次報告書を全部読んで比べる
+        env:
+          SAMPLE: ${{ inputs.sample }}
+        run: |
+          if [ -z "$MAILAUTH_CONTACT_EMAIL" ]; then
+            echo "MAILAUTH_CONTACT_EMAIL が無い（SEC は連絡先つきの User-Agent を必須とする）" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          mkdir -p out
+          python - <<'PY'
+          import json, os, re
+          import pandas as pd
+          from mailauth.p1_population.annual_report import (
+              MAX_BYTES, _SELF_PHRASE, _plain_text, pick_domain, stated_domains,
+          )
+          from mailauth.p1_population.sec_edgar import SecEdgarClient
+
+          #: 1本あたり読む上限。全部読むのは調べるときだけ
+          FULL = 24_000_000
+          df = pd.read_parquet("silver/p1_population/entities.parquet")
+          rows = df[df["official_domain"].isna() & df["cik"].notna()]
+          rows = rows.head(int(os.environ["SAMPLE"]))
+          sec = SecEdgarClient()
+          out = []
+          counts = {"companies": len(rows), "no_annual_report": 0, "fetch_failed": 0,
+                    "found_in_head": 0, "found_only_after_head": 0, "not_stated_anywhere": 0,
+                    "mentions_website_but_not_matched": 0}
+          for _, r in rows.iterrows():
+              facts = sec.facts_for_cik(str(r["cik"]))
+              rep = facts.annual_report
+              rec = {"name": r["name"], "cik": r["cik"]}
+              if rep is None:
+                  counts["no_annual_report"] += 1
+                  rec["result"] = "no_annual_report"
+                  out.append(rec)
+                  continue
+              rec.update(form=rep.form, url=rep.url)
+              try:
+                  raw = sec.get_text(rep.url, max_bytes=FULL) or ""
+              except Exception as exc:  # noqa: BLE001
+                  counts["fetch_failed"] += 1
+                  rec["result"] = f"fetch_failed: {exc}"
+                  out.append(rec)
+                  continue
+              head = pick_domain(stated_domains(raw[:MAX_BYTES])[0])
+              full = pick_domain(stated_domains(raw)[0])
+              m = _SELF_PHRASE.search(raw)
+              rec.update(bytes=len(raw.encode("utf-8", "replace")), head=head, full=full,
+                         first_phrase_at=m.start() if m else None)
+              if head:
+                  counts["found_in_head"] += 1
+                  rec["result"] = "found_in_head"
+              elif full:
+                  counts["found_only_after_head"] += 1
+                  rec["result"] = "found_only_after_head"
+              else:
+                  text = _plain_text(raw)
+                  snippets = [text[max(0, x.start() - 120): x.end() + 120]
+                              for x in re.finditer(r"web\s*site|internet address|home\s*page", text, re.I)][:3]
+                  rec["snippets"] = snippets
+                  if snippets:
+                      counts["mentions_website_but_not_matched"] += 1
+                      rec["result"] = "mentions_website_but_not_matched"
+                  else:
+                      counts["not_stated_anywhere"] += 1
+                      rec["result"] = "not_stated_anywhere"
+              out.append(rec)
+          sec.close()
+          json.dump({"counts": counts, "rows": out}, open("out/probe.json", "w"),
+                    ensure_ascii=False, indent=1)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write("```\n" + json.dumps(counts, ensure_ascii=False, indent=1) + "\n```\n")
+          print(json.dumps(counts, ensure_ascii=False))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-annual-report-${{ inputs.month }}
+          path: out/
+          retention-days: 7
