@@ -776,6 +776,14 @@ IDENTIFIED_MX_HOSTS = [
     ("mailsec.protonmail.ch", InferenceCategory.MAIL_PLATFORM, "Proton"),
     ("mx1.improvmx.com", InferenceCategory.MAIL_PLATFORM, "ImprovMX"),
     ("mx20.antispam.mailspamprotection.com", InferenceCategory.MAIL_PLATFORM, "SiteGround"),
+    # 2026-11-03：米国 2026-11 の作業リストから
+    ("mx.tucows.com.cust.hostedemail.com", InferenceCategory.MAIL_PLATFORM, "Tucows"),
+    (
+        "mx.astrazeneca.com.tr.cust.b.hostedemail.com",
+        InferenceCategory.MAIL_PLATFORM,
+        "Tucows",
+    ),
+    ("mx3.oderland.com", InferenceCategory.MAIL_PLATFORM, "Oderland"),
     # キヤノン MJ のスタートアップガイドが `XXXX.guardianwall.jp` の形を示している
     (
         "prmtotr010.guardianwall.jp",
@@ -813,6 +821,12 @@ IDENTIFIED_MX_HOSTS = [
         "mx01.mail.icloud.com",
         "amir.mx.cloudflare.net",  # Cloudflare の資料は route1〜3 だけ
         "mx1.efwd.spaceship.net",
+        "mx.example.org.cust.test.hostedemail.com",  # OpenSRS の試験用
+        "custmx.cscdns.net",
+        "mx3.name.com",
+        "mx1-us.n-able.com",  # N-able の資料は mtaroutes.com
+        "mx-caprica.easydns.com",
+        "mx101.everycloudtech.us",
     ],
 )
 def test_資料で確かめていないホストは同定しない(rules, host):
