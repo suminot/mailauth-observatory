@@ -650,3 +650,30 @@ rules:
       pattern: '^mx[123]0\.antispam\.mailspamprotection\.com\.?$'
     confidence: high
     source: https://www.siteground.com/kb/point-mail-service
+
+  # ---------------------------------------------------------------------------
+  # 2026-11 の米国計測の作業リスト（未知 MX）から、**運営会社自身の資料に
+  # ホスト名の形が載っているものだけ**（2026-11-03 に確認）。資料にホスト名が
+  # 無いもの（arsmtp.com、custmx.cscdns.net、gpphosted.com、mx3.name.com、
+  # mx1-us.n-able.com、greenradar.com、easydns.com、everycloudtech.us）は入れない
+  # ---------------------------------------------------------------------------
+
+  # 資料のひな形：「mx.example.org.cust.<cluster>.hostedemail.com.」（クラスタ A は
+  # 省略）。試験用の cust.test. は入れない。Hover などの再販も同じ基盤
+  - id: opensrs-mx-01
+    vendor: Tucows
+    product: OpenSRS Hosted Email
+    match:
+      record: MX
+      pattern: '^mx\.[a-z0-9.-]+\.cust\.([ab]\.)?hostedemail\.com\.?$'
+    confidence: high
+    source: https://support.opensrs.com/support/solutions/articles/201000063458
+
+  - id: oderland-mx-01
+    vendor: Oderland
+    product: Oderland（ホスティングのメール）
+    match:
+      record: MX
+      pattern: '^mx[1-4]\.oderland\.com\.?$'
+    confidence: high
+    source: https://www.oderland.se/support/en/artikel/what-mx-records-shall-i-use-to-direct-email-traffic-towards-your-servers/
