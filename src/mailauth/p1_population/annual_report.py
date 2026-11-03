@@ -39,11 +39,20 @@ ARCHIVE_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/{docume
 
 #: 本文の先頭から読む量。「Available Information」は Item 1 にあり、
 #: 前のほうに来る。10-K は丸ごとだと 10 MB を超えることがある
-MAX_BYTES = 4_000_000
+#:
+#: **4 MB では足りなかった。** inline XBRL の 10-K は先頭に隠し見出し
+#: （ix:header）を数 MB 持つことがあり、地銀に多い。2026-11-03 の probe
+#: （起点の無い米国 150 社）では 15 社が 4 MB より後ろにだけ自社サイトを
+#: 書いていた（Shore Bancshares 4.7 MB、Norwood 11.9 MB、20-F は 24 MB 超）
+MAX_BYTES = 24_000_000
 
 #: 本文の読み方を変えたら上げる。キャッシュに書いた結果は、版が違えば読み直す
 #: ── 古い読み方の結果を黙って使い続けないため
-EXTRACTOR_VERSION = 2
+#:
+#: 3 から、**取れていた結果は読み直さない**（`_stale`）。読み方を広げた
+#: だけなので、取れていたものは変わらない。全部読み直すと SEC から
+#: 数 GB を引き直すことになる
+EXTRACTOR_VERSION = 3
 
 #: 「自社の」サイトであることを示す書き方。**ここが所有の根拠になる。**
 #:
@@ -51,11 +60,27 @@ EXTRACTOR_VERSION = 2
 #: ある。2026-10-21 の全数実行で、ビットコイン ETF に指数提供会社の
 #: `cfbenchmarks.com` が付いていた（「CF Benchmarks … its website」）
 _SELF_PHRASE = re.compile(
-    r"\b(?:our|the\s+company[’']?s)\s+"
+    r"\b(?:our|the\s+(?:company|corporation|registrant|partnership|bank)[’']?s)\s+"
+    r"(?:main\s+|primary\s+)?"
     r"(?:corporate\s+|internet\s+|investor\s+relations\s+|principal\s+)?"
     r"(?:website|web\s+site|internet\s+(?:website|site|address)|home\s*page)"
-    r"(?:\s+address)?",
+    r"(?:\s+address)?"
+    # 「We maintain a website at」「The Company maintains an internet website at」
+    # 「We have established a website at」。**主語が自社のときだけ。**
+    # 2026-11-03 の probe で、取れなかった 123 社の多くがこの書き方だった
+    r"|\b(?:we|the\s+(?:company|corporation|registrant|partnership|bank))\s+"
+    r"(?:also\s+)?(?:maintains?|ha(?:s|ve)\s+established)\s+(?:a|an)\s+"
+    r"(?:corporate\s+|internet\s+)?(?:website|web\s+site|internet\s+site)",
     re.I,
+)
+
+#: 「OGE Energy's website address is www.oge.com」「PG&E Corporation’s website,
+#: www.pgecorp.com」── **自社の名前を所有格にした書き方。** 所有者の語が
+#: その会社の名前の語に含まれるときだけ採る（`_possessor_is_self`）。
+#: 「Capella University’s website」「the SEC's website」は採らない
+_NAMED_PHRASE = re.compile(
+    r"((?:[A-Z][\w&.\-]*\s+){0,3}[A-Z][\w&.\-]*)[’']s?\s+"
+    r"(?:corporate\s+|internet\s+)?(?:website|web\s+site)(?:\s+address)?"
 )
 
 #: 句の直後でドメインを探す範囲（文字数）。「Our website address is
@@ -220,18 +245,39 @@ def _candidate(token: str) -> tuple[str, str] | None:
     return (host, domain) if domain else None
 
 
-def stated_domains(raw: str) -> tuple[Counter[str], dict[str, str], int]:
+def _possessor_is_self(possessor: str, name: str | None) -> bool:
+    """所有格の主（「OGE Energy」）が、その会社の名前の語だけでできているか。"""
+    if not name:
+        return False
+    words = lambda t: [  # noqa: E731
+        w for w in re.split(r"[^a-z0-9&]+", t.lower()) if w and w not in _NAME_STOPWORDS
+    ]
+    own = set(words(name))
+    said = words(possessor)
+    return bool(said) and all(w in own for w in said)
+
+
+def stated_domains(
+    raw: str, name: str | None = None
+) -> tuple[Counter[str], dict[str, str], int]:
     """本文中で「自社の」サイトとして書かれたドメインを数える。
 
     戻り値は (eTLD+1 ごとの回数, eTLD+1 → 最初に書かれたホスト,
     第三者として捨てた回数)。**ホストは書かれたとおりに持つ。** `www.` を
     こちらで足すと、存在しない名前を作ることがある。
+
+    `name`（その会社の名前）があれば、名前を所有格にした書き方も読む。
     """
     text = _plain_text(raw)
     found: Counter[str] = Counter()
     hosts: dict[str, str] = {}
     dropped = 0
-    for phrase in _SELF_PHRASE.finditer(text):
+    phrases = list(_SELF_PHRASE.finditer(text))
+    if name:
+        phrases += [
+            m for m in _NAMED_PHRASE.finditer(text) if _possessor_is_self(m.group(1), name)
+        ]
+    for phrase in phrases:
         window = text[phrase.end() : phrase.end() + _WINDOW]
         for m in _HOST.finditer(window):
             cand = _candidate(m.group(0))
@@ -285,6 +331,19 @@ def name_matches_domain(name: str | None, domain: str | None) -> bool:
     return any(t in label or (len(label) >= 4 and label in t) for t in tokens)
 
 
+#: これより前の版でも、**取れていた結果**はそのまま使う版（`EXTRACTOR_VERSION` の説明）
+_KEEP_FOUND_SINCE = 2
+
+
+def _stale(cached: dict[str, Any]) -> bool:
+    version = cached.get("extractor_version")
+    if version == EXTRACTOR_VERSION:
+        return False
+    if cached.get("domain") and isinstance(version, int) and version >= _KEEP_FOUND_SINCE:
+        return False
+    return True
+
+
 class AnnualReportWebsites:
     """年次報告書から公式サイトを取る。結果は受付番号で持ち越す。
 
@@ -300,7 +359,7 @@ class AnnualReportWebsites:
     def _cache_path(self, report: AnnualReport) -> Path:
         return self.cache_dir / f"{report.accession}.json"
 
-    def website_for(self, report: AnnualReport | None) -> str | None:
+    def website_for(self, report: AnnualReport | None, name: str | None = None) -> str | None:
         self.stats.attempted += 1
         if report is None:
             self.stats.no_annual_report += 1
@@ -314,7 +373,7 @@ class AnnualReportWebsites:
                 cached = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 cached = None
-        if cached is not None and cached.get("extractor_version") != EXTRACTOR_VERSION:
+        if cached is not None and _stale(cached):
             # 読み方が変わった。古い結果は使わない
             cached = None
             self.stats.stale_cache += 1
@@ -335,7 +394,7 @@ class AnnualReportWebsites:
                 self.stats.fetch_failed += 1
                 return None
             self.stats.fetched += 1
-            found, hosts, dropped = stated_domains(raw)
+            found, hosts, dropped = stated_domains(raw, name)
             domain = pick_domain(found)
             host = hosts.get(domain) if domain else None
             path.parent.mkdir(parents=True, exist_ok=True)
