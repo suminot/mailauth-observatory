@@ -1,0 +1,168 @@
+name: 日本語版ウィキペディアの会社の基礎情報から公式サイトが取れるか調べる
+
+# BACKLOG 28。国内 2026-11 で起点（公式サイト）が無い 356 社は、推測
+# （co_jp_guess）ではもう増えない。EDINET の鍵が来るまでの別の経路として、
+# 日本語版ウィキペディアの記事の「基礎情報 会社」の「外部リンク」を試す。
+#
+# **同じ会社の記事であることは、記事の基礎情報に書かれた証券コードで
+# 確かめる。** 名前だけで当てない（同名の別会社・別の意味の記事がある）。
+# 記事の名前は、社名から「株式会社」などを落としたものと、その後ろに
+# 「 (企業)」を付けたもの。リダイレクトはたどる。
+#
+# 読むのは MediaWiki の API（action=query、1回に 50 記事まで）だけ。
+# 連絡先つきの User-Agent、1秒に1本まで。手で起こすときだけ動く。社名と
+# ドメインは成果物に置き（7日）、ログには件数だけ出す。
+
+on:
+  workflow_dispatch:
+    inputs:
+      month:
+        description: 起点の無い会社を取る月（その月の silver を使う）
+        required: false
+        default: "2026-11"
+
+permissions:
+  contents: read
+  actions: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MAILAUTH_CONTACT_EMAIL: ${{ secrets.MAILAUTH_CONTACT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 入れる
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: その月の silver を取ってくる
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NAME: silver-jp-all-listed-${{ inputs.month }}
+        run: |
+          RUNS=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$NAME&per_page=20" \
+                  --jq '[.artifacts[] | select(.expired | not) | .workflow_run.id] | .[]')
+          for RUN in $RUNS; do
+            TMP=$(mktemp -d)
+            gh run download "$RUN" --repo "$GITHUB_REPOSITORY" -n "$NAME" -D "$TMP" || continue
+            P7="$TMP/p7_aggregate/_manifest.json"
+            if [ -f "$P7" ] && [ "$(jq -r '.status' "$P7")" != "failed" ]; then
+              mkdir -p silver && cp -a "$TMP/." silver/
+              echo "$NAME を run $RUN から取った" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          done
+          echo "$NAME の使える silver が無い" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: 記事を引いて比べる
+        run: |
+          if [ -z "$MAILAUTH_CONTACT_EMAIL" ]; then
+            echo "MAILAUTH_CONTACT_EMAIL が無い（連絡先を名乗らずに引かない）" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          mkdir -p out
+          python - <<'PY'
+          import json, os, re, time
+          from collections import Counter
+          import httpx
+          import pandas as pd
+          from mailauth.normalize import etld_plus_one
+
+          API = "https://ja.wikipedia.org/w/api.php"
+          UA = f"mailauth-observatory/0.1 ({os.environ['MAILAUTH_CONTACT_EMAIL']})"
+          SUFFIX = re.compile(r"^(株式会社|\(株\)|（株）)\s*|\s*(株式会社|\(株\)|（株）)$")
+
+          df = pd.read_parquet("silver/p1_population/entities.parquet")
+          missing = df[df["official_domain"].isna()]
+          rows = []
+          for _, r in missing.iterrows():
+              base = SUFFIX.sub("", str(r["name"])).strip()
+              code = str(r["securities_code"] or "")[:4]
+              rows.append({"name": r["name"], "code": code,
+                           "titles": [base, f"{base} (企業)"]})
+
+          client = httpx.Client(headers={"User-Agent": UA}, timeout=30)
+          pages = {}       # 引いた名前 -> wikitext（無ければ None）
+          titles = sorted({t for r in rows for t in r["titles"]})
+          for i in range(0, len(titles), 50):
+              chunk = titles[i:i + 50]
+              resp = client.get(API, params={
+                  "action": "query", "format": "json", "formatversion": "2",
+                  "prop": "revisions", "rvprop": "content", "rvslots": "main",
+                  "redirects": "1", "titles": "|".join(chunk)})
+              resp.raise_for_status()
+              q = resp.json().get("query", {})
+              alias = {}
+              for k in ("normalized", "redirects"):
+                  for n in q.get(k, []):
+                      alias[n["from"]] = n["to"]
+              got = {}
+              for p in q.get("pages", []):
+                  revs = p.get("revisions") or []
+                  got[p["title"]] = revs[0]["slots"]["main"]["content"] if revs else None
+              for t in chunk:
+                  final = t
+                  while final in alias:
+                      final = alias[final]
+                  pages[t] = got.get(final)
+              time.sleep(1.0)
+          client.close()
+
+          LINK = re.compile(r"\|\s*外部リンク\s*=\s*(\S[^\n|]*)")
+          URL = re.compile(r"https?://[^\s\]\}|<]+")
+          counts = Counter(companies=len(rows))
+          found = []
+          for r in rows:
+              texts = [pages.get(t) for t in r["titles"] if pages.get(t)]
+              if not texts:
+                  counts["no_article"] += 1
+                  continue
+              hit = None
+              for text in texts:
+                  if "基礎情報 会社" not in text:
+                      continue
+                  infobox = text[text.index("基礎情報 会社"):][:6000]
+                  if not r["code"] or not re.search(rf"(?<!\d){re.escape(r['code'])}(?!\d)", infobox):
+                      counts["code_not_in_infobox"] += 1
+                      continue
+                  m = LINK.search(infobox)
+                  u = URL.search(m.group(1)) if m else None
+                  if not u:
+                      counts["no_external_link"] += 1
+                      continue
+                  host = re.sub(r"^https?://", "", u.group(0)).split("/")[0].lower()
+                  hit = {"name": r["name"], "url": u.group(0), "domain": etld_plus_one(host)}
+                  break
+              else:
+                  if not any("基礎情報 会社" in t for t in texts):
+                      counts["article_without_company_infobox"] += 1
+              if hit:
+                  counts["found"] += 1
+                  found.append(hit)
+          shared = Counter(f["domain"] for f in found)
+          counts["found_shared_domain"] = sum(1 for f in found if shared[f["domain"]] > 1)
+          counts = dict(sorted(counts.items()))
+          json.dump({"counts": counts, "found": found}, open("out/probe.json", "w"),
+                    ensure_ascii=False, indent=1)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write("```\n" + json.dumps(counts, ensure_ascii=False, indent=1) + "\n```\n")
+          print(json.dumps(counts, ensure_ascii=False))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-wikipedia-${{ inputs.month }}
+          path: out/
+          retention-days: 7
