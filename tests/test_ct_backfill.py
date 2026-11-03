@@ -819,3 +819,45 @@ def test_2回目の流し直しも十分に取れれば頼む(tmp_path):
     mark_rerun_requested(tmp_path, MONTH, "jp-all-listed")
     report = backfill(tmp_path, MONTH, crtsh=_crtsh_up(tmp_path), certspotter=None)
     assert report.ready_for_rerun == ["jp-all-listed"]
+
+
+def test_取れなかった回も待ってから続きを頼む():
+    """毎時の schedule は 30 時間で4回しか起動しなかった（2026-11-02〜03）。
+
+    取れなかった回で鎖が切れると、補充が半日止まる。**ただし待ってから。**
+    落ちている相手を数分おきに叩かない。
+    """
+    step = _steps()[_index("取れなかった回は待ってから続きを頼む")]
+    cond = step["if"]
+    assert "steps.fill.outputs.crtsh_ok != 'true'" in cond
+    assert "steps.fill.outputs.ready == ''" in cond
+    assert "steps.fill.outputs.pending != '0'" in cond
+    assert "monthly_running == '0'" in cond, "月次計測の終わりが頼むので、こちらは頼まない"
+    run = step["run"]
+    assert run.index("sleep") < run.index("gh workflow run ct-backfill.yml")
+    wait = int(run.split("sleep", 1)[1].split()[0])
+    assert wait >= 15 * 60
+    import yaml
+
+    from mailauth.paths import repo_root
+
+    wf = yaml.safe_load(
+        (repo_root() / ".github" / "workflows" / "ct-backfill.yml").read_text(encoding="utf-8")
+    )
+    # 補充 45 分 ＋ 待ちが時間切れにならない
+    assert wf["jobs"]["backfill"]["timeout-minutes"] >= 45 + wait // 60 + 5
+
+
+def test_月次計測はその月の積み残し全部を見て補充を頼む():
+    """国内の実行が終わっても、米国の積み残しの補充は再開しなかった。"""
+    import yaml
+
+    from mailauth.paths import repo_root
+
+    monthly = yaml.safe_load(
+        (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(encoding="utf-8")
+    )
+    steps = {s.get("name"): s for s in monthly["jobs"]["measure"]["steps"]}
+    run = steps["CT の補充を頼む"]["run"]
+    assert "_pending/*.json" in run
+    assert "steps.run.outputs.pop }}.json" not in run

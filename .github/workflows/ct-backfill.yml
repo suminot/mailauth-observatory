@@ -46,7 +46,8 @@ defaults:
 jobs:
   backfill:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 補充 45 分 ＋ 相手が答えなかった回の待ち 20 分（「待ってから続きを頼む」）
+    timeout-minutes: 80
     env:
       # 無くても動く（鍵なしの無料枠）。あれば上限が上がる
       MAILAUTH_CERTSPOTTER_API_KEY: ${{ secrets.MAILAUTH_CERTSPOTTER_API_KEY }}
@@ -208,3 +209,21 @@ jobs:
           gh workflow run ct-backfill.yml --repo "$GITHUB_REPOSITORY" --ref main \
             -f run_id="${{ steps.run.outputs.id }}"
           echo "積み残し ${{ steps.fill.outputs.pending }} 件。続きを頼んだ" >> "$GITHUB_STEP_SUMMARY"
+
+      # **取れなかった回も、待ってから次を頼む。** 毎時の schedule は 30 時間で
+      # 4回しか起動しておらず（2026-11-02〜03）、それに任せると補充が半日
+      # 止まる。落ちている相手を叩き続けないよう、**20 分待ってから** 1回だけ
+      # 頼む。次の回も crt.sh は数本で見切るので、相手から見て 20 分に数本
+      # （qps は変えない）
+      - name: 取れなかった回は待ってから続きを頼む
+        if: >-
+          steps.busy.outputs.monthly_running == '0'
+          && steps.fill.outputs.crtsh_ok != 'true'
+          && steps.fill.outputs.ready == ''
+          && steps.fill.outputs.pending != '0'
+          && steps.fill.outputs.pending != ''
+        run: |
+          sleep 1200
+          gh workflow run ct-backfill.yml --repo "$GITHUB_REPOSITORY" --ref main \
+            -f run_id="${{ steps.run.outputs.id }}"
+          echo "crt.sh から取れなかった。20 分待って続きを頼んだ（積み残し ${{ steps.fill.outputs.pending }} 件）" >> "$GITHUB_STEP_SUMMARY"
