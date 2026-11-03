@@ -2188,6 +2188,14 @@ Fund II に `robinhood.com`（ファンドなので本来は外す対象。N-2 �
 - 「The Company maintains an internet address at」も読む
 - 年次報告書の版を 4、プレスリリースの版を 2 に。取れていなかったものだけ
   読み直す
+- 「through its website at …」も、**社名と合うドメインのときだけ**読む
+  （#172。Gencor Industries）
+
+`probe-other-filings.yml` を流し直すと（run 41656143147）、220 社中 **164 社**
+（前は 142）。年次報告書そのものから 27 社（`.bio`・`.company`・`.reit`・
+`.xyz`・`.cloud`・`.shop`・`.gold`・`.one`・`.international` など）。Venu は
+名簿管理人の `colonialstock.com` が外れ、年次報告書の `venu.live` になった。
+probe は社名変更前の届出を外していないので、本番はこれより少し減る。
 
 ### 国内の再 probe（本番の読み方、run 41652784874）
 
