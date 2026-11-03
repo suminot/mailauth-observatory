@@ -36,7 +36,7 @@ from ..normalize import (
     normalize_securities_code,
 )
 from ..ordered import in_input_order
-from ..paths import config_path, month_date, phase_dir, phase_output, previous_run_id
+from ..paths import cache_root, config_path, month_date, phase_dir, phase_output, previous_run_id
 from ..segments import load_segment_map
 from .edinet import EdinetError, fetch_code_list, parse_code_list
 from .enrich import GbizInfoClient, HoujinBangouClient
@@ -50,6 +50,11 @@ EXCLUDED_FILENAME = "excluded_entities.parquet"
 CO_JP_CONCURRENCY = 8
 #: 公式サイトの推測で、1ページを読むのにかける時間の上限（秒）
 CO_JP_PAGE_DEADLINE_SEC = 20
+
+#: `.co.jp` の推測の結果を持ち越す日数。**流し直しのたびに 600 社のサイトを
+#: 2,000 ページ読み直していた**（2026-11 の国内で 1 回 21 分）。相手のサイトは
+#: 月の中ではまず変わらない。**読めなかった（unreachable）結果は持ち越さない**
+CO_JP_CACHE_DAYS = 25
 
 
 class PopulationNotImplementedError(NotImplementedError):
@@ -419,6 +424,7 @@ def _fill_from_co_jp_homepage(
     offline: bool = False,
     guesser=None,
     kana: dict[str, str] | None = None,
+    cache_dir: Path | None = None,
 ) -> None:
     """**まだ空欄の企業だけ**、英字社名から .co.jp を推測してサイトで確かめる。
 
@@ -453,19 +459,28 @@ def _fill_from_co_jp_homepage(
             )
             return
         guesser = _live_co_jp_guesser(contact)
+        if cache_dir is None:
+            cache_dir = cache_root() / "co_jp_homepage"
 
     filled = 0
+    cache = _CoJpCache(cache_dir) if cache_dir is not None else None
     # **企業ごとに並行に確かめる。** 相手はそれぞれ別の会社のサイトで、
     # 1社ずつ待つと応答待ち（時間切れ 15 秒）がそのまま積み上がる。
     # 2026-11 の国内は 606 社に 1,534 秒かかっていた。投げる間隔は
     # `_live_co_jp_guesser` の錠で全体 1 秒 2 本のまま変わらない
-    results = in_input_order(
+    def _one(e: Entity) -> str | None:
         # 英字社名が無い会社は、EDINET の読み（edinet_code で引く）から推測する
-        lambda e: guesser.domain_for(e.name, e.name_en, (kana or {}).get(e.edinet_code or "")),
-        missing,
-        concurrency=CO_JP_CONCURRENCY,
-        window=64,
-    )
+        args = (e.name, e.name_en, (kana or {}).get(e.edinet_code or ""))
+        if cache is not None:
+            hit = cache.get(args)
+            if hit is not None:
+                return hit[0]
+        domain, kind = guesser.guess(*args)
+        if cache is not None and kind != "unreachable":
+            cache.put(args, domain, kind)
+        return domain
+
+    results = in_input_order(_one, missing, concurrency=CO_JP_CONCURRENCY, window=64)
     for entity, domain in zip(missing, results, strict=True):
         if domain:
             entity.official_url = f"https://{domain}/"
@@ -474,6 +489,7 @@ def _fill_from_co_jp_homepage(
     manifest.set_breakdown(
         co_jp_homepage={
             **guesser.stats.to_dict(),
+            "cache_hit": cache.hits if cache is not None else 0,
             "missing_before": len(missing),
             "filled": filled,
             "still_missing": sum(1 for e in entities if not e.official_domain),
@@ -1768,3 +1784,59 @@ def _fill_from_sec_filings(
             ),
         )
     return stats
+
+
+class _CoJpCache:
+    """`.co.jp` の推測の結果を、社名・英字社名・読みの組で持ち越す。
+
+    `GUESS_VERSION` が違うもの、`CO_JP_CACHE_DAYS` より古いものは使わない。
+    並行に呼ばれるが、1社1ファイルなので書き込みはぶつからない。
+    """
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.hits = 0
+        self._lock = threading.Lock()
+
+    def _path(self, args: tuple) -> Path:
+        import hashlib
+
+        key = "\x1f".join(a or "" for a in args)
+        return self.root / f"{hashlib.sha256(key.encode('utf-8')).hexdigest()[:20]}.json"
+
+    def get(self, args: tuple) -> tuple[str | None, str] | None:
+        import json
+        from datetime import UTC, datetime, timedelta
+
+        from .co_jp_guess import GUESS_VERSION
+
+        path = self._path(args)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            at = datetime.fromisoformat(data["at"])
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+        if data.get("version") != GUESS_VERSION:
+            return None
+        if datetime.now(UTC) - at > timedelta(days=CO_JP_CACHE_DAYS):
+            return None
+        with self._lock:
+            self.hits += 1
+        return data.get("domain"), str(data.get("kind") or "")
+
+    def put(self, args: tuple, domain: str | None, kind: str) -> None:
+        import json
+        from datetime import UTC, datetime
+
+        from .co_jp_guess import GUESS_VERSION
+
+        path = self._path(args)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {"domain": domain, "kind": kind, "version": GUESS_VERSION,
+                 "at": datetime.now(UTC).isoformat()},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )

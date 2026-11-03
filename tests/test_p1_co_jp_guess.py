@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from mailauth.p1_population.co_jp_guess import (
     CoJpGuesser,
+    GuessStats,
     decode_page,
     guesses,
     name_core,
@@ -734,3 +735,93 @@ def test_入口で確かめられたら飛び先は読まない():
     g = CoJpGuesser(web.exists, web.fetch)
     assert g.domain_for("ムラキ株式会社", "MURAKI CORPORATION") == "muraki.co.jp"
     assert web.fetched == ["https://www.muraki.co.jp/"]
+
+
+# ===========================================================================
+# 結果を月のあいだ持ち越す
+# ===========================================================================
+
+
+class _CountingGuesser:
+    def __init__(self, answers):
+        self.answers = answers
+        self.calls = 0
+        self.stats = GuessStats()
+
+    def guess(self, name_ja, name_en, kana=None):
+        self.calls += 1
+        return self.answers[name_ja]
+
+
+def _jp(eid, name, name_en):
+    from mailauth.contracts import Entity
+
+    return Entity(entity_id=eid, run_id="2026-11", country="JP",
+                  population_ids=["jp-all-listed"], name=name, name_normalized=name,
+                  name_en=name_en)
+
+
+def _fill(entities, guesser, tmp_path):
+    from mailauth.manifest import RunManifest
+    from mailauth.p1_population.runner import _fill_from_co_jp_homepage
+
+    manifest = RunManifest(run_id="2026-11", phase="p1_population", out_dir=str(tmp_path))
+    _fill_from_co_jp_homepage(entities, manifest, guesser=guesser, cache_dir=tmp_path / "c")
+    return manifest.breakdown["co_jp_homepage"]
+
+
+def test_推測の結果は持ち越し_読めなかった結果は持ち越さない(tmp_path):
+    answers = {
+        "株式会社タクミナ": ("tacmina.co.jp", "found"),
+        "株式会社無い": (None, "none"),
+        "株式会社落ちてる": (None, "unreachable"),
+    }
+    first = _CountingGuesser(answers)
+    _fill([_jp("jp:1", n, "x") for n in answers], first, tmp_path)
+    assert first.calls == 3
+
+    second = _CountingGuesser(answers)
+    es = [_jp("jp:1", n, "x") for n in answers]
+    b = _fill(es, second, tmp_path)
+    # **読めなかった会社だけ**もう一度確かめる
+    assert second.calls == 1 and b["cache_hit"] == 2
+    assert es[0].official_domain == "tacmina.co.jp"
+    assert es[1].official_domain is None
+
+
+def test_読み方の版が変わったら持ち越さない(tmp_path, monkeypatch):
+    from mailauth.p1_population import co_jp_guess
+
+    answers = {"株式会社タクミナ": ("tacmina.co.jp", "found")}
+    _fill([_jp("jp:1", "株式会社タクミナ", "x")], _CountingGuesser(answers), tmp_path)
+    monkeypatch.setattr(co_jp_guess, "GUESS_VERSION", co_jp_guess.GUESS_VERSION + 1)
+    again = _CountingGuesser(answers)
+    _fill([_jp("jp:1", "株式会社タクミナ", "x")], again, tmp_path)
+    assert again.calls == 1
+
+
+def test_古い結果は持ち越さない(tmp_path):
+    import json
+
+    answers = {"株式会社タクミナ": ("tacmina.co.jp", "found")}
+    _fill([_jp("jp:1", "株式会社タクミナ", "x")], _CountingGuesser(answers), tmp_path)
+    for f in (tmp_path / "c").glob("*.json"):
+        data = json.loads(f.read_text(encoding="utf-8"))
+        data["at"] = "2026-09-01T00:00:00+00:00"
+        f.write_text(json.dumps(data), encoding="utf-8")
+    again = _CountingGuesser(answers)
+    _fill([_jp("jp:1", "株式会社タクミナ", "x")], again, tmp_path)
+    assert again.calls == 1
+
+
+def test_月次計測は推測の結果を補完のキャッシュに入れて持ち越す():
+    import yaml
+
+    from mailauth.paths import repo_root
+
+    wf = yaml.safe_load(
+        (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(encoding="utf-8")
+    )
+    steps = {s.get("name"): s for s in wf["jobs"]["measure"]["steps"]}
+    for name in ("補完のキャッシュを復元", "補完のキャッシュを保存"):
+        assert "data/cache/co_jp_homepage" in steps[name]["with"]["path"], name

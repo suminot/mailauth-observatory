@@ -193,6 +193,7 @@ jobs:
             data/cache/sec_edgar
             data/cache/edinet
             data/cache/wikidata
+            data/cache/co_jp_homepage
           key: enrich-${{ steps.run.outputs.id }}-${{ github.run_id }}
           restore-keys: |
             enrich-${{ steps.run.outputs.id }}-
@@ -378,6 +379,7 @@ jobs:
             data/cache/sec_edgar
             data/cache/edinet
             data/cache/wikidata
+            data/cache/co_jp_homepage
           key: enrich-${{ steps.run.outputs.id }}-${{ github.run_id }}
 
       # **CT の補充が走っている間は crt.sh を叩かない。** 補充は月次計測が

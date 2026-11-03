@@ -80,6 +80,10 @@ _JA_DROP = ("株式会社", "ホールディングス", "グループ", "（株�
 #: 社名の芯がこれより短いと、他社のページにも偶然載る
 MIN_CORE_CHARS = 3
 
+#: 推測と確かめ方を変えたら上げる。**結果を月のあいだ持ち越すので**（runner の
+#: `CO_JP_CACHE_DAYS`）、上げないと新しい読み方が次の月まで効かない
+GUESS_VERSION = 1
+
 #: 社名の芯がこの長さ以下なら、ページ全体ではなくタイトルで確かめる
 SHORT_CORE_CHARS = 4
 
@@ -543,6 +547,15 @@ class CoJpGuesser:
     def domain_for(
         self, name_ja: str | None, name_en: str | None, kana: str | None = None
     ) -> str | None:
+        return self.guess(name_ja, name_en, kana)[0]
+
+    def guess(
+        self, name_ja: str | None, name_en: str | None, kana: str | None = None
+    ) -> tuple[str | None, str]:
+        """(ドメイン, 結果の種類)。種類は found / no_english_name / core_too_short /
+        not_on_page / unreachable / none。**unreachable は相手の都合**なので、
+        持ち越してはいけない（`runner._fill_from_co_jp_homepage`）。
+        """
         self._bump("attempted")
         candidates = guesses(name_en)
         by_kana = False
@@ -551,17 +564,17 @@ class CoJpGuesser:
             candidates = kana_guesses(kana)
             if not candidates:
                 self._bump("no_english_name")
-                return None
+                return None, "no_english_name"
             by_kana = True
             self._bump("from_kana")
         core = name_core(name_ja)
         if len(core) < MIN_CORE_CHARS:
             self._bump("core_too_short")
-            return None
+            return None, "core_too_short"
 
         outcome = self._attempt(candidates, core, name_en, by_kana=by_kana, strict=False)
         if isinstance(outcome, str):
-            return outcome
+            return outcome, "found"
         # **.co.jp に無ければ .jp・.com も見る。** 2026-11 の国内で起点が
         # 取れなかった 341 社には、ricksoft.jp・modalis.com・cyfuse.com の
         # ように .co.jp を持たない新しめの会社が並んでいた。ただし .jp・.com は
@@ -575,7 +588,7 @@ class CoJpGuesser:
                 self.stats.found_other_tld += 1
                 if len(self.stats.sample_found_other_tld) < 20:
                     self.stats.sample_found_other_tld.append(f"{other} ← {core}")
-            return other
+            return other, "found"
         # 確かめられなかった理由は1つに数える。**読めて違った > 読めなかった >
         # DNS に無かった** の順に、分かったことの多い方を採る
         final = max(outcome, other, key=lambda o: _OUTCOME_RANK[o[0]])
@@ -595,7 +608,7 @@ class CoJpGuesser:
                     self.stats.sample_unreachable.append(detail)
         else:
             self._bump("no_guess_exists")
-        return None
+        return None, kind
 
     def _attempt(
         self,
