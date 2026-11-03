@@ -454,7 +454,10 @@ def test_版2で取れていた結果は読み直さない_取れていなかっ
     found, missing = _report(1), _report(2)
     client = _FakeClient(
         tmp_path,
-        {found.url: "Our website is www.new.com.", missing.url: "We maintain a website at www.acme.com."},
+        {
+            found.url: "Our website is www.new.com.",
+            missing.url: "We maintain a website at www.acme.com.",
+        },
     )
     base = client.cache_dir / "annual_website"
     base.mkdir(parents=True)

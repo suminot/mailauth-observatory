@@ -2007,6 +2007,34 @@ netprotections.com（タイトルが商品名「NP後払い」だけ）のよう
 ついでに分かったこと：公式サイトの推測は、Wikidata が埋める会社でも
 1,213 社中 約 600 社を当てる（.jp・.com で 135 社）。
 
+## 27. 米国：年次報告書から自社サイトを取りこぼしていた（2026-11-03）
+
+米国 2026-11 で起点が最後まで無い 370 社に、OGE Energy・Telephone & Data
+Systems・Park National のような老舗が並んでいた。年次報告書の読み取りは
+`not_stated` 487。`probe-annual-report.yml`（run 41552957745）で起点の無い
+150 社の年次報告書を最後まで読むと：
+
+| 結果 | 社数 |
+|---|---|
+| 先頭 4 MB より後ろにだけ書いてある | 15 |
+| 「website」と書いてあるが、型に合わない | 123 |
+| どこにも書いていない | 5 |
+| 年次報告書が無い | 7 |
+
+- **読む量を 4 MB → 24 MB に。** inline XBRL の隠し見出しが先頭に数 MB ある
+  （地銀に多い。20-F は 24 MB を超えるものもある）
+- **型を足した。** 「We maintain a website at」「The Company maintains an internet
+  website at」「We have established a website at」（主語が自社のときだけ）、
+  「Our main corporate website address is」、「The Corporation's / The Bank's
+  website」、**自社の名前を所有格にしたもの**（「OGE Energy's website address
+  is」。所有者の語がその会社の名前の語だけでできているときだけ。「Capella
+  University’s」「the SEC's」は採らない）
+- probe の抜き書きに当てると 123 社中 64 社が取れる。4 MB の 15 社と合わせて
+  150 社中 79 社（53%）
+- 版を 3 に上げたが、**版 2 で取れていた結果は読み直さない**（SEC から数 GB を
+  引き直さない）。取れていなかったものだけ読み直す
+- 複数社に同じドメインが出たら社名と合う会社にだけ残す歯止め（既存）はそのまま
+
 ## 7. 規模に対する前提
 
 いまの国内 1 母集団では問題にならないが、DESIGN.md の 30,000 ドメインでは
