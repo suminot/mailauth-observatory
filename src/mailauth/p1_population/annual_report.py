@@ -67,8 +67,9 @@ MAX_BYTES = 24_000_000
 #: だけなので、取れていたものは変わらない。全部読み直すと SEC から
 #: 数 GB を引き直すことになる
 #:
-#: 4 で新しい gTLD（`.bio`・`.company`・`.coffee` など）を読むようにした
-#: （BACKLOG 28）。取れていなかったものだけ読み直す
+#: 4 で新しい gTLD（`.bio`・`.company`・`.coffee` など）と、社名と合う
+#: ドメインに限った「through its website」を読むようにした（BACKLOG 28）。
+#: 取れていなかったものだけ読み直す
 EXTRACTOR_VERSION = 4
 
 #: 「自社の」サイトであることを示す書き方。**ここが所有の根拠になる。**
@@ -98,6 +99,17 @@ _SELF_PHRASE = re.compile(
 _NAMED_PHRASE = re.compile(
     r"((?:[A-Z][\w&.\-]*\s+){0,3}[A-Z][\w&.\-]*)[’']s?\s+"
     r"(?:corporate\s+|internet\s+)?(?:website|web\s+site)(?:\s+address)?"
+)
+
+#: 「makes available … through its website at www.gencor.com」。**「its」は
+#: 直前の別の会社を指すことがある**（ビットコイン ETF に指数提供会社の
+#: `cfbenchmarks.com` が付いた）ので、**その会社の名前と合うドメインのとき
+#: だけ**採る（`name_matches_domain`）。2026-11-03 の probe で Gencor
+#: Industries がこの書き方だけだった
+_ITS_PHRASE = re.compile(
+    r"\b(?:through|on|at|via)\s+its\s+(?:corporate\s+|internet\s+)?"
+    r"(?:website|web\s+site)",
+    re.I,
 )
 
 #: 句の直後でドメインを探す範囲（文字数）。「Our website address is
@@ -368,12 +380,16 @@ def stated_domains(
     found: Counter[str] = Counter()
     hosts: dict[str, str] = {}
     dropped = 0
-    phrases = list(_SELF_PHRASE.finditer(text))
+    # (句, 社名と合うドメインのときだけ採るか)
+    phrases = [(m, False) for m in _SELF_PHRASE.finditer(text)]
     if name:
         phrases += [
-            m for m in _NAMED_PHRASE.finditer(text) if _possessor_is_self(m.group(1), name)
+            (m, False)
+            for m in _NAMED_PHRASE.finditer(text)
+            if _possessor_is_self(m.group(1), name)
         ]
-    for phrase in phrases:
+        phrases += [(m, True) for m in _ITS_PHRASE.finditer(text)]
+    for phrase, needs_name in phrases:
         window = text[phrase.end() : phrase.end() + _WINDOW]
         for m in _HOST.finditer(window):
             cand = _candidate(m.group(0))
@@ -383,6 +399,8 @@ def stated_domains(
             if domain in THIRD_PARTY or domain.endswith(".gov"):
                 dropped += 1
                 continue
+            if needs_name and not name_matches_domain(name, domain):
+                break
             found[domain] += 1
             hosts.setdefault(domain, host)
             # **句ごとに最初の1つだけ。** 「our website at www.a.com and
