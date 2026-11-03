@@ -436,9 +436,14 @@ def page_names_company(
     いることを求める（モジュールの説明）。`strict` なら芯の長さに関わらず
     タイトルで確かめる（.jp・.com。1組織1つの決まりが無い）。
     英字社名がタイトルにそのまま載っていれば、それでも認める
-    （`title_names_company_en`）。
+    （`title_names_company_en`）。**ただし `strict`（.jp・.com）では使わない。**
+    2026-11-03 の probe（run 41624269195）で .com の英字タイトルの一致は
+    18 社中 6 社以上が海外の別会社だった（globalsecurityexperts.com は米国の
+    防犯機器会社で、英字社名が法人格まで同じだった。intertrade.com・
+    quantum-solutions.com・atlastechnologies.com も別会社）。.co.jp は日本で
+    登記した組織しか持てないので、そこでだけ認める
     """
-    if title_names_company_en(page, name_en):
+    if not strict and title_names_company_en(page, name_en):
         return True
     if len(core) < MIN_CORE_CHARS:
         return False
