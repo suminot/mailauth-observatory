@@ -46,6 +46,23 @@ CONFIG = "configs/populations/us-all-listed.yaml"
         (None, {"N-2", "N-2/A"}, "Pershing Square USA, Ltd.", REGISTERED_FUND),
         # **BDC は 10-K を出す会社なので残す**（N-2 を出していても）
         (None, {"N-2", "10-K", "10-Q", "8-K"}, "Goldman Sachs BDC, Inc.", None),
+        # **登録投資会社だけの届出があれば、過去の 10-K / 10-Q が混じっていても外す**
+        # （2026-11 の米国に残っていた。probe-sec-forms で SEC の recent を見た）
+        (
+            None,
+            {"N-2", "N-CSR", "N-CSRS", "NPORT-P", "N-CEN", "10-K"},
+            "NUVEEN MUNICIPAL VALUE FUND INC",
+            REGISTERED_FUND,
+        ),
+        (
+            None,
+            {"N-2", "N-30D", "N-CSR", "NPORT-P", "10-Q"},
+            "GABELLI CONVERTIBLE & INCOME SECURITIES FUND INC",
+            REGISTERED_FUND,
+        ),
+        # BDC は N-CSR / NPORT-P を出さないので残る（同じ probe で確かめた）
+        (None, {"N-2", "N-2/A", "10-K", "10-Q", "8-K"}, "Blackstone Secured Lending Fund", None),
+        (None, {"N-2", "N-2/A", "10-K", "10-K/A", "10-Q"}, "MSC INCOME FUND, INC.", None),
         # 事業会社
         ("3571", {"10-K", "10-Q", "8-K"}, "Apple Inc.", None),
         # **社名だけでは決めない。** 「Trust」は銀行にも付く
