@@ -822,9 +822,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          P="data/cache/crtsh/month=${{ steps.run.outputs.id }}/_pending/${{ steps.run.outputs.pop }}.json"
+          # **この母集団の分だけでなく、その月の積み残し全部を見る。** 国内の
+          # 実行が終わっても米国の補充は再開しなかった（2026-11-02、補充の
+          # 毎時の schedule は 30 時間で4回しか起動していない）
           n=0
-          if [ -f "$P" ]; then n=$(jq '.pending | length' "$P"); fi
+          for P in data/cache/crtsh/month=${{ steps.run.outputs.id }}/_pending/*.json; do
+            [ -f "$P" ] || continue
+            n=$((n + $(jq '.pending | length' "$P")))
+          done
           if [ "$n" != "0" ]; then
             gh workflow run ct-backfill.yml --repo "$GITHUB_REPOSITORY" --ref main \
               -f run_id="${{ steps.run.outputs.id }}" || true
