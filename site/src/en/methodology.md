@@ -32,8 +32,8 @@ and how many failed.
 
 | Population | Primary register | Filled in from |
 |---|---|---|
-| Listed companies in Japan | FSA EDINET code list | NTA corporate number (name, address), gBizINFO (official site) |
-| Listed companies in the US | SEC EDGAR (public domain) | Wikidata (official site; SEC's website field is almost always empty), annual reports filed with the SEC (official site for companies Wikidata lacks) |
+| Listed companies in Japan | FSA EDINET code list | NTA corporate number (name, address), gBizINFO, Wikidata and Japanese Wikipedia (official site) |
+| Listed companies in the US | SEC EDGAR (public domain) | Wikidata (official site; SEC's website field is almost always empty), annual reports, prospectuses and proxy statements filed with the SEC (official site for companies Wikidata lacks) |
 
 **EDINET is a Japanese register, so it is not used for the US population.**
 The same applies to sectors: Japan's come from EDINET's 33 sectors and the
@@ -64,15 +64,30 @@ in the summary is the size of the population, **not a claim that all of them
 were measured.** Where the two differ, the count is shown next to the figure.
 
 Official websites are looked up by corporate number against the Japanese
-government company registry (gBizINFO) and Wikidata. For US companies that
+government company registry (gBizINFO) and Wikidata.
+
+Japanese companies missing from both are filled in, in this order:
+
+- an address built from the English trade name (`.co.jp`, then `.jp` and
+  `.com`), used **only when that page carries the Japanese trade name**
+- the official site in the infobox of the Japanese Wikipedia article. **The
+  article is confirmed to be about the same company by the securities code in
+  its listing field**, and a domain already assigned to another company is not
+  used
+
+For US companies that
 Wikidata lacks, the site is read from the annual report filed with the SEC
 (10-K / 20-F / 40-F), **only where the company itself states "our website is
 …"**. Other URLs in the document (the SEC, auditors, business partners) are
-not used. For companies whose annual report does not state one, the "About"
+not used. Newly listed companies with no annual report yet, and companies whose
+annual report does not state one, are read the same way from their prospectus
+(S-1 / F-1 / 424B4 and similar) and their proxy statement (DEF 14A). Filings
+made before the company's last name change and merger proxy statements are not
+used. For companies where none states one, the "About"
 section and contacts in their press releases (8-K / 6-K) are read, and **only
 a domain matching the company name** is used (contacts are often investor
 relations agencies). Only the domain part of email addresses is used; the
-addresses themselves are not stored. Some companies are still left without one. **No guesses are made** — measuring another company's domain by
+addresses themselves are not stored. Some companies are still left without one. **Nothing that cannot be confirmed is used** — measuring another company's domain by
 mistake is a worse error than not measuring at all.
 
 ## Companies left out of the population
@@ -238,7 +253,7 @@ as `example.com`) and widens from there.
 
 | Route | What it is |
 |---|---|
-| Official site | the official URL from government registries, Wikidata, and US annual reports and press releases (as stated by the company) |
+| Official site | the official URL from government registries, Wikidata, Japanese Wikipedia (checked by securities code), US annual reports, prospectuses, proxy statements and press releases (as stated by the company), and Japanese sites confirmed by the trade name on the page |
 | CT logs | names appearing in Certificate Transparency logs |
 | SPF `redirect=` | where SPF is delegated |
 | SPF `include:` | own subdomains the record has been split across |

@@ -9,6 +9,9 @@ name: 日本語版ウィキペディアの会社の基礎情報から公式サ�
 # 記事の名前は、社名から「株式会社」などを落としたものと、その後ろに
 # 「 (企業)」を付けたもの。リダイレクトはたどる。
 #
+# 2026-11-03 の1回目（run 41650240337）は 356 社中 69 社。本番に入れた
+# あとは本番の読み方（jawiki.py。コードは市場情報の欄だけで見る）で流す。
+#
 # 読むのは MediaWiki の API（action=query、1回に 50 記事まで）だけ。
 # 連絡先つきの User-Agent、1秒に1本まで。手で起こすときだけ動く。社名と
 # ドメインは成果物に置き（7日）、ログには件数だけ出す。
@@ -73,86 +76,22 @@ jobs:
           fi
           mkdir -p out
           python - <<'PY'
-          import json, os, re, time
-          from collections import Counter
-          import httpx
+          # **本番と同じ読み方**（jawiki.py）で、起点の無い会社にだけ流す
+          import json, os
           import pandas as pd
-          from mailauth.normalize import etld_plus_one
-
-          API = "https://ja.wikipedia.org/w/api.php"
-          UA = f"mailauth-observatory/0.1 ({os.environ['MAILAUTH_CONTACT_EMAIL']})"
-          SUFFIX = re.compile(r"^(株式会社|\(株\)|（株）)\s*|\s*(株式会社|\(株\)|（株）)$")
+          from mailauth.p1_population.jawiki import JawikiWebsites, live_fetch
 
           df = pd.read_parquet("silver/p1_population/entities.parquet")
-          missing = df[df["official_domain"].isna()]
-          rows = []
-          for _, r in missing.iterrows():
-              base = SUFFIX.sub("", str(r["name"])).strip()
-              code = str(r["securities_code"] or "")[:4]
-              rows.append({"name": r["name"], "code": code,
-                           "titles": [base, f"{base} (企業)"]})
-
-          client = httpx.Client(headers={"User-Agent": UA}, timeout=30)
-          pages = {}       # 引いた名前 -> wikitext（無ければ None）
-          titles = sorted({t for r in rows for t in r["titles"]})
-          for i in range(0, len(titles), 50):
-              chunk = titles[i:i + 50]
-              resp = client.get(API, params={
-                  "action": "query", "format": "json", "formatversion": "2",
-                  "prop": "revisions", "rvprop": "content", "rvslots": "main",
-                  "redirects": "1", "titles": "|".join(chunk)})
-              resp.raise_for_status()
-              q = resp.json().get("query", {})
-              alias = {}
-              for k in ("normalized", "redirects"):
-                  for n in q.get(k, []):
-                      alias[n["from"]] = n["to"]
-              got = {}
-              for p in q.get("pages", []):
-                  revs = p.get("revisions") or []
-                  got[p["title"]] = revs[0]["slots"]["main"]["content"] if revs else None
-              for t in chunk:
-                  final = t
-                  while final in alias:
-                      final = alias[final]
-                  pages[t] = got.get(final)
-              time.sleep(1.0)
-          client.close()
-
-          LINK = re.compile(r"\|\s*外部リンク\s*=\s*(\S[^\n|]*)")
-          URL = re.compile(r"https?://[^\s\]\}|<]+")
-          counts = Counter(companies=len(rows))
-          found = []
-          for r in rows:
-              texts = [pages.get(t) for t in r["titles"] if pages.get(t)]
-              if not texts:
-                  counts["no_article"] += 1
-                  continue
-              hit = None
-              for text in texts:
-                  if "基礎情報 会社" not in text:
-                      continue
-                  infobox = text[text.index("基礎情報 会社"):][:6000]
-                  if not r["code"] or not re.search(rf"(?<!\d){re.escape(r['code'])}(?!\d)", infobox):
-                      counts["code_not_in_infobox"] += 1
-                      continue
-                  m = LINK.search(infobox)
-                  u = URL.search(m.group(1)) if m else None
-                  if not u:
-                      counts["no_external_link"] += 1
-                      continue
-                  host = re.sub(r"^https?://", "", u.group(0)).split("/")[0].lower()
-                  hit = {"name": r["name"], "url": u.group(0), "domain": etld_plus_one(host)}
-                  break
-              else:
-                  if not any("基礎情報 会社" in t for t in texts):
-                      counts["article_without_company_infobox"] += 1
-              if hit:
-                  counts["found"] += 1
-                  found.append(hit)
-          shared = Counter(f["domain"] for f in found)
-          counts["found_shared_domain"] = sum(1 for f in found if shared[f["domain"]] > 1)
-          counts = dict(sorted(counts.items()))
+          taken = set(df["official_domain"].dropna())
+          missing = df[df["official_domain"].isna() & df["securities_code"].notna()]
+          reader = JawikiWebsites(live_fetch())
+          urls = reader.websites_for(
+              ((r["entity_id"], r["name"], r["securities_code"]) for _, r in missing.iterrows()),
+              taken,
+          )
+          names = dict(zip(missing["entity_id"], missing["name"]))
+          found = [{"name": names[k], "url": u} for k, u in urls.items()]
+          counts = {k: v for k, v in reader.stats.to_dict().items() if k != "sample_found"}
           json.dump({"counts": counts, "found": found}, open("out/probe.json", "w"),
                     ensure_ascii=False, indent=1)
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:

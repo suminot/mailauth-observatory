@@ -63,6 +63,13 @@ class SecFacts:
     #: 最新の年次報告書（10-K / 20-F / 40-F）。website 欄が空なので、
     #: 本文から公式サイトを読むのに使う（`annual_report.py`）
     annual_report: Any = None
+    #: 最新の目論見書・登録届出（S-1 / F-1 / 424B4 / Form 10 など）。
+    #: 年次報告書がまだ無い新規上場の会社に使う（`annual_report.REGISTRATION_FORMS`）
+    registration: Any = None
+    #: 最新の委任状説明書（DEF 14A）
+    proxy: Any = None
+    #: SEC に届けた社名を最後に変えた日。これより前の届出は前の会社のもの
+    renamed_at: str | None = None
     #: 新しい順の 8-K / 6-K の受付番号（`press_release.py`）
     releases: list[str] = field(default_factory=list)
     #: 最近の届出の様式。事業会社かどうかの判定に使う（`non_operating.py`）
@@ -227,9 +234,17 @@ class SecEdgarClient:
             facts.sic = sic
             facts.sic_label = (payload.get("sicDescription") or "").strip() or None
             self.stats.sic_found += 1
-        from .annual_report import latest_annual_report
+        from .annual_report import (
+            latest_annual_report,
+            latest_proxy,
+            latest_registration,
+            renamed_at,
+        )
 
         facts.annual_report = latest_annual_report(cik, payload)
+        facts.registration = latest_registration(cik, payload)
+        facts.proxy = latest_proxy(cik, payload)
+        facts.renamed_at = renamed_at(payload)
         from .press_release import recent_releases
 
         facts.releases = recent_releases(payload)

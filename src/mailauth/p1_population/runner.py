@@ -325,6 +325,9 @@ def _apply_enrichment(
                     entities, manifest, limit=limit, offline=offline, kana=kana
                 )
 
+            elif name == "jawiki_infobox":
+                _fill_from_jawiki(entities, manifest, limit=limit, offline=offline)
+
             else:
                 manifest.add_warning(
                     "ENRICH_UNKNOWN",
@@ -336,6 +339,76 @@ def _apply_enrichment(
             # 工程全体の秒数しか無く、どれを直せばよいか分からなかった
             enrich_seconds[name] = round(time.monotonic() - started, 1)
     manifest.set_breakdown(enrich_seconds=enrich_seconds)
+
+
+def _fill_from_jawiki(
+    entities: list[Entity],
+    manifest: RunManifest,
+    *,
+    limit: int | None = None,
+    offline: bool = False,
+    fetch=None,
+) -> None:
+    """**まだ空欄の企業だけ**、日本語版ウィキペディアの基礎情報から（BACKLOG 28）。
+
+    同じ会社の記事であることは、基礎情報の市場情報に書かれた証券コードで
+    確かめる（jawiki.py）。`fetch` を渡せるのは検査のため。
+    """
+    from .jawiki import JawikiWebsites, live_fetch
+
+    missing = [e for e in entities if not e.official_domain and e.securities_code]
+    if limit:
+        missing = missing[:limit]
+    if not missing:
+        manifest.set_breakdown(jawiki_infobox={"attempted": 0})
+        return
+    if fetch is None:
+        if offline:
+            manifest.add_warning(
+                "ENRICH_SKIPPED_JAWIKI",
+                message=(
+                    "offline のためウィキペディアの基礎情報を読んでいない。"
+                    "**「無い」のではなく「引いていない」**"
+                ),
+            )
+            return
+        if not credential("MAILAUTH_CONTACT_EMAIL"):
+            manifest.add_warning(
+                "ENRICH_SKIPPED_JAWIKI",
+                message=(
+                    "MAILAUTH_CONTACT_EMAIL が無いためウィキペディアを引いていない"
+                    "（Wikimedia の作法で、連絡先つきの User-Agent を付ける）"
+                ),
+            )
+            return
+        fetch = live_fetch()
+
+    reader = JawikiWebsites(fetch)
+    taken = {e.official_domain for e in entities if e.official_domain}
+    urls = reader.websites_for(
+        ((e.entity_id, e.name, e.securities_code) for e in missing), taken
+    )
+    by_id = {e.entity_id: e for e in missing}
+    for entity_id, url in urls.items():
+        entity = by_id[entity_id]
+        entity.official_url = url
+        entity.official_domain = domain_from_url(url)
+    if reader.stats.fetch_failed:
+        manifest.add_warning(
+            "ENRICH_FAILED_JAWIKI",
+            count=reader.stats.fetch_failed,
+            message=(
+                "ウィキペディアを引けなかった企業がある。**「記事が無い」ではなく"
+                "「引けなかった」**（原則5）"
+            ),
+        )
+    manifest.set_breakdown(
+        jawiki_infobox={
+            **reader.stats.to_dict(),
+            "missing_before": len(missing),
+            "still_missing": sum(1 for e in entities if not e.official_domain),
+        }
+    )
 
 
 def _fill_from_co_jp_homepage(
@@ -1245,12 +1318,19 @@ def _run_sec(
         str(e) == "sec_edgar_submissions" for e in (cfg.source.enrich or [])
     )
     annual_reports: dict[str, Any] = {}
+    registrations: dict[str, Any] = {}
+    proxies: dict[str, Any] = {}
+    renamed: dict[str, str] = {}
     releases: dict[str, list[str]] = {}
     forms_by_cik: dict[str, frozenset[str]] = {}
     if client is not None and wants_submissions and not dry_run:
         for row in rows:
             facts = client.facts_for_cik(row.cik)
             annual_reports[row.cik] = facts.annual_report
+            registrations[row.cik] = getattr(facts, "registration", None)
+            proxies[row.cik] = getattr(facts, "proxy", None)
+            if getattr(facts, "renamed_at", None):
+                renamed[row.cik] = facts.renamed_at
             releases[row.cik] = list(getattr(facts, "releases", None) or [])
             forms_by_cik[row.cik] = frozenset(getattr(facts, "forms", None) or ())
             if facts.website and not row.website:
@@ -1378,63 +1458,82 @@ def _run_sec(
     if wants_annual and client is not None and annual_reports:
         from .annual_report import AnnualReportWebsites
 
-        reader = AnnualReportWebsites(client)
-        missing = [e for e in entities if not e.official_domain]
-        found: list[tuple[Any, str, str]] = []
-        for entity in missing:
-            website = reader.website_for(annual_reports.get(entity.cik or ""), entity.name)
-            domain = domain_from_url(website) if website else None
-            if domain:
-                found.append((entity, website, domain))
-
-        # **複数社の報告書に同じドメインが書かれていたら、社名と合う会社にだけ
-        # 残す。** 同じ企業グループ（brookfield.com）なら正しいが、IR 代行や
-        # 運用会社のドメインが紛れ込むこともある（2026-10-21 の全数実行で
-        # 14 ドメイン・42 社）。辞書（THIRD_PARTY）に無いものもここで止まる
-        from collections import Counter
-
-        from .annual_report import name_matches_domain
-
-        uses = Counter(domain for _, _, domain in found)
-        shared_dropped: dict[str, list[str]] = {}
-        for entity, website, domain in found:
-            if uses[domain] > 1 and not name_matches_domain(entity.name, domain):
-                shared_dropped.setdefault(domain, []).append(entity.entity_id)
-                continue
-            entity.official_url = website
-            entity.official_domain = domain
-        annual_stats = {
-            **reader.stats.to_dict(),
-            "missing_before": len(missing),
-            "shared_dropped": sum(len(v) for v in shared_dropped.values()),
-            "shared_dropped_domains": sorted(shared_dropped)[:20],
-            "still_missing": sum(1 for e in entities if not e.official_domain),
-        }
-        if shared_dropped:
-            manifest.add_warning(
-                "SEC_ANNUAL_REPORT_SHARED_DOMAIN",
-                count=sum(len(v) for v in shared_dropped.values()),
-                sample=sorted(shared_dropped)[:5],
-                message=(
-                    "複数社の年次報告書に同じドメインが書かれていて、社名とも合わない"
-                    "ので使わなかった。**IR 代行や運用会社のドメインである可能性が"
-                    "高い。** 第三者と分かったら annual_report.THIRD_PARTY に足す"
-                ),
-            )
-        if reader.stats.fetch_failed:
-            manifest.add_warning(
-                "ENRICH_FAILED_SEC_ANNUAL_REPORT",
-                count=reader.stats.fetch_failed,
-                message=(
-                    "年次報告書を取得できなかった企業がある。**「サイトの記述が"
-                    "無かった」ではなく「読めなかった」**（原則5）"
-                ),
-            )
+        annual_stats = _fill_from_sec_filings(
+            entities,
+            annual_reports,
+            AnnualReportWebsites(client),
+            manifest,
+            shared_code="SEC_ANNUAL_REPORT_SHARED_DOMAIN",
+            failed_code="ENRICH_FAILED_SEC_ANNUAL_REPORT",
+            what="年次報告書",
+        )
     elif wants_annual:
         manifest.add_warning(
             "ENRICH_SKIPPED_SEC_ANNUAL_REPORT",
             message=(
                 "submissions を引いていないため年次報告書を読んでいない。"
+                "「サイトが無い」のではなく「引いていない」（原則5）"
+            ),
+        )
+
+    # **年次報告書がまだ無い会社（新規上場）は、目論見書・登録届出から**
+    # （BACKLOG 28）。S-1 / F-1 / 424B4 の「Corporate Information」に会社が
+    # 自分で書いた「Our website address is …」を、年次報告書と同じ読み方で読む
+    registration_stats: dict[str, Any] = {}
+    wants_registration = any(
+        str(e) == "sec_registration" for e in (cfg.source.enrich or [])
+    )
+    if wants_registration and client is not None and registrations:
+        from .annual_report import AnnualReportWebsites
+
+        registration_stats = _fill_from_sec_filings(
+            entities,
+            registrations,
+            AnnualReportWebsites(client),
+            manifest,
+            shared_code="SEC_REGISTRATION_SHARED_DOMAIN",
+            failed_code="ENRICH_FAILED_SEC_REGISTRATION",
+            what="目論見書・登録届出",
+            # 年次報告書と違い、SPAC の合併登録（S-4 / F-4）は相手の会社の
+            # 説明を含む。**他社に既に付いているドメインは、社名と合う
+            # ときだけ採る**
+            check_taken=True,
+            # 目論見書は何年も前のことがある。**社名を変える前の届出は読まない**
+            not_before=renamed,
+        )
+    elif wants_registration:
+        manifest.add_warning(
+            "ENRICH_SKIPPED_SEC_REGISTRATION",
+            message=(
+                "submissions を引いていないため目論見書・登録届出を読んでいない。"
+                "「サイトが無い」のではなく「引いていない」（原則5）"
+            ),
+        )
+
+    # **それでも残った分を、委任状説明書（DEF 14A）から**（BACKLOG 28）。
+    # 年次報告書の書き方が型に合わない老舗（Telephone & Data Systems・
+    # Seaboard など）も、招集通知には「our website at …」と書いている
+    proxy_stats: dict[str, Any] = {}
+    wants_proxy = any(str(e) == "sec_proxy" for e in (cfg.source.enrich or []))
+    if wants_proxy and client is not None and proxies:
+        from .annual_report import AnnualReportWebsites
+
+        proxy_stats = _fill_from_sec_filings(
+            entities,
+            proxies,
+            AnnualReportWebsites(client),
+            manifest,
+            shared_code="SEC_PROXY_SHARED_DOMAIN",
+            failed_code="ENRICH_FAILED_SEC_PROXY",
+            what="委任状説明書",
+            check_taken=True,
+            not_before=renamed,
+        )
+    elif wants_proxy:
+        manifest.add_warning(
+            "ENRICH_SKIPPED_SEC_PROXY",
+            message=(
+                "submissions を引いていないため委任状説明書を読んでいない。"
                 "「サイトが無い」のではなく「引いていない」（原則5）"
             ),
         )
@@ -1483,6 +1582,8 @@ def _run_sec(
     manifest.set_breakdown(
         wikidata_ticker=weak_stats,
         sec_annual_report=annual_stats,
+        sec_registration=registration_stats,
+        sec_proxy=proxy_stats,
         sec_press_release=release_stats,
         sec_enrichment={
             "submissions_fetched": client.stats.submissions_fetched if client else 0,
@@ -1588,3 +1689,82 @@ def _run_sec(
             manifest.add_output(EXCLUDED_FILENAME, records=n_ex)
 
     return manifest.to_dict()
+
+
+def _fill_from_sec_filings(
+    entities: list[Any],
+    reports: dict[str, Any],
+    reader: Any,
+    manifest: Any,
+    *,
+    shared_code: str,
+    failed_code: str,
+    what: str,
+    check_taken: bool = False,
+    not_before: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """起点の無い会社だけ、SEC の届出の本文から自社サイトを読んで埋める。
+
+    **複数社の届出に同じドメインが書かれていたら、社名と合う会社にだけ
+    残す。** 同じ企業グループ（brookfield.com）なら正しいが、IR 代行や
+    運用会社のドメインが紛れ込むこともある（2026-10-21 の全数実行で
+    14 ドメイン・42 社）。辞書（THIRD_PARTY）に無いものもここで止まる。
+
+    `check_taken` なら、**既に他社に付いているドメイン**も同じく社名と
+    合うときだけ採る。`not_before`（CIK → 社名を変えた日）より前の届出は
+    読まない。
+    """
+    from collections import Counter
+
+    from .annual_report import name_matches_domain
+
+    missing = [e for e in entities if not e.official_domain]
+    found: list[tuple[Any, str, str]] = []
+    for entity in missing:
+        website = reader.website_for(
+            reports.get(entity.cik or ""),
+            entity.name,
+            not_before=(not_before or {}).get(entity.cik or ""),
+        )
+        domain = domain_from_url(website) if website else None
+        if domain:
+            found.append((entity, website, domain))
+
+    uses = Counter(domain for _, _, domain in found)
+    if check_taken:
+        uses.update(e.official_domain for e in entities if e.official_domain)
+    shared_dropped: dict[str, list[str]] = {}
+    for entity, website, domain in found:
+        if uses[domain] > 1 and not name_matches_domain(entity.name, domain):
+            shared_dropped.setdefault(domain, []).append(entity.entity_id)
+            continue
+        entity.official_url = website
+        entity.official_domain = domain
+    stats = {
+        **reader.stats.to_dict(),
+        "missing_before": len(missing),
+        "shared_dropped": sum(len(v) for v in shared_dropped.values()),
+        "shared_dropped_domains": sorted(shared_dropped)[:20],
+        "still_missing": sum(1 for e in entities if not e.official_domain),
+    }
+    if shared_dropped:
+        manifest.add_warning(
+            shared_code,
+            count=sum(len(v) for v in shared_dropped.values()),
+            sample=sorted(shared_dropped)[:5],
+            message=(
+                f"複数社の{what}に同じドメインが書かれていて、社名とも合わない"
+                "ので使わなかった。**IR 代行や運用会社のドメインである可能性が"
+                "高い。** 第三者と分かったら annual_report.THIRD_PARTY に足す"
+            ),
+        )
+    if reader.stats.fetch_failed:
+        manifest.add_warning(
+            failed_code,
+            count=reader.stats.fetch_failed,
+            message=(
+                f"{what}を取得できなかった企業がある。**「サイトの記述が"
+                "無かった」ではなく「読めなかった」**（原則5）"
+            ),
+        )
+    return stats

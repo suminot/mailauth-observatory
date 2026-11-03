@@ -456,6 +456,22 @@ def test_月次計測は終わりに補充を頼み_補充は終わるのを待�
     assert "sleep" in busy, "頼んだ直後は向こうがまだ実行中なので、待たないと必ず飛ばす"
 
 
+def test_月次計測は補充が走っている間は_crt_sh_を叩かない():
+    """補充は月次計測を見て始めないが、逆向きが無かった（重なると 0.5 qps の倍）。"""
+    import yaml
+
+    from mailauth.paths import repo_root
+
+    monthly = yaml.safe_load(
+        (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(encoding="utf-8")
+    )
+    names = [s.get("name") for s in monthly["jobs"]["measure"]["steps"]]
+    wait = names.index("CT の補充が終わるのを待つ")
+    assert wait == names.index("P2 ドメイン候補生成") - 1
+    run = monthly["jobs"]["measure"]["steps"][wait]["run"]
+    assert "ct-backfill.yml" in run and "in_progress" in run and "sleep" in run
+
+
 @pytest.mark.parametrize(
     "workflow, job", [("ct-backfill.yml", "backfill"), ("monthly.yml", "measure")]
 )

@@ -35,6 +35,20 @@ from ..normalize import etld_plus_one
 #: 年次報告書として読む様式。米国企業は 10-K、外国企業は 20-F / 40-F
 ANNUAL_FORMS = ("10-K", "20-F", "40-F")
 
+#: **年次報告書がまだ無い会社**（ここ1〜2年の新規上場）が読む届出。
+#: 目論見書（S-1 / F-1 と確定版の 424B4 など）と、上場のための登録届出
+#: （Form 10）。どれも「Corporate Information」の節に「Our website address
+#: is …」と会社が自分で書く。**読み方は年次報告書と同じ**（`stated_domains`）。
+#:
+#: 2026-11 の米国で、年次報告書とプレスリリースのあとも起点が無い 220 社の
+#: うち 71 社が CIK 20 億番台だった（BACKLOG 28）
+REGISTRATION_FORMS = (
+    "424B4", "424B1", "424B3", "424B5",
+    "S-1", "S-1/A", "F-1", "F-1/A", "S-11", "S-11/A",
+    "F-4", "F-4/A", "S-4", "S-4/A",
+    "10-12B", "10-12B/A", "10-12G", "10-12G/A",
+)
+
 ARCHIVE_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/{document}"
 
 #: 本文の先頭から読む量。「Available Information」は Item 1 にあり、
@@ -126,6 +140,24 @@ THIRD_PARTY = frozenset(
         "investorroom.com",
         "irpass.com",
         "cfbenchmarks.com",
+        # 委任状説明書に必ず出る、議決権行使・株主名簿管理の代行会社
+        # （2026-11-03 の probe で colonialstock.com が自社サイトの句の直後に出た）
+        "proxyvote.com",
+        "virtualshareholdermeeting.com",
+        "envisionreports.com",
+        "edocumentview.com",
+        "investorvote.com",
+        "proxydocs.com",
+        "viewproxy.com",
+        "cstproxy.com",
+        "colonialstock.com",
+        "continentalstock.com",
+        "computershare.com",
+        "astfinancial.com",
+        "equiniti.com",
+        "vstocktransfer.com",
+        "broadridge.com",
+        "issuerdirect.com",
     }
 )
 
@@ -166,6 +198,8 @@ class AnnualReportStats:
     not_stated: int = 0
     #: 「自社の」の直後にあったが、第三者のドメインだったので捨てた件数
     third_party_dropped: int = 0
+    #: 社名を変える前の届出だったので読まなかった
+    predates_rename: int = 0
     by_form: dict[str, int] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
 
@@ -180,9 +214,38 @@ class AnnualReportStats:
             "found": self.found,
             "not_stated": self.not_stated,
             "third_party_dropped": self.third_party_dropped,
+            "predates_rename": self.predates_rename,
             "by_form": dict(sorted(self.by_form.items())),
             "notes": self.notes[:5],
         }
+
+
+#: 委任状説明書（株主総会の招集）。会社紹介や「Available Information」に
+#: 自社サイトを書く。**合併の委任状説明書（DEFM14A）は読まない** ── 相手の
+#: 会社の説明が入る（2026-11-03 の probe で Nordicus Partners に合併相手の
+#: ドメインが付いた）
+PROXY_FORMS = ("DEF 14A", "PRE 14A")
+
+
+def latest_proxy(cik: str, submissions: dict[str, Any] | None) -> AnnualReport | None:
+    """最新の委任状説明書（`PROXY_FORMS`）。"""
+    return latest_filing(cik, submissions, PROXY_FORMS)
+
+
+def renamed_at(submissions: dict[str, Any] | None) -> str | None:
+    """SEC に届けた社名を最後に変えた日（YYYY-MM-DD）。変えていなければ None。
+
+    **社名を変える前の届出は、前の会社のサイトを書いている。** 2026-11-03 の
+    probe で、XMax（旧 Nova Lifestyle）に novalifestyle.com、Valor Energy
+    （旧 Senmiao Technology）に ihongsen.com が付いた。
+    """
+    dates = [
+        str(f.get("to") or "")[:10]
+        for f in (submissions or {}).get("formerNames") or []
+        if isinstance(f, dict)
+    ]
+    dates = [d for d in dates if len(d) == 10]
+    return max(dates) if dates else None
 
 
 def latest_annual_report(cik: str, submissions: dict[str, Any] | None) -> AnnualReport | None:
@@ -191,13 +254,25 @@ def latest_annual_report(cik: str, submissions: dict[str, Any] | None) -> Annual
     `recent` は新しい順に並んでいる。訂正（10-K/A）は本文が一部だけの
     ことが多いので読まない。
     """
+    return latest_filing(cik, submissions, ANNUAL_FORMS)
+
+
+def latest_registration(cik: str, submissions: dict[str, Any] | None) -> AnnualReport | None:
+    """最新の目論見書・登録届出（`REGISTRATION_FORMS`）。"""
+    return latest_filing(cik, submissions, REGISTRATION_FORMS)
+
+
+def latest_filing(
+    cik: str, submissions: dict[str, Any] | None, wanted: tuple[str, ...]
+) -> AnnualReport | None:
+    """`wanted` のどれかの様式で、いちばん新しい届出。"""
     recent = ((submissions or {}).get("filings") or {}).get("recent") or {}
     forms = recent.get("form") or []
     accessions = recent.get("accessionNumber") or []
     documents = recent.get("primaryDocument") or []
     dates = recent.get("filingDate") or []
     for i, form in enumerate(forms):
-        if form not in ANNUAL_FORMS:
+        if form not in wanted:
             continue
         if i >= len(accessions) or i >= len(documents) or not documents[i]:
             continue
@@ -359,10 +434,20 @@ class AnnualReportWebsites:
     def _cache_path(self, report: AnnualReport) -> Path:
         return self.cache_dir / f"{report.accession}.json"
 
-    def website_for(self, report: AnnualReport | None, name: str | None = None) -> str | None:
+    def website_for(
+        self,
+        report: AnnualReport | None,
+        name: str | None = None,
+        *,
+        not_before: str | None = None,
+    ) -> str | None:
+        """`not_before`（社名を変えた日）より前に出た届出は読まない。"""
         self.stats.attempted += 1
         if report is None:
             self.stats.no_annual_report += 1
+            return None
+        if not_before and report.filing_date and report.filing_date[:10] < not_before:
+            self.stats.predates_rename += 1
             return None
         self.stats.by_form[report.form] = self.stats.by_form.get(report.form, 0) + 1
 
