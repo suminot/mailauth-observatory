@@ -13,11 +13,17 @@
 銀行にも、「Acquisition」は買収を終えた事業会社にも付く）。
 
   SPAC                 業種コード 6770（白地小切手会社）、または名称が
-                       「〇〇 Acquisition Corp / Company」
+                       「〇〇 Acquisition Corp / Company / Ltd」（間に回数の
+                       「II」「3」が入るものも。2026-11 に「Iron Horse
+                       Acquisition II Corp.」「ARC Group Acquisition I Corp.」
+                       が残っていた）
                        （**SEC が買収予定先の業種コードを付けた SPAC が 23 社
                        あった**（2026-10-21 の全数）。社名で決める唯一の例外）
   商品・暗号資産の信託  業種コード 6221、かつ社名が ETF / Trust / Fund
-                       （6221 には AI Financial Corp など事業会社も入っている）
+                       （6221 には AI Financial Corp など事業会社も入っている）。
+                       **6199（その他の金融）で社名が ETF / ETP / Fund** のもの
+                       も（2026-11、Bitwise Ethereum ETF・Fidelity Ethereum Fund
+                       が残っていた。6199 は Coinbase なども入るので Trust は見ない）
   ロイヤルティ信託・    業種コード 6189（資産担保証券）すべてと、6792（石油ロイヤルティ）
   仕組み債の信託        のうち名称に Trust があるもの。受託銀行が管理するだけの器で、
                        Texas Pacific Land など 6792 の事業会社は残す
@@ -52,6 +58,8 @@ LABELS_EN = {
 
 SPAC_SIC = "6770"
 COMMODITY_SIC = "6221"
+#: その他の金融。暗号資産の ETF がここに入ることがある
+OTHER_FINANCE_SIC = "6199"
 ASSET_BACKED_SIC = "6189"
 ROYALTY_SIC = "6792"
 
@@ -67,7 +75,14 @@ _FUND_NAME = re.compile(r"\b(etf|etp|trust|fund)\b", re.I)
 _TRUST_NAME = re.compile(r"\btrust\b", re.I)
 
 #: SPAC の名付け方。「Acquisition Holdings」は事業会社にもあるので含めない
-_SPAC_NAME = re.compile(r"\bacquisition\s+(?:corp(?:oration)?|co|company)\b", re.I)
+_SPAC_NAME = re.compile(
+    r"\bacquisition(?:\s+(?:[ivx]{1,4}|\d{1,2}))?\s+"
+    r"(?:corp(?:oration)?|co|company|ltd|limited)\b",
+    re.I,
+)
+
+#: 6199 で上場の器と見なす社名。**Trust は見ない**（事業会社にも付く）
+_ETP_NAME = re.compile(r"\b(etf|etp|fund)\b", re.I)
 
 
 def classify(sic: str | None, forms: Iterable[str] | None, name: str | None) -> str | None:
@@ -76,6 +91,8 @@ def classify(sic: str | None, forms: Iterable[str] | None, name: str | None) -> 
     if code == SPAC_SIC or _SPAC_NAME.search(name if isinstance(name, str) else ""):
         return SPAC
     if code == COMMODITY_SIC and _FUND_NAME.search(name or ""):
+        return COMMODITY_TRUST
+    if code == OTHER_FINANCE_SIC and _ETP_NAME.search(name if isinstance(name, str) else ""):
         return COMMODITY_TRUST
     if code == ASSET_BACKED_SIC or (code == ROYALTY_SIC and _TRUST_NAME.search(name or "")):
         return PASSIVE_TRUST

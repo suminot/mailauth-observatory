@@ -55,6 +55,19 @@ CONFIG = "configs/populations/us-all-listed.yaml"
         # **SEC が買収予定先の業種コードを付けた SPAC**（2026-10-21 の全数で 23 社）
         ("7372", {"10-K", "S-1"}, "McKinley Acquisition Corp", SPAC),
         ("4911", {"10-K"}, "Plum Acquisition Corp. IV", SPAC),
+        # **回数が社名の途中に入る SPAC**（2026-11 の米国に残っていた）
+        ("7389", {"10-K"}, "Iron Horse Acquisition II Corp.", SPAC),
+        ("6159", {"10-K"}, "ARC Group Acquisition I Corp.", SPAC),
+        ("4899", {"10-K"}, "Black Spade Acquisition III Co", SPAC),
+        ("7372", {"10-K"}, "Newbridge Acquisition Ltd", SPAC),
+        # 「Acquisitions」（複数形）や途中に別の語が入るものは事業会社として残す
+        ("6798", {"10-K"}, "Acme Acquisitions Corp", None),
+        # 6199 の暗号資産 ETF（2026-11 の米国に残っていた）
+        ("6199", {"10-K"}, "Bitwise Ethereum ETF", COMMODITY_TRUST),
+        ("6199", {"10-K"}, "Fidelity Ethereum Fund", COMMODITY_TRUST),
+        # **6199 の事業会社は残す。** Trust は見ない
+        ("6199", {"10-K", "10-Q"}, "Coinbase Global, Inc.", None),
+        ("6199", {"10-K"}, "Example Capital Trust Corp", None),
         # ロイヤルティ信託・仕組み債の信託
         ("6792", {"10-K"}, "SAN JUAN BASIN ROYALTY TRUST", PASSIVE_TRUST),
         ("6189", {"10-K"}, "STRATS(SM) Trust for Procter & Gamble Securities", PASSIVE_TRUST),
