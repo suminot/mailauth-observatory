@@ -346,6 +346,7 @@ rules:
   # **公式資料で確かめられなかったものは入れていない**（smtp.goog、gpphosted.com、
   # arsmtp.com、psmtp.com）。SiteGround は資料のホスト名（mx10.antispam.…）と
   # 実データ（mx10.mailspamprotection.com）が違うので入れていない
+  # （資料どおりの形が国内 2026-11 に出たので、その形だけ siteground-mx-01 に足した）
 
   - id: m365-mx-05
     vendor: Microsoft
@@ -591,3 +592,61 @@ rules:
     confidence: medium
     source: https://learn.microsoft.com/en-us/troubleshoot/exchange/email-delivery/wrong-office-365-region-exo
     note: 廃止された MX の値（旧 FrontBridge / EOP）。Microsoft は使わないよう案内している
+
+  # ---------------------------------------------------------------------------
+  # 2026-11 の国内計測の作業リスト（未知 MX）から、**運営会社自身の資料に
+  # ホスト名が載っているものだけ**（2026-11-03 に確認）。資料にホスト名が無い
+  # もの（Namecheap の無料転送 eforward*.registrar-servers.com、iCloud、
+  # Cloudflare の amir/isaac/linda.mx.cloudflare.net、SiteGround、Seznam）は
+  # 作業リストに残した
+  # ---------------------------------------------------------------------------
+
+  - id: namecheap-privateemail-mx-01
+    vendor: Namecheap
+    product: Private Email
+    match:
+      record: MX
+      pattern: '^mx[12]\.privateemail\.com\.?$'
+    confidence: high
+    source: https://www.namecheap.com/support/knowledgebase/article.aspx/1340/2176/namecheap-private-email-records-for-domains-with-thirdparty-dns/
+
+  - id: hostinger-mx-01
+    vendor: Hostinger
+    product: Hostinger Email
+    match:
+      record: MX
+      pattern: '^mx[12]\.hostinger\.com\.?$'
+    confidence: high
+    source: https://www.hostinger.com/support/4407237-hostinger-email-mx-records/
+
+  - id: proton-mx-01
+    vendor: Proton
+    product: Proton Mail
+    match:
+      record: MX
+      pattern: '^(mail|mailsec)\.protonmail\.ch\.?$'
+    confidence: high
+    source: https://proton.me/support/custom-domain-cloudflare
+
+  # cloudflare-routing-mx-01 と同じく、**受け取って転送するだけ。** 確度を下げる
+  - id: improvmx-mx-01
+    vendor: ImprovMX
+    product: ImprovMX（転送）
+    match:
+      record: MX
+      pattern: '^mx[12]\.improvmx\.com\.?$'
+    confidence: medium
+    source: https://improvmx.com/guides/generic-dns-configuration/
+    note: 転送のみ。転送先のメールボックスは分からない
+
+  # 2026-10-31 に資料で確かめたホスト名（mx10.antispam.…）が、国内 2026-11 の
+  # 実データに3件出た。**資料どおりの形だけ**（mx10.mailspamprotection.com の
+  # ような antispam の無い形は入れない。検査あり）
+  - id: siteground-mx-01
+    vendor: SiteGround
+    product: SiteGround Email
+    match:
+      record: MX
+      pattern: '^mx[123]0\.antispam\.mailspamprotection\.com\.?$'
+    confidence: high
+    source: https://www.siteground.com/kb/point-mail-service

@@ -769,6 +769,13 @@ IDENTIFIED_MX_HOSTS = [
     ("wxa105.wadax-sv.jp", InferenceCategory.MAIL_PLATFORM, "WADAX"),
     ("dda101.wadax-sv.jp", InferenceCategory.MAIL_PLATFORM, "WADAX"),
     ("mail.global.frontbridge.com", InferenceCategory.MAIL_PLATFORM, "Microsoft"),
+    # 2026-11-03：国内 2026-11 の作業リストから、運営会社の資料で確かめて足した
+    ("mx1.privateemail.com", InferenceCategory.MAIL_PLATFORM, "Namecheap"),
+    ("mx2.hostinger.com", InferenceCategory.MAIL_PLATFORM, "Hostinger"),
+    ("mail.protonmail.ch", InferenceCategory.MAIL_PLATFORM, "Proton"),
+    ("mailsec.protonmail.ch", InferenceCategory.MAIL_PLATFORM, "Proton"),
+    ("mx1.improvmx.com", InferenceCategory.MAIL_PLATFORM, "ImprovMX"),
+    ("mx20.antispam.mailspamprotection.com", InferenceCategory.MAIL_PLATFORM, "SiteGround"),
     # キヤノン MJ のスタートアップガイドが `XXXX.guardianwall.jp` の形を示している
     (
         "prmtotr010.guardianwall.jp",
@@ -801,6 +808,11 @@ IDENTIFIED_MX_HOSTS = [
         "mx1.sharedmail.jp",
         "asahinet-mx-v4.xspmail.jp",
         "mx.bizmail.nifcloud.com",  # 資料を取得できていない
+        # 2026-11-03：資料にホスト名が無い（転送・個人向けの設定画面にしか出ない）
+        "eforward3.registrar-servers.com",
+        "mx01.mail.icloud.com",
+        "amir.mx.cloudflare.net",  # Cloudflare の資料は route1〜3 だけ
+        "mx1.efwd.spaceship.net",
     ],
 )
 def test_資料で確かめていないホストは同定しない(rules, host):
