@@ -13,6 +13,9 @@ Wikidata Query Service の作法
 
 from __future__ import annotations
 
+import hashlib
+import json
+import time
 import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -22,7 +25,7 @@ from typing import Any
 import httpx
 
 from ..normalize import domain_from_url
-from ..paths import config_path
+from ..paths import cache_root, config_path
 
 ENDPOINT = "https://query.wikidata.org/sparql"
 #: 連絡先を**含めていなかった。**
@@ -35,6 +38,16 @@ ENDPOINT = "https://query.wikidata.org/sparql"
 #: から試したらまだ 403 だった。切り分けた結果は下の `run_query` に書く。
 BASE_USER_AGENT = "mailauth-observatory/0.1 (https://github.com/suminot/mailauth-observatory"
 TIMEOUT_SEC = 60.0
+
+#: 接続が途中で切られたとき（HTTP/2 の StreamReset など）・429・5xx の
+#: ときに待ってから引き直す間隔（秒）。**1回の失敗で補完を丸ごと失わない。**
+#: 2026-11-02 の国内の流し直しは StreamReset 1回で Wikidata の 1,207 社分を
+#: 失い、公式サイトの欠けが 405 → 1,021 社になった
+RETRY_WAITS = (10.0, 30.0)
+_sleep = time.sleep
+
+#: 引けなかったときに使ってよい、前に引いた結果の古さ（日）
+CACHE_MAX_DAYS = 40
 
 
 def user_agent() -> str:
@@ -112,14 +125,26 @@ def run_query(query: str, *, client: httpx.Client | None = None) -> list[dict[st
     owned = client is None
     c = client or httpx.Client(timeout=TIMEOUT_SEC, follow_redirects=True, http2=True)
     try:
-        resp = c.post(
-            ENDPOINT,
-            data={"query": query},
-            headers={
-                "User-Agent": user_agent(),
-                "Accept": "application/sparql-results+json",
-            },
-        )
+        for attempt in range(len(RETRY_WAITS) + 1):
+            last = attempt == len(RETRY_WAITS)
+            try:
+                resp = c.post(
+                    ENDPOINT,
+                    data={"query": query},
+                    headers={
+                        "User-Agent": user_agent(),
+                        "Accept": "application/sparql-results+json",
+                    },
+                )
+            except httpx.TransportError as exc:
+                if last:
+                    raise WikidataError(f"Wikidata に接続できない: {exc}") from exc
+                _sleep(RETRY_WAITS[attempt])
+                continue
+            if (resp.status_code == 429 or resp.status_code >= 500) and not last:
+                _sleep(RETRY_WAITS[attempt])
+                continue
+            break
         if resp.status_code != 200:
             raise WikidataError(
                 f"Wikidata が {resp.status_code} を返した: {resp.text[:200]}"
@@ -403,7 +428,19 @@ def fetch_identity(
     if normalize is None:
         raise WikidataError(f"突合鍵 {key!r} の正規化が定義されていません")
 
-    bindings = run_query(load_query(query_path), client=client)
+    query = load_query(query_path)
+    from_cache: str | None = None
+    try:
+        bindings = run_query(query, client=client)
+        _save_cached_bindings(query, bindings)
+    except WikidataError:
+        # **引き直しても引けなければ、前に引いた結果を使う。** 公式サイトの
+        # URL は月単位ではほとんど変わらない。使ったことは stats に残し、
+        # 呼ぶ側が警告にする。古すぎるもの・無いときは今までどおり失敗
+        cached = _load_cached_bindings(query)
+        if cached is None:
+            raise
+        bindings, from_cache = cached
     out: dict[str, dict[str, str]] = {}
     stats: dict[str, Any] = {
         "bindings": len(bindings),
@@ -458,7 +495,45 @@ def fetch_identity(
         out.pop(bad, None)
     stats["dropped_ambiguous"] = len(ambiguous)
     stats["key_count"] = len(out)
+    if from_cache:
+        stats["from_cache"] = from_cache
     return out, stats
+
+
+def _cache_path(query: str) -> Path:
+    digest = hashlib.sha256(query.encode("utf-8")).hexdigest()[:16]
+    return cache_root() / "wikidata" / f"{digest}.json"
+
+
+def _save_cached_bindings(query: str, bindings: list[dict[str, Any]]) -> None:
+    path = _cache_path(query)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {"fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                 "bindings": bindings},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass  # 残せなくても今回の結果は使える
+
+
+def _load_cached_bindings(query: str) -> tuple[list[dict[str, Any]], str] | None:
+    """前に引いた結果と、その時刻。無い・読めない・古すぎるなら None。"""
+    path = _cache_path(query)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        fetched_at = str(data["fetched_at"])
+        age = time.time() - time.mktime(time.strptime(fetched_at, "%Y-%m-%dT%H:%M:%SZ"))
+        bindings = data["bindings"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if age > CACHE_MAX_DAYS * 86400 or not isinstance(bindings, list):
+        return None
+    return bindings, fetched_at
 
 
 def fetch_cik_identity(

@@ -533,6 +533,14 @@ def _fill_missing_urls_from_wikidata(
         # 「相手が落ちていたのか」が文面を読まないと分からない（原則5）
         manifest.add_warning("ENRICH_FAILED_WIKIDATA", message=str(exc))
         return
+    if stats.get("from_cache"):
+        manifest.add_warning(
+            "ENRICH_WIKIDATA_FROM_CACHE",
+            message=(
+                "Wikidata を引き直しても引けなかったので、"
+                f"{stats['from_cache']} に引いた結果を使った"
+            ),
+        )
 
     filled = 0
     lei_filled = 0
@@ -630,6 +638,11 @@ def _fill_from_weak_key(
     except WikidataError as exc:
         manifest.add_warning(f"ENRICH_FAILED_WIKIDATA_{label.upper()}", message=str(exc))
         return {"missing_before": len(missing_before), "filled": 0, "error": str(exc)}
+    if stats.get("from_cache"):
+        manifest.add_warning(
+            f"ENRICH_WIKIDATA_FROM_CACHE_{label.upper()}",
+            message=f"Wikidata を引けなかったので、{stats['from_cache']} に引いた結果を使った",
+        )
 
     filled = 0
     name_rejected = 0
