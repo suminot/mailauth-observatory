@@ -46,6 +46,12 @@ def test_記事の名前は法人格を落としたものと_企業_を付けた
     assert candidate_titles("") == []
 
 
+def test_全角の英数字は半角にした名前も試す():
+    assert candidate_titles("Ｕｍｉｏｓ株式会社") == [
+        "Ｕｍｉｏｓ", "Ｕｍｉｏｓ (企業)", "Umios", "Umios (企業)",
+    ]
+
+
 def test_市場情報の証券コードで同じ会社かを確かめる():
     box = _infobox(_article("1380", "https://www.example.co.jp/"))
     assert code_listed(box, "1380")

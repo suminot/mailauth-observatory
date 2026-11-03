@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import re
 import time
+import unicodedata
 from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -58,11 +59,18 @@ NOT_COMPANY = frozenset(
 
 
 def candidate_titles(name: str) -> list[str]:
-    """記事の名前の候補。法人格を落としたものと、「 (企業)」を付けたもの。"""
-    base = _LEGAL_FORM.sub("", (name or "").strip()).strip()
-    if not base:
-        return []
-    return [base, f"{base} (企業)"]
+    """記事の名前の候補。法人格を落としたものと、「 (企業)」を付けたもの。
+
+    EDINET の社名は英数字が全角のことがある（「Ｕｍｉｏｓ株式会社」）。記事の
+    名前は半角なので、NFKC で揃えたものも試す。
+    """
+    out: list[str] = []
+    for form in (name or "", unicodedata.normalize("NFKC", name or "")):
+        base = _LEGAL_FORM.sub("", form.strip()).strip()
+        for title in (base, f"{base} (企業)"):
+            if base and title not in out:
+                out.append(title)
+    return out
 
 
 def _infobox(wikitext: str) -> str | None:
