@@ -549,3 +549,20 @@ def test_新しい_gTLD_も自社サイトとして読む(text, expected):
 )
 def test_文の詰まりを新しい_gTLD_と取り違えない(text):
     assert _domains(text) == {}
+
+
+def test_its_website_は社名と合うドメインのときだけ読む():
+    """Gencor Industries は「through its website at www.gencor.com」だけだった。"""
+    text = (
+        "The Company makes available free of charge through its website at "
+        "www.gencor.com the Company's Annual Reports on Form 10-K."
+    )
+    found, _, _ = stated_domains(text, "GENCOR INDUSTRIES INC")
+    assert dict(found) == {"gencor.com": 1}
+    # 指数提供会社のドメインは、その ETF の名前と合わないので採らない
+    etf = (
+        "The index is calculated by CoinDesk Indices. "
+        "Information is available on its website at www.coindesk-indices.com."
+    )
+    found, _, _ = stated_domains(etf, "Grayscale Bitcoin Trust")
+    assert dict(found) == {}
