@@ -470,6 +470,12 @@ def test_月次計測は補充が走っている間は_crt_sh_を叩かない():
     assert wait == names.index("P2 ドメイン候補生成") - 1
     run = monthly["jobs"]["measure"]["steps"][wait]["run"]
     assert "ct-backfill.yml" in run and "in_progress" in run and "sleep" in run
+    # **補充が crt.sh を叩くと決めたあとだけ待つ。** 補充の確かめの間も待つと
+    # お互いを待つ（2026-11-03 に 7 分空いた）。補充側の段の名前で見ているので、
+    # 名前を変えたらここが落ちる
+    backfill = {s.get("name") for s in _steps()}
+    for name in ("月次計測が走っていないか確かめる", "補充"):
+        assert name in backfill and f'"{name}"' in run, name
 
 
 @pytest.mark.parametrize(
