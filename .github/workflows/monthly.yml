@@ -194,8 +194,17 @@ jobs:
             data/cache/edinet
             data/cache/wikidata
             data/cache/co_jp_homepage
-          key: enrich-${{ steps.run.outputs.id }}-${{ github.run_id }}
+          # **鍵に母集団を入れる。** 入れていなかったので、米国の流し直し
+          # （2026-11-04、run 41767593532）が直前の国内の実行のキャッシュ
+          # （SEC の結果が無い）を復元し、年次報告書 2,932 本を読み直した。
+          # 逆向きだと国内が .co.jp の推測と Wikidata の控えを失う。
+          # 同じ母集団の前の月の結果も使う（受付番号・持ち越し日数で
+          # 古さはそれぞれの側が見ている）
+          key: enrich-${{ steps.run.outputs.pop }}-${{ steps.run.outputs.id }}-${{ github.run_id }}
+          # 3行目は移行のため：母集団の入った鍵がまだ無いときだけ、前の形の鍵を見る
           restore-keys: |
+            enrich-${{ steps.run.outputs.pop }}-${{ steps.run.outputs.id }}-
+            enrich-${{ steps.run.outputs.pop }}-
             enrich-${{ steps.run.outputs.id }}-
 
       # **前の月の出力を取ってくる。** 前月比（delta_prev_month）、母集団の
@@ -380,7 +389,7 @@ jobs:
             data/cache/edinet
             data/cache/wikidata
             data/cache/co_jp_homepage
-          key: enrich-${{ steps.run.outputs.id }}-${{ github.run_id }}
+          key: enrich-${{ steps.run.outputs.pop }}-${{ steps.run.outputs.id }}-${{ github.run_id }}
 
       # **CT の補充が走っている間は crt.sh を叩かない。** 補充は月次計測が
       # 走っているのを見て始めないが、逆向きの確かめが無かった。重なると
