@@ -784,6 +784,7 @@ IDENTIFIED_MX_HOSTS = [
         "Tucows",
     ),
     ("mx3.oderland.com", InferenceCategory.MAIL_PLATFORM, "Oderland"),
+    ("mx.core.locaweb.com.br", InferenceCategory.MAIL_PLATFORM, "Locaweb"),
     # キヤノン MJ のスタートアップガイドが `XXXX.guardianwall.jp` の形を示している
     (
         "prmtotr010.guardianwall.jp",
@@ -827,6 +828,8 @@ IDENTIFIED_MX_HOSTS = [
         "mx1-us.n-able.com",  # N-able の資料は mtaroutes.com
         "mx-caprica.easydns.com",
         "mx101.everycloudtech.us",
+        "filter1.kaziat-1.mailguard.com.au",  # MailGuard の資料にホスト名が無い
+        "relay1.netnames.net",
     ],
 )
 def test_資料で確かめていないホストは同定しない(rules, host):

@@ -677,3 +677,13 @@ rules:
       pattern: '^mx[1-4]\.oderland\.com\.?$'
     confidence: high
     source: https://www.oderland.se/support/en/artikel/what-mx-records-shall-i-use-to-direct-email-traffic-towards-your-servers/
+
+  # 2026-11-04：CT が揃ったあとの米国の作業リストに 15 件。資料の4つの名前だけ
+  - id: locaweb-mx-01
+    vendor: Locaweb
+    product: Locaweb（メール）
+    match:
+      record: MX
+      pattern: '^mx\.(a|b|core|jk)\.locaweb\.com\.br\.?$'
+    confidence: high
+    source: https://www.locaweb.com.br/ajuda/wiki/como-configurar-o-mx-e-mail-locaweb/
