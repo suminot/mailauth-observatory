@@ -225,3 +225,46 @@ rules:
     confidence: high
     source: https://support.exclaimer.com/hc/en-gb/articles/4404775962641
     note: 送信メールに署名を付けて送り直す。業務メールが通る
+
+  # 2026-11-04：国内 2026-11 の SPF の include から（提供元の資料で確かめたもの）。
+  # 足さなかったもの：ブラストメール（spf.bmv.jp。サイトが不正アクセスで停止中、
+  # 検索結果の写しだけ）、SHANON（spf.smktg.jp。頁が 403、写しだけ）、
+  # 楽楽明細・ベアメール・SPC・SATORI・Cuenote・BowNow（資料に値が無い）
+  - id: emberpoint-spf-01
+    vendor: エンバーポイント
+    product: MailPublisher など
+    region: JP
+    match:
+      record: SPF_INCLUDE
+      pattern: '^spf-(bma|rmb)\.mpme\.jp$'
+    confidence: high
+    source: https://emberpoint.zendesk.com/hc/ja/articles/4688462786974
+
+  - id: webcas-spf-01
+    vendor: WOW WORLD
+    product: WEBCAS
+    region: JP
+    match:
+      record: SPF_INCLUDE
+      pattern: '^webcas\.net$'
+    confidence: high
+    source: https://web.webcas.net/content/info/asp12.html
+
+  - id: prtimes-spf-01
+    vendor: PR TIMES
+    product: PR TIMES（プレスリリースの配信）
+    region: JP
+    match:
+      record: SPF_INCLUDE
+      pattern: '^_spf\.prtimes\.jp$'
+    confidence: high
+    source: https://tayori.com/q/prtimes-faq/detail/627832/
+
+  - id: zohocampaigns-spf-01
+    vendor: Zoho
+    product: Zoho Campaigns
+    match:
+      record: SPF_INCLUDE
+      pattern: '^zcsend\.net$|^sender\.zcsend\.jp$'
+    confidence: high
+    source: https://help.zoho.com/portal/ja/kb/campaigns/deliverability-guide/domain-authentication/domain-authentication-techniques

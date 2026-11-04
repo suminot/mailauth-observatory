@@ -718,3 +718,23 @@ rules:
       pattern: '^spf\.protection\.office365\.us$'
     confidence: high
     source: https://learn.microsoft.com/en-us/defender-office-365/email-authentication-spf-configure
+
+  - id: xserver-spf-01
+    vendor: エックスサーバー
+    product: Xserver レンタルサーバー
+    region: JP
+    match:
+      record: SPF_INCLUDE
+      pattern: '^spf\.sender\.xserver\.jp$'
+    confidence: high
+    source: https://www.xserver.ne.jp/manual/man_mail_spf.php
+
+  # 他社の DNS を使うお客さま向けの案内
+  - id: kagoya-spf-01
+    vendor: カゴヤ・ジャパン
+    region: JP
+    match:
+      record: SPF_INCLUDE
+      pattern: '^kagoya\.net$'
+    confidence: high
+    source: https://support.kagoya.jp/kir/faq/index.php?action=artikel&cat=22&id=201&artlang=ja

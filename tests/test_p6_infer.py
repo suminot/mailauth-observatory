@@ -1569,6 +1569,12 @@ def test_undocumented_gateway_spf_is_not_outbound(rules, includes, mechanisms):
         ("spf.qiye.aliyun.com", "Alibaba Cloud"),
         ("spf.protection.office365.us", "Microsoft"),
         ("spfa.cpmails.com", "Check Point"),
+        ("spf-bma.mpme.jp", "エンバーポイント"),
+        ("webcas.net", "WOW WORLD"),
+        ("_spf.prtimes.jp", "PR TIMES"),
+        ("sender.zcsend.jp", "Zoho"),
+        ("spf.sender.xserver.jp", "エックスサーバー"),
+        ("kagoya.net", "カゴヤ・ジャパン"),
     ],
 )
 def test_documented_spf_includes_are_identified(rules, include, vendor):
@@ -1585,6 +1591,10 @@ def test_documented_spf_includes_are_identified(rules, include, vendor):
         "secureserver.net",
         "one.zoho.com",
         "spfhost.messageprovider.com",
+        "spf.bmv.jp",
+        "spf.smktg.jp",
+        "spf.baremetal.jp",
+        "spf.satorimail.net",
     ],
 )
 def test_unverified_spf_includes_stay_unidentified(rules, include):
