@@ -68,6 +68,8 @@ everlytickey2
 # --- 日本国内で観測されやすいもの ---
 # 事業者の公式資料に固定の名前として書かれているもの（2026-11-02 確認）
 bizmw             # NTT Bizメール＆ウェブ プレミアム（support.ntt.com/mw-premiumr3/information/detail/pid2500002h0b/）
+mg                # サイバーソリューションズ CYBERMAIL Σ / MAILGATES Σ の送信時 DKIM 署名の手順が「セレクタ―設定に「mg」を入力」（cloud-sup.cybersolutions.co.jp/hc/ja/articles/12194730127897、2026-11-04 確認）
+20231221          # NTTPC WebARENA SuiteX V2 の DKIM 設定手順が「NAME 20231221._domainkey」（help.arena.ne.jp/hc/ja/articles/21039481932695、2026-11-04 確認）。WebARENA 以外の国内ドメインにもある（共通の基盤とみられる）
 biglobe
 sakura
 xserver

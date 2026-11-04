@@ -820,3 +820,15 @@ def test_クエリ数は別に残っている():
     b = run_p4(run_id=RUN, backend=FakeBackend())["breakdown"]
     assert b["queries_total"] > 0
     assert sum(b["by_rcode"].values()) == b["queries_total"]
+
+
+def test_l1_has_the_documented_jp_selectors():
+    """国内の事業者の資料に固定の名前として書かれているセレクタ（2026-11-04）。
+
+    国内 2026-11 で「既知のセレクタに無い」1,816 ドメインのうち、CYBERMAIL Σ
+    の 90 中 44 が `mg`、WebARENA の 12 中 8 が `20231221` に鍵を持っていた
+    （ほかの国内ドメインでも 25）。どちらも事業者の手順書にある名前。
+    """
+    selectors = SelectorDictionary.load().selectors_for([], [])
+    assert "mg" in selectors
+    assert "20231221" in selectors
