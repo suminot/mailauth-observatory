@@ -882,6 +882,13 @@ class StatsOverall(_Model):
     #: SPF の DNS を引く項が、include の先まで数えて上限 10 を超える（apex、
     #: SPF あり。BACKLOG 41）。先を引いていない run では null
     spf_lookup_exceeded_domains: int | None = None
+    #: SPF の最後の `all` の修飾子ごとの数（apex、SPF が1つだけのもの）。
+    #: `+all` は誰が送っても SPF が通る。`all` が無ければ評価は neutral で終わる
+    spf_all_fail_domains: int = 0
+    spf_all_softfail_domains: int = 0
+    spf_all_neutral_domains: int = 0
+    spf_all_pass_domains: int = 0
+    spf_all_missing_domains: int = 0
     #: SPF の include / redirect の先に SPF が無い・2つある
     spf_target_broken_domains: int | None = None
     bimi_domains: int = 0
@@ -963,6 +970,11 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("rua_unauthorized_domains", pa.int32()),
     ("rua_unregistered_domains", pa.int32()),
     ("spf_lookup_exceeded_domains", pa.int32()),
+    ("spf_all_fail_domains", pa.int32()),
+    ("spf_all_softfail_domains", pa.int32()),
+    ("spf_all_neutral_domains", pa.int32()),
+    ("spf_all_pass_domains", pa.int32()),
+    ("spf_all_missing_domains", pa.int32()),
     ("spf_target_broken_domains", pa.int32()),
     ("bimi_domains", pa.int32()),
     ("dnssec_domains", pa.int32()),

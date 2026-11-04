@@ -16,6 +16,7 @@ months:
       - DMARC の集計レポートの宛先が受け取りを認めるレコードを出しているかを、集計に足した。
       - 実基盤の判定に、運営会社の資料で確かめた MX（iCloud+・Seznam・Daum など）を足した。
       - SPF で DNS を引く項の数を、include と redirect の先まで引いて数えるようにした。上限 10 を超えるドメインと、先に SPF が無いドメインを集計に足した。
+      - SPF の最後の `all` の修飾子（-all・~all・?all・+all・無し）ごとの数を集計に足した。
     en:
       - The outbound front-end check now includes the names that Proofpoint, Mimecast, Barracuda, Cisco, Trend Micro and others ask customers to publish in SPF for sending (only names found in each vendor's documentation). The number of US companies with an outbound front-end rose largely because of this.
       - Rules were added for DKIM CNAME targets (SendGrid, HubSpot, Constant Contact, Salesforce and others) and SPF includes (KnowBe4, Mailgun, Oracle and Japanese delivery services). The rise in sending-service counts comes from this.
@@ -23,3 +24,4 @@ months:
       - Whether DMARC report destinations publish the record accepting the reports is now counted.
       - MX hosts confirmed in operators' documentation (iCloud+, Seznam, Daum and others) were added to the platform check.
       - The SPF terms that make DNS lookups are now counted through the include and redirect targets. Domains over the limit of 10, and domains whose targets have no SPF, were added to the summary.
+      - Counts by the final SPF `all` term (-all, ~all, ?all, +all, none) were added to the summary.

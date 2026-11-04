@@ -241,6 +241,36 @@ display(
 
 </div>
 
+SPF の最後の `all` は、**一覧に無い送信元をどう扱うか**を受け手に伝えます。
+
+```js
+display(
+  current?.spf_all_fail_domains == null
+    ? html`<p class="muted">この月はまだ集計していません。<strong>0 ではありません。</strong></p>`
+    : table(
+        [
+          { 最後の項: "-all", 意味: "一覧に無い送信元は失敗とする", ドメイン: current?.spf_all_fail_domains },
+          { 最後の項: "~all", 意味: "一覧に無い送信元は疑わしいとする（softfail）", ドメイン: current?.spf_all_softfail_domains },
+          { 最後の項: "?all", 意味: "一覧に無い送信元について何も言わない", ドメイン: current?.spf_all_neutral_domains },
+          { 最後の項: "+all（または all）", 意味: "どの送信元も通す", ドメイン: current?.spf_all_pass_domains },
+          { 最後の項: "all が無い", 意味: "一覧に無い送信元について何も言わない", ドメイン: current?.spf_all_missing_domains },
+        ],
+        { sort: null }
+      )
+);
+```
+
+<div class="limits">
+
+- `-all` と `~all` のどちらを選ぶかは、DMARC と組み合わせた運用の考え方に
+  よります。この表は数を並べるだけで、優劣は付けていません
+- `+all` の SPF は、誰が送っても SPF を通します
+- `v=spf1` が2つあるドメインはレコード全体が無効なので、この表に入れていません
+- `redirect=` で別のレコードに任せている場合は、任せた先の `all` を見ていません
+  （「all が無い」に入ります）
+
+</div>
+
 ## 自分と、その配下
 
 DMARC の `p=` はそのドメイン自身に効きます。**配下のサブドメインに効くのは
