@@ -182,6 +182,39 @@ display(
 );
 ```
 
+### Whether report destinations accept the reports
+
+When `rua` names a destination outside the domain itself (a group company or a
+report-processing service), **the destination domain has to publish a record
+saying it accepts them** (`<domain>._report._dmarc.<destination>`). Without it,
+receivers may not send the reports — a domain can publish DMARC and still not
+be receiving its aggregate reports.
+
+```js
+display(
+  current?.rua_external_domains === undefined
+    ? html`<p class="muted">Not counted for this month yet. <strong>This is not zero.</strong></p>`
+    : table(
+        [
+          { Category: "rua has an outside destination", Domains: current?.rua_external_domains },
+          { Category: "of which the destination does not publish the accepting record", Domains: current?.rua_unauthorized_domains },
+          { Category: "of which the destination domain is not registered", Domains: current?.rua_unregistered_domains },
+        ],
+        { sort: null }
+      )
+);
+```
+
+<div class="limits">
+
+- Destinations that could not be looked up are not counted as missing the record
+- Some receivers send without checking this record, so it does not show the
+  reports are not arriving
+- If the destination domain is unregistered, whoever registers it could receive
+  the reports
+
+</div>
+
 ## The domain, and what sits under it
 
 A DMARC `p=` tag applies to the domain itself. **What applies to its
@@ -246,8 +279,9 @@ display(
   they are kept apart
 - **Only what was found.** There is no way to enumerate every subdomain.
   Absence here does not mean absence
-- The routes used are `rua` destinations and SPF `include:` targets. A
-  subdomain sending mail by any other route is not visible here
+- The routes used are `rua` destinations and SPF `include:` targets, plus,
+  from the 2026-12 measurement, `mail.` and `email.` under the primary domain.
+  A subdomain sending mail by any other route is not visible here
 
 </div>
 
