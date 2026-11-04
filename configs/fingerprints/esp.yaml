@@ -122,3 +122,106 @@ rules:
       record: SPF_INCLUDE
       pattern: '^(spf\d*\.)?smp\.ne\.jp$'
     confidence: medium
+
+  # -------------------------------------------------------------------------
+  # 2026-11-04：米国 2026-11 の SPF の include のうち、規則に当たらないものを
+  # 頻度順に並べ、**提供元の資料に同じ include が書いてあるものだけ**足した。
+  # 足さなかったもの：Pardot（aspmx.pardot.com。Salesforce の頁が読めず、
+  # 検索結果の抜粋だけ）、Constant Contact（資料が「include は要らない」と
+  # 書いている）、GoDaddy の secureserver.net（1つの include が複数の
+  # サービスを指す）、Zoho の one.zoho.com（Zoho の全サービスを指す）、
+  # spfhost.messageprovider.com（運営者を資料で確かめられない）
+  # -------------------------------------------------------------------------
+
+  - id: knowbe4-spf-01
+    vendor: KnowBe4
+    product: Security Awareness Training（標的型メール訓練）
+    match:
+      record: SPF_INCLUDE
+      pattern: '^_spf\.psm\.knowbe4\.com$'
+    confidence: high
+    source: https://support.knowbe4.com/hc/en-us/articles/115003254328
+    note: 訓練用の模擬フィッシングメールの送信元。業務メールの基盤ではない
+
+  - id: mailgun-spf-01
+    vendor: Sinch
+    product: Mailgun
+    match:
+      record: SPF_INCLUDE
+      pattern: '^mailgun\.org$'
+    confidence: high
+    source: https://documentation.mailgun.com/docs/mailgun/user-manual/domains/domains-verify
+
+  - id: mailjet-spf-01
+    vendor: Sinch
+    product: Mailjet
+    match:
+      record: SPF_INCLUDE
+      pattern: '^spf\.mailjet\.com$'
+    confidence: high
+    source: https://documentation.mailjet.com/hc/en-us/articles/360049641733
+
+  - id: oracle-spf-01
+    vendor: Oracle
+    product: Oracle Cloud（SaaS の通知・OCI Email Delivery）
+    match:
+      record: SPF_INCLUDE
+      pattern: '^spf_c\.oraclecloud\.com$|^((ap|eu)\.)?rp\.oracleemaildelivery\.com$'
+    confidence: high
+    source: https://docs.oracle.com/en/cloud/saas/transportation/25c/otmca/configuring-spf.html
+
+  - id: netsuite-spf-01
+    vendor: Oracle
+    product: NetSuite
+    match:
+      record: SPF_INCLUDE
+      pattern: '^sent-via\.netsuite\.com$|^mailsenders\.netsuite\.com$'
+    confidence: high
+    source: https://docs.oracle.com/en/cloud/saas/netsuite/ns-online-help/bridgehead_4820740297.html
+
+  - id: campaignmonitor-spf-01
+    vendor: Marigold
+    product: Campaign Monitor
+    match:
+      record: SPF_INCLUDE
+      pattern: '^_spf\.createsend\.com$'
+    confidence: high
+    source: https://help.campaignmonitor.com/s/article/manage-your-own-authentication
+
+  - id: mailchannels-spf-01
+    vendor: MailChannels
+    product: MailChannels Outbound Filtering
+    match:
+      record: SPF_INCLUDE
+      pattern: '^relay\.mailchannels\.net$'
+    confidence: high
+    source: https://docs.mailchannels.com/outbound/spf-records
+    note: レンタルサーバー事業者が送信の中継に使う。会社が直接契約しているとは限らない
+
+  - id: atlassian-spf-01
+    vendor: Atlassian
+    product: Atlassian Cloud（Jira / Confluence の独自ドメインのメール）
+    match:
+      record: SPF_INCLUDE
+      pattern: '^_spf\.atlassian\.net$'
+    confidence: high
+    source: https://support.atlassian.com/jira/kb/why-dns-checker-for-setting-up-custom-domain-email-address-still-unverified-in-cloud/
+
+  - id: qualtrics-spf-01
+    vendor: Qualtrics
+    product: Qualtrics（アンケートの配信）
+    match:
+      record: SPF_INCLUDE
+      pattern: '^_spf\.qualtrics\.com$'
+    confidence: high
+    source: https://www.qualtrics.com/support/survey-platform/distributions-module/email-distribution/using-a-custom-from-address/
+
+  - id: exclaimer-spf-01
+    vendor: Exclaimer
+    product: Exclaimer（署名の付与）
+    match:
+      record: SPF_INCLUDE
+      pattern: '^spf\.(au|ca|de|eu|uae|uk|us)\.exclaimer\.net$'
+    confidence: high
+    source: https://support.exclaimer.com/hc/en-gb/articles/4404775962641
+    note: 送信メールに署名を付けて送り直す。業務メールが通る

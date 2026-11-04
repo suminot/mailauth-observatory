@@ -687,3 +687,34 @@ rules:
       pattern: '^mx\.(a|b|core|jk)\.locaweb\.com\.br\.?$'
     confidence: high
     source: https://www.locaweb.com.br/ajuda/wiki/como-configurar-o-mx-e-mail-locaweb/
+
+  # -------------------------------------------------------------------------
+  # 2026-11-04：SPF の include だけで実基盤が分かるもの（提供元の資料の形）
+  # -------------------------------------------------------------------------
+  - id: tencent-spf-01
+    vendor: Tencent
+    product: 腾讯企业邮（Exmail）
+    match:
+      record: SPF_INCLUDE
+      pattern: '^spf\.mail\.qq\.com$'
+    confidence: medium
+    source: https://open.work.weixin.qq.com/help2/pc/19817
+    note: QQ メール（個人向け）と同じ include。MX が無いときの補い
+
+  - id: alibaba-spf-01
+    vendor: Alibaba Cloud
+    product: 阿里邮箱
+    match:
+      record: SPF_INCLUDE
+      pattern: '^spf\.qiye\.aliyun\.com$|^spf\.mxhichina\.com$'
+    confidence: high
+    source: https://help.aliyun.com/zh/document_detail/36771.html
+
+  - id: m365-gcch-spf-01
+    vendor: Microsoft
+    product: Microsoft 365 GCC High
+    match:
+      record: SPF_INCLUDE
+      pattern: '^spf\.protection\.office365\.us$'
+    confidence: high
+    source: https://learn.microsoft.com/en-us/defender-office-365/email-authentication-spf-configure

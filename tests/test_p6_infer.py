@@ -1544,3 +1544,50 @@ def test_undocumented_gateway_spf_is_not_outbound(rules, includes, mechanisms):
     )
     out = [d for d in drafts if d.layer == InferenceLayer.OUTBOUND_GATEWAY]
     assert not out, f"資料で確かめていない {includes or mechanisms} に送信の前段が付いた"
+
+
+# ===========================================================================
+# SPF の include の規則（2026-11-04）。提供元の資料に同じ include があるもの
+# ===========================================================================
+
+
+@pytest.mark.parametrize(
+    ("include", "vendor"),
+    [
+        ("_spf.psm.knowbe4.com", "KnowBe4"),
+        ("mailgun.org", "Sinch"),
+        ("spf.mailjet.com", "Sinch"),
+        ("spf_c.oraclecloud.com", "Oracle"),
+        ("eu.rp.oracleemaildelivery.com", "Oracle"),
+        ("sent-via.netsuite.com", "Oracle"),
+        ("_spf.createsend.com", "Marigold"),
+        ("relay.mailchannels.net", "MailChannels"),
+        ("_spf.atlassian.net", "Atlassian"),
+        ("_spf.qualtrics.com", "Qualtrics"),
+        ("spf.us.exclaimer.net", "Exclaimer"),
+        ("spf.mail.qq.com", "Tencent"),
+        ("spf.qiye.aliyun.com", "Alibaba Cloud"),
+        ("spf.protection.office365.us", "Microsoft"),
+        ("spfa.cpmails.com", "Check Point"),
+    ],
+)
+def test_documented_spf_includes_are_identified(rules, include, vendor):
+    drafts = build_drafts(_fact(spf_includes=[include], spf_present=True), rules)
+    assert vendor in {d.vendor for d in drafts}
+
+
+@pytest.mark.parametrize(
+    "include",
+    [
+        # 資料で確かめられない、または1つの include が複数のサービスを指す
+        "aspmx.pardot.com",
+        "spf.constantcontact.com",
+        "secureserver.net",
+        "one.zoho.com",
+        "spfhost.messageprovider.com",
+    ],
+)
+def test_unverified_spf_includes_stay_unidentified(rules, include):
+    drafts = build_drafts(_fact(spf_includes=[include], spf_present=True), rules)
+    named = [d for d in drafts if d.vendor != NOT_DETECTED_VENDOR]
+    assert not named, f"資料で確かめていない {include} に {[d.vendor for d in named]} が付いた"
