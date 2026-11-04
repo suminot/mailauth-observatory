@@ -1053,3 +1053,14 @@ def test_届かない_MX_は警告に出る():
     send = facts().loc["d:1"]
     assert list(send["mx_hosts_nxdomain"]) == [host]
     assert bool(send["mx_unreachable"]) is True
+
+
+def test_Ed25519_の鍵は長さを見積もらず_短い鍵とも言わない():
+    """RFC 8463。公開鍵は 32 バイトで、RSA の式に掛けると 64 ビットと出る。"""
+    from mailauth.p5_parse.dkim import parse_key
+
+    key = parse_key("ed", "v=DKIM1; k=ed25519; p=11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=")
+    assert key.valid
+    assert key.key_type == "ed25519"
+    assert key.key_bits is None
+    assert not any("短すぎる" in n for n in key.notes)

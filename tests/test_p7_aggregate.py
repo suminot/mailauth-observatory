@@ -1250,3 +1250,30 @@ def test_無効な_DMARC_を数える():
     s = _agg(rows)
     assert s.dmarc_adopted_domains == 4
     assert s.dmarc_invalid_domains == 3
+
+
+def test_DKIM_の鍵の長さを最も短い鍵で分ける():
+    rows = [
+        _row(domain_id="d:1", dkim_status="detected", dkim_min_key_bits=2048),
+        _row(domain_id="d:2", dkim_status="detected", dkim_min_key_bits=1024),
+        _row(domain_id="d:3", dkim_status="detected", dkim_min_key_bits=512),
+        _row(domain_id="d:4", dkim_status="detected", dkim_min_key_bits=None),
+        _row(domain_id="d:5", dkim_status="not_found_in_known_selectors"),
+        _row(domain_id="d:6", is_apex=False, dkim_status="detected", dkim_min_key_bits=512),
+    ]
+    s = _agg(rows)
+    assert (s.dkim_key_2048_domains, s.dkim_key_1024_domains, s.dkim_key_short_domains) == (
+        1, 1, 1,
+    )
+
+
+def test_DKIM_の鍵の長さは配列から最小を読む():
+    import numpy as np
+
+    from mailauth.p7_aggregate.metrics import DomainRow
+
+    row = DomainRow.from_fact({"domain_id": "d:1", "dkim_key_bits": np.array([2048, 1024])})
+    assert row.dkim_min_key_bits == 1024
+    for empty in (None, []):
+        row = DomainRow.from_fact({"domain_id": "d:1", "dkim_key_bits": empty})
+        assert row.dkim_min_key_bits is None

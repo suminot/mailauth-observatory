@@ -41,7 +41,8 @@ from .orgdomain import resolve as resolve_org_domain
 PHASE = "p5_parse"
 OUTPUT_FILENAME = "facts.parquet"
 #: 1.1.0（2026-11）：SPF を include と redirect の先まで数える（BACKLOG 41）
-PARSER_VERSION = "1.1.0"
+#: 1.2.0（2026-11）：DKIM の鍵の長さを RSA だけ見積もる（Ed25519 を短い鍵と誤らない）
+PARSER_VERSION = "1.2.0"
 
 #: 返していないドメインを何件まで抱えるか（`ordered.in_input_order`）。
 #: 同時本数より十分大きくしないと、先頭の1件が遅いたびに手が止まる

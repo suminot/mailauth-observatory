@@ -866,6 +866,12 @@ class StatsOverall(_Model):
 
     dkim_detected_domains: int = 0
     dkim_not_found_domains: int = 0
+    #: DKIM を検出したドメインを、見つかった RSA 鍵のうち**最も短いもの**で分けた数。
+    #: RFC 8301 は 1024 ビット未満の鍵を受け手が有効と見なしてはならないとし、
+    #: 署名側には 2048 ビット以上を勧めている
+    dkim_key_short_domains: int = 0
+    dkim_key_1024_domains: int = 0
+    dkim_key_2048_domains: int = 0
     mta_sts_domains: int = 0
     #: ポリシーを HTTPS で取った mode ごとの数（P5）。取っていない月は null
     mta_sts_enforce_domains: int | None = None
@@ -964,6 +970,9 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("sp_weaker_domains", pa.int32()),
     ("dkim_detected_domains", pa.int32()),
     ("dkim_not_found_domains", pa.int32()),
+    ("dkim_key_short_domains", pa.int32()),
+    ("dkim_key_1024_domains", pa.int32()),
+    ("dkim_key_2048_domains", pa.int32()),
     ("mta_sts_domains", pa.int32()),
     ("mta_sts_enforce_domains", pa.int32()),
     ("mta_sts_testing_domains", pa.int32()),
