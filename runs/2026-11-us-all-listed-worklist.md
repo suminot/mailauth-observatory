@@ -38,7 +38,6 @@
 | `netease.com` | 8 | 1 | `qiye163mx01.mxmail.netease.com`, `qiye163mx02.mxmail.netease.com`, `163mx01.mxmail.netease.com` |
 | `spaceship.net` | 8 | 1 | `mx2.efwd.spaceship.net`, `mx1.efwd.spaceship.net` |
 | `yahoodns.net` | 8 | 1 | `mx-biz.mail.am0.yahoodns.net`, `mx-rogers.mail.am0.yahoodns.net`, `mx-att.mail.am0.yahoodns.net` |
-| `aliyun.com` | 7 | 1 | `mx01.dm.aliyun.com`, `mx2.sg.aliyun.com`, `mx1.sg.aliyun.com` |
 | `caci.com` | 6 | 1 | `mailserver02a.caci.com`, `mailserver1b.caci.com`, `mailserver03a.caci.com` |
 | `mailguard.com.au` | 6 | 1 | `filter2.kaziat-1.mailguard.com.au`, `filter1.kaziat-1.mailguard.com.au`, `filter3.kaziat-1.mailguard.com.au` |
 | `name.com` | 6 | 1 | `mx3.name.com`, `mx4.name.com`, `mx5.name.com` |
@@ -84,7 +83,6 @@
 | `exfy.io` | 3 | 1 | `mail1.prod.sjc.exfy.io`, `mail1.prod.rno.exfy.io`, `mail1.prod.lax.exfy.io` |
 | `healthsouth.com` | 3 | 1 | `hpp3.healthsouth.com`, `hpp2.healthsouth.com`, `hpp4.healthsouth.com` |
 | `intel.com` | 3 | 1 | `mtab.intel.com` |
-| `jellyfish.systems` | 3 | 1 | `mx2-hosting.jellyfish.systems`, `mx1-hosting.jellyfish.systems`, `mx3-hosting.jellyfish.systems` |
 | `lubinski.co.il` | 3 | 1 | `mail.lubinski.co.il`, `mail2.lubinski.co.il`, `mail3.lubinski.co.il` |
 | `mailanyone.net` | 3 | 1 | `ithmines-com.mx1-us.mailanyone.net`, `ithmines-com.mx2-us.mailanyone.net`, `ithmines-com.mx3-us.mailanyone.net` |
 | `mailhostbox.com` | 3 | 1 | `us3.mx1.mailhostbox.com`, `us3.mx3.mailhostbox.com`, `us3.mx2.mailhostbox.com` |
@@ -100,6 +98,7 @@
 | `1and1.com` | 2 | 1 | `mx01.1and1.com`, `mx00.1and1.com` |
 | `360shuke.com` | 2 | 1 | `gw01.360shuke.com`, `gw02.360shuke.com` |
 | `abchk.net` | 2 | 1 | `mx1.abchk.net`, `mx13.abchk.net` |
+| `aliyun.com` | 2 | 1 | `mx2.sg.aliyun.com`, `mx1.sg.aliyun.com` |
 | `amazonses.com` | 2 | 1 | `feedback-smtp.us-east-1.amazonses.com`, `feedback-smtp.eu-west-1.amazonses.com` |
 | `atomicdata.com` | 2 | 1 | `canterburypark-com.20.amf2.atomicdata.com`, `canterburypark-com.60.amf2.atomicdata.com` |
 | `autozone.com` | 2 | 1 | `smtp.autozone.com` |
@@ -111,6 +110,7 @@
 | `connect.com.au` | 2 | 1 | `warrane.connect.com.au`, `yarrina.connect.com.au` |
 | `csof.net` | 2 | 1 | `mx1.csof.net`, `mx2.csof.net` |
 | `deere.com` | 2 | 1 | `edxgw1.dx.deere.com`, `edxgw2.dx.deere.com` |
+| `en25.com` | 2 | 1 | `s731737210.m.en25.com`, `s856856423.m.en25.com` |
 
 ## 調査済み・同定できなかったもの（1 件）
 

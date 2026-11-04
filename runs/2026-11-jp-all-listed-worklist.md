@@ -8,14 +8,12 @@
 `configs/worklist/unidentified_hosts.yaml` に理由を書いて作業リストから外してください。
 **「調べたが分からなかった」は結論であって、無かったことにはしません。**
 
-## 手を付けるもの（93 件）
+## 手を付けるもの（92 件）
 
 | 登録ドメイン | 件数 | 連続月 | 例 |
 |---|---|---|---|
 | `registrar-servers.com` | 15 | 1 | `eforward5.registrar-servers.com`, `eforward3.registrar-servers.com`, `eforward2.registrar-servers.com` |
-| `jellyfish.systems` | 6 | 1 | `mx2-hosting.jellyfish.systems`, `mx3-hosting.jellyfish.systems`, `mx1-hosting.jellyfish.systems` |
 | `ktk-sol.co.jp` | 6 | 1 | `mx.ktk-sol.co.jp` |
-| `seznam.cz` | 6 | 1 | `4f0c6bad762720e3.mx2.emailprofi.seznam.cz`, `4f0c6bad762720e3.mx1.emailprofi.seznam.cz`, `c9c90ff09434829d.mx2.emailprofi.seznam.cz` |
 | `daiwahouse.co.jp` | 5 | 1 | `tokyogw5.daiwahouse.co.jp`, `osakagw5.daiwahouse.co.jp`, `osakagw.daiwahouse.co.jp` |
 | `fsi.ne.jp` | 5 | 1 | `sagw.fsi.ne.jp` |
 | `google.com` | 5 | 1 | `alt3.gmr-smtp-in.l.google.com`, `alt2.gmr-smtp-in.l.google.com`, `alt1.gmr-smtp-in.l.google.com` |
@@ -39,7 +37,6 @@
 | `admiral.ne.jp` | 2 | 1 | `xmx01.admiral.ne.jp`, `zmx00.admiral.ne.jp` |
 | `aics.ne.jp` | 2 | 1 | `amxi.aics.ne.jp` |
 | `cyberlinks.ad.jp` | 2 | 1 | `ppgw-a01.cyberlinks.ad.jp`, `ppgw-a02.cyberlinks.ad.jp` |
-| `daum.net` | 2 | 1 | `alt.aspmx.daum.net`, `aspmx.daum.net` |
 | `denso-ts.it` | 2 | 1 | `trendmail02.denso-ts.it`, `trendmail01.denso-ts.it` |
 | `falcom.co.jp` | 2 | 1 | `mx1.falcom.co.jp`, `mx2.falcom.co.jp` |
 | `fitweb.or.jp` | 2 | 1 | `mail02.van.fitweb.or.jp`, `mail01.van.fitweb.or.jp` |
@@ -47,7 +44,6 @@
 | `hmng.net` | 2 | 1 | `sb03h.hmng.net`, `sb04h.hmng.net` |
 | `hostpoint.ch` | 2 | 1 | `mx2.mail.hostpoint.ch`, `mx1.mail.hostpoint.ch` |
 | `ichinen.co.jp` | 2 | 1 | `mx1.ichinen.co.jp`, `mx2.ichinen.co.jp` |
-| `icloud.com` | 2 | 1 | `mx01.mail.icloud.com`, `mx02.mail.icloud.com` |
 | `igws.jp` | 2 | 1 | `fuj-relay2.igws.jp`, `fuj-relay1.igws.jp` |
 | `imatrix.co.jp` | 2 | 1 | `mxacloud01.imatrix.co.jp`, `mxacloud02.imatrix.co.jp` |
 | `ipsol-dc.net` | 2 | 1 | `mgw02.ipsol-dc.net`, `mgw01.ipsol-dc.net` |
@@ -105,8 +101,11 @@
 | `infoteria.com` | 1 | 1 | `sfw.infoteria.com` |
 | `isamu.jp` | 1 | 1 | `axuz.isamu.jp` |
 | `iwami.or.jp` | 1 | 1 | `drweb.iwami.or.jp` |
+| `jescohd.sakura.ne.jp` | 1 | 1 | `jescohd.sakura.ne.jp` |
+| `k-mac.jp` | 1 | 1 | `mx01.k-mac.jp` |
+| `k-sal.jp` | 1 | 1 | `ml.k-sal.jp` |
 
-## 調査済み・同定できなかったもの（7 件）
+## 調査済み・同定できなかったもの（8 件）
 
 **件数は残します。** 「調べたが分からなかった」を無かったことにしないためです。
 
@@ -119,6 +118,7 @@
 | `conoha.ne.jp` | 2 | 公開情報から同定できない | 2026-11-01 |
 | `secomtrust.net` | 2 | 公開情報から同定できない | 2026-11-01 |
 | `xspmail.jp` | 2 | 公開情報から同定できない | 2026-11-01 |
+| `kagoyamail.jp` | 1 | 公開情報から同定できない | 2026-11-01 |
 
 - P6 の未知ホスト一覧が上限 100 件に達している。**一覧に無いホストが残っている**（頻度の低いものが切れている）
 
