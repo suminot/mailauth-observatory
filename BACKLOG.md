@@ -2287,6 +2287,14 @@ Hornetsecurity・Sophos・Zix）。同じ silver で **2 → 740 ドメイン
 Mimecast の資料（Zendesk の頁）は WebFetch では 403 だったが、同じ
 サイトの Help Center API（公開、認証なし）で本文を読めた。
 
+**本番（2026-11-04、P4 から流し直し：米国 run 41819315407、国内 41819325559）**：
+送信の前段を同定できた企業は **米国 2 → 715 社**（Mimecast 410・Barracuda 103・
+Proofpoint 84・Cisco 54・Trend Micro 24・OpenText 16・Trellix 12・Sophos 8・
+Hornetsecurity 6）、**国内 737 → 824 社**（Trend Micro 65・Cisco 11・Trellix 7 が
+新たに出た）。国内の HENNGE・クオリティアなどが 1〜3 ドメインずつ減ったのは、
+同じドメインに送信側の製品が2つ載っていて、層の中で1つだけ数える規則
+（強い証拠を採る）で振り替わったため。デプロイは2回とも通った。
+
 サイトの「送信の前段」の説明が「MX を握らず、送信だけを通す製品」だった
 ので、受信の前段の製品も入ること、**SPF に載っていても全送信が通るとは
 限らない**ことを日英で書き直した。
