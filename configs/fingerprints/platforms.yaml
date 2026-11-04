@@ -596,8 +596,8 @@ rules:
   # ---------------------------------------------------------------------------
   # 2026-11 の国内計測の作業リスト（未知 MX）から、**運営会社自身の資料に
   # ホスト名が載っているものだけ**（2026-11-03 に確認）。資料にホスト名が無い
-  # もの（Namecheap の無料転送 eforward*.registrar-servers.com、iCloud、
-  # Cloudflare の amir/isaac/linda.mx.cloudflare.net、SiteGround、Seznam）は
+  # もの（Namecheap の無料転送 eforward*.registrar-servers.com、
+  # Cloudflare の amir/isaac/linda.mx.cloudflare.net、SiteGround）は
   # 作業リストに残した
   # ---------------------------------------------------------------------------
 
@@ -738,3 +738,39 @@ rules:
       pattern: '^kagoya\.net$'
     confidence: high
     source: https://support.kagoya.jp/kir/faq/index.php?action=artikel&cat=22&id=201&artlang=ja
+
+  # ---------------------------------------------------------------------------
+  # 2026-11-04：実基盤が分からないドメインの MX のうち、運営会社の資料に
+  # ホスト名があるもの。iCloud・Seznam は 11-03 には資料の頁が読めず保留にしていた。
+  # 足さなかったもの：網易の qiye163mx0N.mxmail.netease.com（資料は hzmx0N だけ）、
+  # Coremail の mx2.c5.icoremail.net（資料は C1〜C3 だけ）、Spaceship の
+  # efwd.spaceship.net（頁が 403）、Postini の psmtp.com・MX Logic・CSC の
+  # custmx.cscdns.net（現行の資料に無い）
+  # ---------------------------------------------------------------------------
+  - id: icloud-mx-01
+    vendor: Apple
+    product: iCloud+（カスタムメールドメイン）
+    match:
+      record: MX
+      pattern: '^mx0[12]\.mail\.icloud\.com\.?$'
+    confidence: high
+    source: https://support.apple.com/en-us/102374
+
+  - id: daum-mx-01
+    vendor: Kakao
+    product: Daum スマートワーク
+    match:
+      record: MX
+      pattern: '^(alt\.)?aspmx\.daum\.net\.?$'
+    confidence: high
+    source: https://cs.daum.net/faq/service/43/category/13114/detail/24408
+
+  # 資料の例は mx1・mx2 の両方に契約ごとの16進の前置きが付く
+  - id: seznam-mx-01
+    vendor: Seznam.cz
+    product: Email Profi
+    match:
+      record: MX
+      pattern: '^[0-9a-f]+\.mx[12]\.emailprofi\.seznam\.cz\.?$'
+    confidence: high
+    source: https://emailprofi.cz/pdf/email-profi-navod-google.pdf

@@ -645,6 +645,30 @@ rules:
     layer: outbound_gateway
     source: https://sc1.checkpoint.com/documents/Harmony_Email_and_Collaboration/Email_Security/Admin_Guide/Topics/dlp-policy-outgoing-emails-part2/prerequisites-to-avoid-failing-spf-checks.html
 
+  # **資料が「旧い値なので置き換えよ」と書いている MX。** 使われていれば
+  # Exchange Online Protection（旧 FOPE）を前段に置いている
+  - id: eop-legacy-mx-01
+    vendor: Microsoft
+    product: Exchange Online Protection（旧い MX の値）
+    match:
+      record: MX
+      pattern: '^mail\.(messaging\.microsoft|global\.frontbridge)\.com\.?$'
+    confidence: medium
+    layer: inbound_gateway
+    source: https://learn.microsoft.com/en-us/troubleshoot/exchange/email-delivery/wrong-office-365-region-exo
+    note: 資料は旧い値として <GUID>.mail.protection.outlook.com への置き換えを求めている
+
+  # Namecheap のスパム対策（共有ホスティングのメールの前段）
+  - id: jellyfish-mx-01
+    vendor: Namecheap
+    product: Jellyfish（スパム対策）
+    match:
+      record: MX
+      pattern: '^mx[123]-hosting\.jellyfish\.systems\.?$'
+    confidence: high
+    layer: inbound_gateway
+    source: https://www.namecheap.com/support/knowledgebase/article.aspx/10560/2216/how-to-configure-jellyfish-for-a-domain/
+
 # DNS に痕跡を残さない製品（DESIGN.md P6「API連携型製品という構造的盲点」）
 # 「検出されなかった＝使っていない」ではないことを出力とレポートに明示する。
 undetectable_by_dns:
