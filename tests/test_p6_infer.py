@@ -1601,3 +1601,36 @@ def test_unverified_spf_includes_stay_unidentified(rules, include):
     drafts = build_drafts(_fact(spf_includes=[include], spf_present=True), rules)
     named = [d for d in drafts if d.vendor != NOT_DETECTED_VENDOR]
     assert not named, f"資料で確かめていない {include} に {[d.vendor for d in named]} が付いた"
+
+
+@pytest.mark.parametrize(
+    ("target", "vendor"),
+    [
+        ("dkim1.mandrillapp.com", "Intuit"),
+        ("example-com.hs01a.dkim.hubspotemail.net", "HubSpot"),
+        ("200._domainkey.dkim2.ccsend.com", "Constant Contact"),
+        ("k1.5bpsps.custdkim.salesforce.com", "Salesforce"),
+        ("s1.domainkey.u2162085.wl086.sendgrid.net", "Twilio"),
+        ("dkim._domainkey.email-od.com", "SocketLabs"),
+    ],
+)
+def test_documented_dkim_cnames_are_identified(rules, target, vendor):
+    """DKIM の CNAME の行き先（2026-11-04）。提供元の資料に形があるもの。"""
+    drafts = build_drafts(_fact(dkim_cname_targets=[target]), rules)
+    assert vendor in {d.vendor for d in drafts}
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        # 資料に行き先の名前が無い（画面に出る値を貼る）
+        "dkim2.mcsv.net",
+        "dkim3.mcsv.net",
+        "equifax.com.v2.custdkim.eventscloud.com",
+        "default._domainkey_81461864.dkim.dnssmarthost.net",
+    ],
+)
+def test_undocumented_dkim_cnames_stay_unidentified(rules, target):
+    drafts = build_drafts(_fact(dkim_cname_targets=[target]), rules)
+    named = [d for d in drafts if d.vendor != NOT_DETECTED_VENDOR]
+    assert not named, f"資料で確かめていない {target} に {[d.vendor for d in named]} が付いた"

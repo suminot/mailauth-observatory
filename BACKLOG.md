@@ -2428,6 +2428,34 @@ P3 に主ドメイン1つにつき6本（qps 20）増え、+25 分前後。12-01
 キャッシュが月で切れるので P2 が延びるが、P2 は持ち時間で打ち切り（積み残しは
 補充が引き継ぐ）、P4 は --resume で続きから測れる。
 
+## 35. DKIM の CNAME の規則が4つしか無かった（2026-11-04）
+
+DKIM の CNAME は「そこで署名している」痕跡で、SPF の include より強い
+（DESIGN.md P6）。ところが規則は SES・M365（2つ）・IIJ の4つだけで、
+silver の CNAME の行き先は**ほとんど同定されていなかった。**
+
+提供元の資料に行き先の形があるものを足した：Mandrill（`dkim[12].mandrillapp.com`）・
+HubSpot（`*.hs01a.dkim.hubspotemail.net`）・Constant Contact（`*.ccsend.com`）・
+Salesforce（`*.custdkim.salesforce.com`）・SendGrid
+（`s1.domainkey.u<N>.wl<N>.sendgrid.net`）・SocketLabs（`email-od.com`）。
+
+silver で当たったドメイン（うち DKIM だけで分かったもの）：
+
+| | 米国 | 国内 |
+|---|---|---|
+| SendGrid | 1,908（1,740） | 751（708） |
+| Mandrill | 262（201） | 14（6） |
+| HubSpot | 237（161） | 24（16） |
+| Constant Contact | 189（189） | 1 |
+| Salesforce | 136（40） | 47（15） |
+| SocketLabs | 28（28） | ― |
+
+**足さなかったもの**：Mailchimp の `dkim2/dkim3.mcsv.net`（米国で約 1,000
+ドメインと最多。資料は「画面に出る値を貼る」としか書いておらず、行き先の
+名前が無い。`mcsv.net` が Mailchimp の送信用ドメインであることは別の頁に
+あるが、DKIM の行き先としての記述ではない）、Cvent（頁が読めない）、
+`dnssmarthost.net`（SiteGround と見られるが資料で確かめられない）。
+
 ## 7. 規模に対する前提
 
 いまの国内 1 母集団では問題にならないが、DESIGN.md の 30,000 ドメインでは
