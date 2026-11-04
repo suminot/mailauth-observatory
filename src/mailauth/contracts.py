@@ -840,6 +840,10 @@ class StatsOverall(_Model):
     #: DMARC を出しているが、レコードが無効（v=DMARC1 が2つある・p= が無いか
     #: 不正）。`dmarc_adopted_domains` の内数。**採用には数えているが効いていない**
     dmarc_invalid_domains: int = 0
+    #: DMARC を出しているが、集計レポートの宛先（rua=）が無い（apex）
+    dmarc_no_rua_domains: int = 0
+    #: そのうち p=none。**観察するという方針なのに、報告を受け取る宛先が無い**
+    dmarc_none_no_rua_domains: int = 0
 
     # 名目と実効を分ける
     nominal_reject_domains: int = 0
@@ -901,6 +905,8 @@ class StatsOverall(_Model):
     #: SPF の include / redirect の先に SPF が無い・2つある
     spf_target_broken_domains: int | None = None
     bimi_domains: int = 0
+    #: BIMI のうち、証明書（VMC/CMC）の場所（a=）を書いている。証明書が有効かは見ていない
+    bimi_vmc_domains: int = 0
     dnssec_domains: int = 0
 
     maturity_stage_dist: str | None = None  # JSON 文字列
@@ -957,6 +963,8 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("dmarc_enforced_entities", pa.int32()),
     ("dmarc_enforced_domains", pa.int32()),
     ("dmarc_invalid_domains", pa.int32()),
+    ("dmarc_no_rua_domains", pa.int32()),
+    ("dmarc_none_no_rua_domains", pa.int32()),
     ("nominal_reject_domains", pa.int32()),
     ("enforced_reject_domains", pa.int32()),
     ("blind_reject_domains", pa.int32()),
@@ -990,6 +998,7 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("spf_all_missing_domains", pa.int32()),
     ("spf_target_broken_domains", pa.int32()),
     ("bimi_domains", pa.int32()),
+    ("bimi_vmc_domains", pa.int32()),
     ("dnssec_domains", pa.int32()),
     ("maturity_stage_dist", pa.string()),
     ("sending_domains", pa.int32()),

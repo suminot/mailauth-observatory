@@ -182,6 +182,36 @@ display(
 );
 ```
 
+### Whether aggregate reports have a destination
+
+DMARC's `rua=` is where receivers send aggregate reports. **Without it, the
+domain owner cannot see how receivers handled mail sent under the domain's
+name.** `p=none` is the setting for "observe first", but without a destination
+nothing arrives to observe.
+
+```js
+display(
+  current?.dmarc_no_rua_domains == null
+    ? html`<p class="muted">Not counted for this month yet. <strong>This is not zero.</strong></p>`
+    : table(
+        [
+          { Category: "publishes DMARC", Domains: current?.dmarc_adopted_domains },
+          { Category: "of which rua (aggregate report destination) is absent", Domains: current?.dmarc_no_rua_domains },
+          { Category: "of which p=none with no rua", Domains: current?.dmarc_none_no_rua_domains },
+        ],
+        { sort: null }
+      )
+);
+```
+
+<div class="limits">
+
+- Only the `_dmarc` record of the main domain is read. Some companies see
+  reports through other means, such as a receiver's dashboard
+- Whether `ruf=` (individual failure reports) is present is not checked
+
+</div>
+
 ### Whether report destinations accept the reports
 
 When `rua` names a destination outside the domain itself (a group company or a

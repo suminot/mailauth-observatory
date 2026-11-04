@@ -175,6 +175,36 @@ display(
 );
 ```
 
+### 集計レポートの宛先があるか
+
+DMARC の `rua=` は、受け手が送る集計レポートの宛先です。**宛先が無いと、
+自分のドメイン名で送られたメールが受け手でどう扱われたかが分かりません。**
+`p=none` は「まず観察する」ための設定ですが、宛先が無ければ観察の材料も
+届きません。
+
+```js
+display(
+  current?.dmarc_no_rua_domains == null
+    ? html`<p class="muted">この月はまだ集計していません。<strong>0 ではありません。</strong></p>`
+    : table(
+        [
+          { 区分: "DMARC を出している", ドメイン: current?.dmarc_adopted_domains },
+          { 区分: "うち rua（集計レポートの宛先）が無い", ドメイン: current?.dmarc_no_rua_domains },
+          { 区分: "うち p=none で rua も無い", ドメイン: current?.dmarc_none_no_rua_domains },
+        ],
+        { sort: null }
+      )
+);
+```
+
+<div class="limits">
+
+- 見ているのは主ドメインの `_dmarc` だけです。レポートを別の仕組み（受け手の
+  管理画面など）で見ている会社もあります
+- `ruf=`（失敗の個別レポート）の有無は見ていません
+
+</div>
+
 ### レポートの宛先が受け取りを認めているか
 
 `rua` に自分のドメインの外の宛先（グループ会社や集計サービス）を書くときは、

@@ -220,7 +220,10 @@ The main columns used in the tables above.
 | `dkim_key_2048_domains` | of the domains where DKIM was found, every RSA key found is 2048 bits or longer |
 | `dkim_key_1024_domains` | likewise, the shortest RSA key found is 1024 bits |
 | `dkim_key_short_domains` | likewise, the shortest RSA key found is under 1024 bits (RFC 8301 says receivers must not treat signatures with such keys as valid) |
+| `dmarc_no_rua_domains` | publishes DMARC, but has no aggregate report destination (`rua=`) |
+| `dmarc_none_no_rua_domains` | of those, `p=none` |
 | `bimi_domains` | publishes BIMI |
+| `bimi_vmc_domains` | of those, gives a certificate location (`a=`, such as a VMC). Whether the certificate is valid is not checked |
 | `dnssec_domains` | signed with DNSSEC |
 | `dane_domains` | has a TLSA record |
 | `dane_orphan` | has TLSA, but DNSSEC could not be confirmed |
