@@ -2219,6 +2219,49 @@ def test_月次の結果が自動で公開される():
     )
 
 
+def test_自動で頼まれた月次はデプロイを自分で頼む():
+    """**既定のトークンで頼まれた実行の完了は、workflow_run を飛ばさない。**
+
+    CT の補充が積み残し 2% 未満で頼む月次の流し直しは github-actions[bot]
+    が起こす。その完了では deploy.yml が起動しない ── 2026-11-04 の米国の
+    流し直し（run 41767593532）は gold を公開したのにサイトに出なかった。
+
+    workflow_dispatch は既定のトークンでも起動できるので、月次の側から
+    頼む。人が起こした実行は workflow_run で公開されるので、二重に頼まない。
+    """
+    text = (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "- name: 公開サイトのデプロイを頼む" in text, "月次の側からデプロイを頼んでいない"
+    step = text[text.index("- name: 公開サイトのデプロイを頼む") :]
+    step = step[: step.index("- name:", 10)]
+    assert "github.triggering_actor == 'github-actions[bot]'" in step, (
+        "人が起こした実行でも頼んでいる（workflow_run と二重になる）"
+    )
+    assert "success()" in step, "落ちた実行のあとにも公開してしまう"
+    assert "gh workflow run deploy.yml" in step
+    # **コミットより後に頼む**（先に頼むと前の gold を出す）
+    assert text.index("gold と実行記録をコミット") < text.index(
+        "- name: 公開サイトのデプロイを頼む"
+    )
+
+
+def test_資格情報つきの確認も配り終わるまで待つ():
+    """**認証なしの 401 は関数が返すので、中身より先に返る。**
+
+    資格情報つきでは静的な中身まで届くので、配り終わるまで 404 が返る。
+    1回で判定して、出したもの自体は正しいのにデプロイが赤くなった
+    （2026-11-04、国内 2026-11 の公開）。
+    """
+    deploy = (repo_root() / ".github" / "workflows" / "deploy.yml").read_text(
+        encoding="utf-8"
+    )
+    auth = deploy[deploy.index('-u "$BASIC_USER:$BASIC_PASS"') - 400 :]
+    auth = auth[: auth.index("正しい資格情報: 200")]
+    assert "for _ in $(seq" in auth, "資格情報つきの確認が1回きり"
+    assert "404|000) sleep" in auth, "404 を待たずに落としている"
+
+
 def test_失敗した月次の結果を公開しない():
     """**workflow_run は成否にかかわらず飛んでくる。**
 
