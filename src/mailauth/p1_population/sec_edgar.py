@@ -68,6 +68,8 @@ class SecFacts:
     registration: Any = None
     #: 最新の委任状説明書（DEF 14A）
     proxy: Any = None
+    #: 最新の四半期報告書（10-Q）
+    quarterly: Any = None
     #: SEC に届けた社名を最後に変えた日。これより前の届出は前の会社のもの
     renamed_at: str | None = None
     #: 新しい順の 8-K / 6-K の受付番号（`press_release.py`）
@@ -237,6 +239,7 @@ class SecEdgarClient:
         from .annual_report import (
             latest_annual_report,
             latest_proxy,
+            latest_quarterly,
             latest_registration,
             renamed_at,
         )
@@ -244,6 +247,7 @@ class SecEdgarClient:
         facts.annual_report = latest_annual_report(cik, payload)
         facts.registration = latest_registration(cik, payload)
         facts.proxy = latest_proxy(cik, payload)
+        facts.quarterly = latest_quarterly(cik, payload)
         facts.renamed_at = renamed_at(payload)
         from .press_release import recent_releases
 

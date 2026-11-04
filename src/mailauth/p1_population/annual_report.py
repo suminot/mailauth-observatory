@@ -70,7 +70,10 @@ MAX_BYTES = 24_000_000
 #: 4 で新しい gTLD（`.bio`・`.company`・`.coffee` など）と、社名と合う
 #: ドメインに限った「through its website」を読むようにした（BACKLOG 28）。
 #: 取れていなかったものだけ読み直す
-EXTRACTOR_VERSION = 4
+#:
+#: 5 で「the <社名> website at …」（所有格にしない書き方）を読むようにした
+#: （BACKLOG 39）。同じく取れていなかったものだけ読み直す
+EXTRACTOR_VERSION = 5
 
 #: 「自社の」サイトであることを示す書き方。**ここが所有の根拠になる。**
 #:
@@ -110,6 +113,16 @@ _ITS_PHRASE = re.compile(
     r"\b(?:through|on|at|via)\s+its\s+(?:corporate\s+|internet\s+)?"
     r"(?:website|web\s+site)",
     re.I,
+)
+
+#: 「The Aptevo website is located at www.AptevoTherapeutics.com」「the UBS
+#: website at www.ubs.com」── **所有格にしない書き方。** 名前の語がその会社の
+#: 名前に含まれ（`_possessor_is_self`）、**かつ**ドメインが社名と合うときだけ
+#: 採る。「the SEC website」は名前で落ちる。2026-11-04 の probe（米国の起点の
+#: 無い 61 社）で Aptevo・UBS AG がこの書き方だけだった
+_THE_NAMED_PHRASE = re.compile(
+    r"\b[Tt]he\s+((?:[A-Z][\w&.\-]*\s+){0,2}[A-Z][\w&.\-]*)\s+"
+    r"(?:corporate\s+|internet\s+)?(?:website|web\s+site)"
 )
 
 #: 句の直後でドメインを探す範囲（文字数）。「Our website address is
@@ -252,6 +265,17 @@ class AnnualReportStats:
 PROXY_FORMS = ("DEF 14A", "PRE 14A")
 
 
+#: 四半期報告書（BACKLOG 39）。年次報告書・目論見書・委任状説明書のどれにも
+#: 書いていない会社が、10-Q の「Available Information」には書いていた
+#: （2026-11-04 の probe で National HealthCare・Enhanced Group・StableCoinX）
+QUARTERLY_FORMS = ("10-Q",)
+
+
+def latest_quarterly(cik: str, submissions: dict[str, Any] | None) -> AnnualReport | None:
+    """最新の四半期報告書（`QUARTERLY_FORMS`）。"""
+    return latest_filing(cik, submissions, QUARTERLY_FORMS)
+
+
 def latest_proxy(cik: str, submissions: dict[str, Any] | None) -> AnnualReport | None:
     """最新の委任状説明書（`PROXY_FORMS`）。"""
     return latest_filing(cik, submissions, PROXY_FORMS)
@@ -389,6 +413,11 @@ def stated_domains(
             if _possessor_is_self(m.group(1), name)
         ]
         phrases += [(m, True) for m in _ITS_PHRASE.finditer(text)]
+        phrases += [
+            (m, True)
+            for m in _THE_NAMED_PHRASE.finditer(text)
+            if _possessor_is_self(m.group(1), name)
+        ]
     for phrase, needs_name in phrases:
         window = text[phrase.end() : phrase.end() + _WINDOW]
         for m in _HOST.finditer(window):
