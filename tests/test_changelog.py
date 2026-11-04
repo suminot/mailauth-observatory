@@ -227,3 +227,26 @@ def test_cli_says_when_there_is_no_gold(tmp_path):
     result = runner.invoke(app, ["changelog", "--out", str(tmp_path / "c.md")])
     assert result.exit_code == 0
     assert "gold がまだありません" in result.output
+
+
+def test_hand_written_notes_appear_in_both_languages():
+    """**同じ月のうちの方法の変更は、機械では拾えない。** 人が書いたものを出す。"""
+    from mailauth.changelog import hand_notes
+
+    ja = hand_notes("ja")
+    en = hand_notes("en")
+    assert set(ja) == set(en), "日英で月が揃っていない"
+    for month in ja:
+        assert len(ja[month]) == len(en[month]), f"{month} の日英の項目数が違う"
+
+
+def test_hand_written_notes_are_rendered_under_the_month():
+    from mailauth.changelog import MonthEntry, hand_notes, to_markdown
+
+    month = next(iter(hand_notes("ja")))
+    entry = MonthEntry(month=month, previous_month=None)
+    md = to_markdown([entry], lang="ja")
+    assert "この月の計測方法の変更" in md
+    assert hand_notes("ja")[month][0] in md
+    md_en = to_markdown([entry], lang="en")
+    assert hand_notes("en")[month][0] in md_en
