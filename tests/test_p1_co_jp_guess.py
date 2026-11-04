@@ -825,3 +825,22 @@ def test_月次計測は推測の結果を補完のキャッシュに入れて�
     steps = {s.get("name"): s for s in wf["jobs"]["measure"]["steps"]}
     for name in ("補完のキャッシュを復元", "補完のキャッシュを保存"):
         assert "data/cache/co_jp_homepage" in steps[name]["with"]["path"], name
+
+
+def test_補完のキャッシュの鍵は母集団で分ける():
+    """米国の流し直しが国内のキャッシュを復元し、SEC の結果を失った（2026-11-04）。"""
+    import yaml
+
+    from mailauth.paths import repo_root
+
+    wf = yaml.safe_load(
+        (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(encoding="utf-8")
+    )
+    steps = {s.get("name"): s for s in wf["jobs"]["measure"]["steps"]}
+    for name in ("補完のキャッシュを復元", "補完のキャッシュを保存"):
+        assert "steps.run.outputs.pop" in steps[name]["with"]["key"], name
+    keys = [k.strip() for k in steps["補完のキャッシュを復元"]["with"]["restore-keys"].splitlines()]
+    keys = [k for k in keys if k]
+    assert "steps.run.outputs.pop" in keys[0], "最初に見る鍵は同じ母集団のもの"
+    # ブロックの中の `#` は注釈ではなく鍵の一部になる
+    assert not any(k.startswith("#") for k in keys)
