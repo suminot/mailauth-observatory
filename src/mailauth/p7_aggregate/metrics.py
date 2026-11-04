@@ -46,6 +46,9 @@ def _truthy_or(value: Any, *, default: bool) -> bool:
     return bool(value)
 
 
+_VALID_DMARC_P = frozenset({"none", "quarantine", "reject"})
+
+
 def _text(value: Any) -> str | None:
     if value is None:
         return None
@@ -104,6 +107,7 @@ class DomainRow:
     #: 最後の `all` の修飾子（- ~ ? +）。無ければ None
     spf_all_qualifier: str | None = None
     spf_error: str | None = None
+    dmarc_multiple_records: bool = False
 
     @classmethod
     def from_fact(cls, fact: dict) -> DomainRow:
@@ -139,6 +143,7 @@ class DomainRow:
             spf_target_broken=_tristate(fact.get("spf_target_broken")),
             spf_all_qualifier=_text(fact.get("spf_all_qualifier")),
             spf_error=_text(fact.get("spf_error")),
+            dmarc_multiple_records=_truthy(fact.get("dmarc_multiple_records")),
         )
 
     @property
@@ -274,6 +279,15 @@ def aggregate(
         dmarc_adopted_domains=sum(1 for r in observed if r.dmarc_present),
         dmarc_enforced_entities=entities_where(lambda r: r.dmarc_enforced),
         dmarc_enforced_domains=sum(1 for r in observed if r.dmarc_enforced),
+        # 2つある・p= が無いか不正。**受け手はこのレコードを使わない**
+        # （RFC 7489 §6.6.3。p= が不正でも rua が正しければ none 扱いにする
+        # 受け手もあるが、どちらにしても強制はしていない）
+        dmarc_invalid_domains=sum(
+            1
+            for r in observed
+            if r.dmarc_present
+            and (r.dmarc_multiple_records or r.dmarc_p not in _VALID_DMARC_P)
+        ),
         # 名目は「そう書いてある」、実効は「それが効いている」
         nominal_reject_domains=sum(1 for r in observed if r.dmarc_p == "reject"),
         enforced_reject_domains=sum(

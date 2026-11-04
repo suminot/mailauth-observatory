@@ -216,6 +216,7 @@ The main columns used in the tables above.
 | `spf_all_neutral_domains` | the final SPF term is `?all` |
 | `spf_all_pass_domains` | the final SPF term is `+all` (including a bare `all`) |
 | `spf_all_missing_domains` | the SPF record has no `all` |
+| `dmarc_invalid_domains` | publishes DMARC, but the record is invalid (two `v=DMARC1` records, or `p=` missing or invalid). Included in `dmarc_adopted_domains` |
 | `bimi_domains` | publishes BIMI |
 | `dnssec_domains` | signed with DNSSEC |
 | `dane_domains` | has a TLSA record |

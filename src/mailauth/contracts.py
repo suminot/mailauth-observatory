@@ -837,6 +837,9 @@ class StatsOverall(_Model):
     dmarc_adopted_domains: int = 0
     dmarc_enforced_entities: int = 0
     dmarc_enforced_domains: int = 0
+    #: DMARC を出しているが、レコードが無効（v=DMARC1 が2つある・p= が無いか
+    #: 不正）。`dmarc_adopted_domains` の内数。**採用には数えているが効いていない**
+    dmarc_invalid_domains: int = 0
 
     # 名目と実効を分ける
     nominal_reject_domains: int = 0
@@ -947,6 +950,7 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("dmarc_adopted_domains", pa.int32()),
     ("dmarc_enforced_entities", pa.int32()),
     ("dmarc_enforced_domains", pa.int32()),
+    ("dmarc_invalid_domains", pa.int32()),
     ("nominal_reject_domains", pa.int32()),
     ("enforced_reject_domains", pa.int32()),
     ("blind_reject_domains", pa.int32()),

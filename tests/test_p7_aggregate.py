@@ -1235,3 +1235,18 @@ def test_SPF_の_all_は_fact_から読む():
     row = DomainRow.from_fact({"domain_id": "d:1", "spf_present": True,
                                "spf_all_qualifier": "+"})
     assert row.spf_all_qualifier == "+"
+
+
+def test_無効な_DMARC_を数える():
+    """2つある・p= が無いか不正は、公開しているの内数として別に数える。"""
+    rows = [
+        _row(domain_id="d:1", dmarc_present=True, dmarc_p="reject"),
+        _row(domain_id="d:2", dmarc_present=True, dmarc_p=None, dmarc_multiple_records=True),
+        _row(domain_id="d:3", dmarc_present=True, dmarc_p="ninguno"),
+        _row(domain_id="d:4", dmarc_present=True, dmarc_p=None),
+        _row(domain_id="d:5", dmarc_present=False, dmarc_p=None),
+        _row(domain_id="d:6", is_apex=False, dmarc_present=True, dmarc_p=None),
+    ]
+    s = _agg(rows)
+    assert s.dmarc_adopted_domains == 4
+    assert s.dmarc_invalid_domains == 3
