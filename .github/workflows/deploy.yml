@@ -217,8 +217,20 @@ jobs:
           if [ -n "$BASIC_USER" ] && [ -n "$BASIC_PASS" ]; then
             # **通るはずのものが通ることも確かめる。** 401 だけ見ていると、
             # 誰も入れない状態を「成功」と読んでしまう
-            ok=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
-              -u "$BASIC_USER:$BASIC_PASS" "$URL/")
+            #
+            # 認証なしの 401 は関数（functions/）が返すので、静的な中身が
+            # まだ配られていなくても先に返る。資格情報つきでは中身まで
+            # 届くので、配り終わるまで 404 が返る（run 65 はこれで赤く
+            # なった）。こちらも 404/000 は待つ
+            ok=""
+            for _ in $(seq 1 20); do
+              ok=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
+                -u "$BASIC_USER:$BASIC_PASS" "$URL/" || echo 000)
+              case "$ok" in
+                404|000) sleep 6 ;;
+                *) break ;;
+              esac
+            done
             if [ "$ok" != "200" ]; then
               echo "::error::正しい資格情報で $ok が返った。誰も入れない"
               exit 1

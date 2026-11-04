@@ -860,6 +860,20 @@ jobs:
           echo "::error::gold と実行記録を push できなかった。成果物はこの実行のログにしか無い"
           exit 1
 
+      # **自動で頼まれた実行は、公開サイトのデプロイを起こさない。** デプロイは
+      # 月次計測の完了（workflow_run）で起きるが、既定のトークンで頼まれた
+      # 実行（CT の補充が積み残し 2% 未満で頼む流し直し）の完了は、GitHub が
+      # 他のワークフローを起動しない。2026-11-04 の米国の流し直し
+      # （run 41767593532）は gold を公開したのにサイトに出なかった。
+      # workflow_dispatch は既定のトークンでも起動できるので、ここから頼む
+      - name: 公開サイトのデプロイを頼む
+        if: success() && github.triggering_actor == 'github-actions[bot]'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref main
+          echo "自動で頼まれた実行なので、公開サイトのデプロイを頼んだ" >> "$GITHUB_STEP_SUMMARY"
+
       # **CT の積み残しがあれば、補充を頼む。** 補充は月次計測が走っている間は
       # 何もしない。毎時の schedule が起動しないこともあるので（2026-11-01）、
       # 終わったここから再開させる。--limit の動作確認では頼まない
