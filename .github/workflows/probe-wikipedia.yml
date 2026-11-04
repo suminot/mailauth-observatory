@@ -79,12 +79,13 @@ jobs:
           # **本番と同じ読み方**（jawiki.py）で、起点の無い会社にだけ流す
           import json, os
           import pandas as pd
-          from mailauth.p1_population.jawiki import JawikiWebsites, live_fetch
+          from mailauth.p1_population.jawiki import JawikiWebsites, live_api, live_fetch, live_search
 
           df = pd.read_parquet("silver/p1_population/entities.parquet")
           taken = set(df["official_domain"].dropna())
           missing = df[df["official_domain"].isna() & df["securities_code"].notna()]
-          reader = JawikiWebsites(live_fetch())
+          api = live_api()
+          reader = JawikiWebsites(live_fetch(api), live_search(api))
           urls = reader.websites_for(
               ((r["entity_id"], r["name"], r["securities_code"]) for _, r in missing.iterrows()),
               taken,

@@ -40,6 +40,8 @@ BATCH = 50
 #: 投げる間隔（秒）
 INTERVAL_SEC = 1.0
 RETRY_WAITS = (5.0, 20.0)
+#: 検索で見る記事の数
+SEARCH_LIMIT = 5
 
 _LEGAL_FORM = re.compile(r"^(株式会社|\(株\)|（株）)\s*|\s*(株式会社|\(株\)|（株）)$")
 _INFOBOX = re.compile(r"\{\{\s*基礎情報[ _]会社")
@@ -140,6 +142,26 @@ def external_link(infobox: str) -> str | None:
     return None
 
 
+_SQUASH = re.compile(r"[\s・･\-‐－.,，、。'’&＆]+")
+
+
+def _squash(text: str) -> str:
+    return _SQUASH.sub("", unicodedata.normalize("NFKC", text or "")).lower()
+
+
+def name_on_article(title: str, infobox: str, name: str) -> bool:
+    """記事の名前か、基礎情報の「社名」に、その会社の社名（法人格を除く）があるか。
+
+    検索で見つけた記事にだけ使う。**コードが合っても、名前が無ければ採らない**
+    （上場廃止した会社のコードが、別の会社に振り直されていることがある）。
+    """
+    base = _squash(_LEGAL_FORM.sub("", unicodedata.normalize("NFKC", name or "").strip()))
+    if len(base) < 2:
+        return False
+    hay = _squash(title) + "|" + _squash(_param(infobox, "社名") or "")
+    return base in hay
+
+
 @dataclass
 class JawikiStats:
     attempted: int = 0
@@ -153,6 +175,14 @@ class JawikiStats:
     #: 引けなかった（API が落ちていた）。**「記事が無い」とは数えない**
     fetch_failed: int = 0
     requests: int = 0
+    #: 記事の名前で当たらなかった会社を、社名と証券コードで検索した数
+    searched: int = 0
+    #: そのうち検索で取れた数（`found` の内数）
+    found_by_search: int = 0
+    #: 検索で当たった記事のコードは合ったが、社名が無かった数
+    search_name_mismatch: int = 0
+    #: 検索を引けなかった数。**「見つからなかった」とは数えない**
+    search_failed: int = 0
     samples: list[str] = field(default_factory=list)
     #: 会社の基礎情報が無い記事が使っていた基礎情報の名前と数
     other_infoboxes: Counter[str] = field(default_factory=Counter)
@@ -169,45 +199,62 @@ class JawikiStats:
             "taken_by_other": self.taken_by_other,
             "fetch_failed": self.fetch_failed,
             "requests": self.requests,
+            "searched": self.searched,
+            "found_by_search": self.found_by_search,
+            "search_name_mismatch": self.search_name_mismatch,
+            "search_failed": self.search_failed,
             "sample_found": self.samples[:10],
             "other_infoboxes": dict(self.other_infoboxes.most_common(10)),
         }
 
 
-def live_fetch() -> Callable[[list[str]], dict[str, str | None]]:
-    """記事名 → 本文（無ければ None）。リダイレクトはたどる。
+class _Api:
+    """MediaWiki の API を1本ずつ、1秒に1本までで引く。記事の取得と検索で共有する。"""
 
-    User-Agent は Wikidata と同じ（連絡先 `MAILAUTH_CONTACT_EMAIL` を入れる）。
-    """
-    import httpx
+    def __init__(self) -> None:
+        import httpx
 
-    from .wikidata import user_agent
+        from .wikidata import user_agent
 
-    client = httpx.Client(headers={"User-Agent": user_agent()}, timeout=30)
-    last = [0.0]
+        self._httpx = httpx
+        self.client = httpx.Client(headers={"User-Agent": user_agent()}, timeout=30)
+        self.last = 0.0
 
-    def fetch(titles: list[str]) -> dict[str, str | None]:
-        params = {
-            "action": "query", "format": "json", "formatversion": "2",
-            "prop": "revisions", "rvprop": "content", "rvslots": "main",
-            "redirects": "1", "titles": "|".join(titles),
-        }
+    def query(self, params: dict[str, str]) -> dict[str, Any]:
+        httpx = self._httpx
         for wait in (*RETRY_WAITS, None):
-            pause = INTERVAL_SEC - (time.monotonic() - last[0])
+            pause = INTERVAL_SEC - (time.monotonic() - self.last)
             if pause > 0:
                 time.sleep(pause)
-            last[0] = time.monotonic()
+            self.last = time.monotonic()
             try:
-                resp = client.get(API_URL, params=params)
+                resp = self.client.get(API_URL, params=params)
                 if resp.status_code == 429 or resp.status_code >= 500:
                     raise httpx.HTTPStatusError("retry", request=resp.request, response=resp)
                 resp.raise_for_status()
-                query = resp.json().get("query", {})
-                break
+                return resp.json().get("query", {})
             except (httpx.TransportError, httpx.HTTPStatusError, ValueError):
                 if wait is None:
                     raise
                 time.sleep(wait)
+        return {}  # pragma: no cover - 上の for で必ず返るか投げる
+
+
+def live_api() -> _Api:
+    """User-Agent は Wikidata と同じ（連絡先 `MAILAUTH_CONTACT_EMAIL` を入れる）。"""
+    return _Api()
+
+
+def live_fetch(api: _Api | None = None) -> Callable[[list[str]], dict[str, str | None]]:
+    """記事名 → 本文（無ければ None）。リダイレクトはたどる。"""
+    api = api or live_api()
+
+    def fetch(titles: list[str]) -> dict[str, str | None]:
+        query = api.query({
+            "action": "query", "format": "json", "formatversion": "2",
+            "prop": "revisions", "rvprop": "content", "rvslots": "main",
+            "redirects": "1", "titles": "|".join(titles),
+        })
         alias: dict[str, str] = {}
         for key in ("normalized", "redirects"):
             for n in query.get(key, []):
@@ -228,15 +275,66 @@ def live_fetch() -> Callable[[list[str]], dict[str, str | None]]:
     return fetch
 
 
+def search_query(name: str, code: str) -> str | None:
+    """記事を探す検索式。**社名と、記事の原文にある証券コードと、会社の基礎情報。**
+
+    4桁のコードは年（2021 など）と区別が付かないので、コードだけでは探さない。
+    """
+    base = _LEGAL_FORM.sub("", unicodedata.normalize("NFKC", name or "").strip()).strip()
+    base = re.sub(r"[\"()（）]", " ", base).strip()
+    if not base or not code:
+        return None
+    return f'{base} insource:"{code}" hastemplate:"基礎情報 会社"'
+
+
+def live_search(api: _Api | None = None) -> Callable[[str], list[str]]:
+    """検索式 → 記事名（上位 SEARCH_LIMIT 件）。"""
+    api = api or live_api()
+
+    def search(srsearch: str) -> list[str]:
+        query = api.query({
+            "action": "query", "format": "json", "formatversion": "2",
+            "list": "search", "srsearch": srsearch, "srnamespace": "0",
+            "srlimit": str(SEARCH_LIMIT), "srprop": "",
+        })
+        return [hit["title"] for hit in query.get("search", [])]
+
+    return search
+
+
 class JawikiWebsites:
     """起点の無い会社に、日本語版の記事の基礎情報から公式サイトを付ける。
 
-    `fetch` を渡せるのは検査のため（ネットワークに出ない）。
+    1段目は記事の名前（社名から作る）で引く。**そこで記事が無かったか、別の
+    会社の記事だった会社だけ**、2段目で社名と証券コードで検索し、上位の記事
+    を読む。2段目で採るのは、市場情報のコードが合い、**かつ**記事の名前か
+    基礎情報の社名にその社名があるものだけ（BACKLOG 40）。
+
+    `fetch` と `search` を渡せるのは検査のため（ネットワークに出ない）。
+    `search` が無ければ2段目はしない。
     """
 
-    def __init__(self, fetch: Callable[[list[str]], dict[str, str | None]]) -> None:
+    def __init__(
+        self,
+        fetch: Callable[[list[str]], dict[str, str | None]],
+        search: Callable[[str], list[str]] | None = None,
+    ) -> None:
         self.fetch = fetch
+        self.search = search
         self.stats = JawikiStats()
+        #: 2段目の検索で取れた会社（同じドメインの衝突で落としたときに数え直す）
+        self._by_search: set[str] = set()
+
+    def _fetch_all(self, titles: Iterable[str], pages: dict[str, str | None],
+                   failed: set[str]) -> None:
+        todo = sorted({t for t in titles if t not in pages and t not in failed})
+        for i in range(0, len(todo), BATCH):
+            chunk = todo[i : i + BATCH]
+            self.stats.requests += 1
+            try:
+                pages.update(self.fetch(chunk))
+            except Exception:  # noqa: BLE001 - 1回の失敗で全体を止めない
+                failed.update(chunk)
 
     def websites_for(
         self, companies: Iterable[tuple[str, str, str | None]], taken: set[str]
@@ -247,18 +345,14 @@ class JawikiWebsites:
         """
         rows = [(key, name, (code or "")[:4]) for key, name, code in companies]
         self.stats.attempted += len(rows)
-        titles = sorted({t for _, name, _ in rows for t in candidate_titles(name)})
         pages: dict[str, str | None] = {}
         failed: set[str] = set()
-        for i in range(0, len(titles), BATCH):
-            chunk = titles[i : i + BATCH]
-            self.stats.requests += 1
-            try:
-                pages.update(self.fetch(chunk))
-            except Exception:  # noqa: BLE001 - 1回の失敗で全体を止めない
-                failed.update(chunk)
+        self._fetch_all((t for _, name, _ in rows for t in candidate_titles(name)),
+                        pages, failed)
 
         found: dict[str, tuple[str, str]] = {}
+        #: 2段目に回す会社と、1段目で数えた欄
+        retry: list[tuple[str, str, str, str]] = []
         for key, name, code in rows:
             titles_for = candidate_titles(name)
             if titles_for and all(t in failed for t in titles_for):
@@ -267,6 +361,7 @@ class JawikiWebsites:
             texts = [pages.get(t) for t in titles_for if pages.get(t)]
             if not texts:
                 self.stats.no_article += 1
+                retry.append((key, name, code, "no_article"))
                 continue
             boxes = [b for b in (_infobox(t) for t in texts) if b is not None]
             if not boxes:
@@ -280,26 +375,72 @@ class JawikiWebsites:
             mine = [b for b in boxes if code_listed(b, code)]
             if not mine:
                 self.stats.code_mismatch += 1
+                retry.append((key, name, code, "code_mismatch"))
                 continue
-            url = next((u for u in (external_link(b) for b in mine) if u), None)
-            domain = domain_from_url(url) if url else None
-            if not url or not domain:
-                self.stats.no_external_link += 1
-                continue
-            if domain in NOT_COMPANY:
-                self.stats.not_company_domain += 1
-                continue
-            if domain in taken:
-                self.stats.taken_by_other += 1
-                continue
-            found[key] = (url, domain)
+            self._take(key, mine, taken, found)
+
+        if self.search is not None and retry:
+            self._second_pass(retry, taken, found, pages, failed)
+
         uses = Counter(domain for _, domain in found.values())
         out: dict[str, str] = {}
         for key, (url, domain) in found.items():
             if uses[domain] > 1:
                 self.stats.taken_by_other += 1
+                if key in self._by_search:
+                    self.stats.found_by_search -= 1
                 continue
             out[key] = url
             self.stats.found += 1
             self.stats.samples.append(domain)
         return out
+
+    def _take(self, key: str, boxes: list[str], taken: set[str],
+              found: dict[str, tuple[str, str]]) -> bool:
+        url = next((u for u in (external_link(b) for b in boxes) if u), None)
+        domain = domain_from_url(url) if url else None
+        if not url or not domain:
+            self.stats.no_external_link += 1
+            return False
+        if domain in NOT_COMPANY:
+            self.stats.not_company_domain += 1
+            return False
+        if domain in taken:
+            self.stats.taken_by_other += 1
+            return False
+        found[key] = (url, domain)
+        return True
+
+    def _second_pass(self, retry: list[tuple[str, str, str, str]], taken: set[str],
+                     found: dict[str, tuple[str, str]], pages: dict[str, str | None],
+                     failed: set[str]) -> None:
+        assert self.search is not None
+        hits: dict[str, list[str]] = {}
+        for key, name, code, _ in retry:
+            q = search_query(name, code)
+            if q is None:
+                continue
+            self.stats.searched += 1
+            self.stats.requests += 1
+            try:
+                hits[key] = list(self.search(q))[:SEARCH_LIMIT]
+            except Exception:  # noqa: BLE001 - 1回の失敗で全体を止めない
+                self.stats.search_failed += 1
+        self._fetch_all((t for ts in hits.values() for t in ts), pages, failed)
+        for key, name, code, bucket in retry:
+            titles = hits.get(key) or []
+            matched = [
+                (t, b) for t in titles if pages.get(t)
+                for b in [_infobox(pages[t] or "")] if b is not None and code_listed(b, code)
+            ]
+            if not matched:
+                continue
+            mine = [b for t, b in matched if name_on_article(t, b, name)]
+            if not mine:
+                self.stats.search_name_mismatch += 1
+                continue
+            # 1段目の欄から外して、採れたかどうかで数え直す
+            setattr(self.stats, bucket, getattr(self.stats, bucket) - 1)
+            if self._take(key, mine, taken, found):
+                self.stats.found_by_search += 1
+                self._by_search.add(key)

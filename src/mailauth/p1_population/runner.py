@@ -353,13 +353,15 @@ def _fill_from_jawiki(
     limit: int | None = None,
     offline: bool = False,
     fetch=None,
+    search=None,
 ) -> None:
     """**まだ空欄の企業だけ**、日本語版ウィキペディアの基礎情報から（BACKLOG 28）。
 
     同じ会社の記事であることは、基礎情報の市場情報に書かれた証券コードで
-    確かめる（jawiki.py）。`fetch` を渡せるのは検査のため。
+    確かめる（jawiki.py）。記事の名前で当たらなかった会社は、社名と証券
+    コードで検索する（BACKLOG 40）。`fetch` と `search` を渡せるのは検査のため。
     """
-    from .jawiki import JawikiWebsites, live_fetch
+    from .jawiki import JawikiWebsites, live_api, live_fetch, live_search
 
     missing = [e for e in entities if not e.official_domain and e.securities_code]
     if limit:
@@ -386,9 +388,11 @@ def _fill_from_jawiki(
                 ),
             )
             return
-        fetch = live_fetch()
+        api = live_api()
+        fetch = live_fetch(api)
+        search = live_search(api)
 
-    reader = JawikiWebsites(fetch)
+    reader = JawikiWebsites(fetch, search)
     taken = {e.official_domain for e in entities if e.official_domain}
     urls = reader.websites_for(
         ((e.entity_id, e.name, e.securities_code) for e in missing), taken

@@ -198,3 +198,122 @@ def test_国内の母集団は推測のあとにこの経路を使う():
     enrich = data["source"]["enrich"]
     assert enrich.index("co_jp_homepage") < enrich.index("jawiki_infobox")
     assert any("ウィキペディア" in a for a in data["attribution"])
+
+
+# --- 2段目：社名と証券コードで検索する（BACKLOG 40） ---------------------------
+
+
+def _article_named(title_name: str, code: str, link: str) -> str:
+    return (
+        f"'''{title_name}'''は…\n"
+        "{{基礎情報 会社\n"
+        f"| 社名 = {title_name}<br />{{{{lang|en|Example Co., Ltd.}}}}\n"
+        f"| 市場情報 = {{{{上場情報 | 東証グロース | {code} | 2020年1月}}}}\n"
+        f"| 外部リンク = {link}\n"
+        "}}\n本文"
+    )
+
+
+def _searching_reader(pages, hits):
+    queries: list[str] = []
+
+    def fetch(titles):
+        return {t: pages.get(t) for t in titles}
+
+    def search(q):
+        queries.append(q)
+        return hits.get(q, [])
+
+    return JawikiWebsites(fetch, search), queries
+
+
+def test_検索式は社名とコードと会社の基礎情報():
+    from mailauth.p1_population.jawiki import search_query
+
+    assert search_query("株式会社ＦＩＸＥＲ", "5129") == (
+        'FIXER insource:"5129" hastemplate:"基礎情報 会社"'
+    )
+    assert search_query("株式会社", "5129") is None
+    assert search_query("株式会社テスト", "") is None
+
+
+def test_記事の名前で無かった会社を検索で見つける():
+    """記事は別の名前（旧社名や正式名）で立っているが、社名欄とコードが合う。"""
+    pages = {"フィクサー (IT企業)": _article_named("株式会社FIXER", "5129", "https://www.fixer.co.jp/")}
+    q = 'FIXER insource:"5129" hastemplate:"基礎情報 会社"'
+    reader, queries = _searching_reader(pages, {q: ["フィクサー (IT企業)"]})
+    got = reader.websites_for([("jp:1", "株式会社ＦＩＸＥＲ", "51290")], taken=set())
+    assert got == {"jp:1": "https://www.fixer.co.jp/"}
+    s = reader.stats
+    assert queries == [q]
+    assert (s.found, s.found_by_search, s.no_article, s.searched) == (1, 1, 0, 1)
+
+
+def test_検索で当たってもコードが違えば採らない():
+    pages = {"テスト (電機)": _article_named("株式会社テスト", "9999", "https://www.wrong.co.jp/")}
+    q = 'テスト insource:"1234" hastemplate:"基礎情報 会社"'
+    reader, _ = _searching_reader(pages, {q: ["テスト (電機)"]})
+    assert reader.websites_for([("jp:1", "株式会社テスト", "12340")], taken=set()) == {}
+    assert (reader.stats.no_article, reader.stats.found_by_search) == (1, 0)
+
+
+def test_検索で当たった記事のコードが合っても社名が無ければ採らない():
+    """上場廃止した会社のコードが別の会社に振り直されていることがある。"""
+    pages = {"旧会社": _article_named("株式会社旧会社", "1234", "https://www.old.co.jp/")}
+    q = 'テスト insource:"1234" hastemplate:"基礎情報 会社"'
+    reader, _ = _searching_reader(pages, {q: ["旧会社"]})
+    assert reader.websites_for([("jp:1", "株式会社テスト", "12340")], taken=set()) == {}
+    s = reader.stats
+    assert (s.search_name_mismatch, s.no_article, s.found) == (1, 1, 0)
+
+
+def test_名前で別会社の記事に当たった会社も検索し直す():
+    pages = {
+        "テスト": _article_named("テスト製作所", "9999", "https://www.other.co.jp/"),
+        "テスト (情報通信)": _article_named("株式会社テスト", "1234", "https://www.test.co.jp/"),
+    }
+    q = 'テスト insource:"1234" hastemplate:"基礎情報 会社"'
+    reader, _ = _searching_reader(pages, {q: ["テスト", "テスト (情報通信)"]})
+    got = reader.websites_for([("jp:1", "株式会社テスト", "12340")], taken=set())
+    assert got == {"jp:1": "https://www.test.co.jp/"}
+    assert (reader.stats.code_mismatch, reader.stats.found_by_search) == (0, 1)
+
+
+def test_検索で取れたドメインも他社のものなら採らない():
+    pages = {"テストHD": _article_named("株式会社テスト", "1234", "https://www.parent.co.jp/")}
+    q = 'テスト insource:"1234" hastemplate:"基礎情報 会社"'
+    reader, _ = _searching_reader(pages, {q: ["テストHD"]})
+    assert reader.websites_for([("jp:1", "株式会社テスト", "12340")], taken={"parent.co.jp"}) == {}
+    assert (reader.stats.taken_by_other, reader.stats.found_by_search) == (1, 0)
+
+
+def test_検索を引けなかったのは見つからなかったと数えない():
+    def fetch(titles):
+        return {t: None for t in titles}
+
+    def search(q):
+        raise RuntimeError("down")
+
+    reader = JawikiWebsites(fetch, search)
+    assert reader.websites_for([("jp:1", "株式会社テスト", "12340")], taken=set()) == {}
+    assert (reader.stats.search_failed, reader.stats.searched) == (1, 1)
+
+
+def test_記事の名前で取れた会社は検索しない():
+    pages = {"秋川牧園": _article("1380", "https://www.akikawa-foods.co.jp/")}
+    reader, queries = _searching_reader(pages, {})
+    reader.websites_for([("jp:1", "株式会社秋川牧園", "13800")], taken=set())
+    assert queries == []
+
+
+def test_社名の照合は全角と区切りの違いを無視する():
+    from mailauth.p1_population.jawiki import _infobox as box_of
+    from mailauth.p1_population.jawiki import name_on_article
+
+    box = box_of(_article_named("株式会社ジェイ・イー・ティ", "6228", "https://x.co.jp/"))
+    assert box is not None
+    assert name_on_article("ジェイ・イー・ティ", box, "株式会社ジェイ・イー・ティ")
+    assert name_on_article("JET (企業)", box, "株式会社ジェイイーティ")
+    assert not name_on_article("別の記事", box, "株式会社テスト")
+    # 1文字の社名では照合しない
+    assert not name_on_article("A", box, "A株式会社")
