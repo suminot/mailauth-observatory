@@ -2512,6 +2512,25 @@ gold の stats_overall に `rua_external_domains`・`rua_unauthorized_domains`�
 `rua_unregistered_domains` を足し、データの頁（日英）に列の意味を書いた。
 引けなかったもの（None）は「認可されていない」に入れない。
 
+## 39. 米国の起点の無い 61 社を届出の別の様式で読み直した（2026-11-04）
+
+`probe-other-filings`（run 41876323557）で 61 社の年次報告書・目論見書・
+委任状説明書・四半期報告書を1本ずつ読んだ。10 社で取れ、うち本番で
+読んでいない形は2つだった。
+
+- **「the <社名> website at …」**（所有格にしない書き方）。Aptevo
+  （「The Aptevo website is located at www.AptevoTherapeutics.com」）・
+  UBS AG（「the UBS website at www.ubs.com/investors」）。**名前の語が社名に
+  含まれ、かつドメインが社名と合う**ときだけ採る。`EXTRACTOR_VERSION` 5
+- **四半期報告書（10-Q）**：National HealthCare（nhccare.com）・Enhanced
+  Group・StableCoinX。経路 `sec_quarterly` を委任状説明書の後に足した
+
+直さないもの：TransCanada PipeLines（親の TC Energy のサイトを書いている。
+既に TC Energy に付いていて社名と合わないので採らない）、Barclays（20-F は
+「inactive textual addresses」とだけ書く）、Utah Medical・Friedman Industries
+（どの様式にも自社サイトの記述が無い）、Nordicus・Bimergen（取れたのは社名を
+変える前の会社のドメインで、本番は社名変更の日より前の届出を読まない）。
+
 ## 7. 規模に対する前提
 
 いまの国内 1 母集団では問題にならないが、DESIGN.md の 30,000 ドメインでは
@@ -2549,7 +2568,7 @@ gold の stats_overall に `rua_external_domains`・`rua_unauthorized_domains`�
 
 ---
 
-## 9. 小さいもの ── **Google Fonts の同梱を除き対応済み**
+## 9. 小さいもの ── **対応済み**（Google Fonts の同梱は 11 で 2026-11-01 に対応）
 
 - ~~`site/static/_headers` に `Strict-Transport-Security` と
   `Content-Security-Policy` が無い~~ **ヘッダは対応済み。**

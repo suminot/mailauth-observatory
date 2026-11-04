@@ -109,6 +109,7 @@ OFFICIAL_URL_SOURCES: dict[str, str | None] = {
     "sec_annual_report": None,
     "sec_registration": None,
     "sec_proxy": None,
+    "sec_quarterly": None,
     "sec_press_release": None,
     # 企業のサイトを読むので連絡先つきの User-Agent を付ける。連絡先が無ければ
     # この経路だけ飛ばす（警告を出す）ので、必須にはしない

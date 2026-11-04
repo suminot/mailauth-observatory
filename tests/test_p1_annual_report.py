@@ -566,3 +566,30 @@ def test_its_website_は社名と合うドメインのときだけ読む():
     )
     found, _, _ = stated_domains(etf, "Grayscale Bitcoin Trust")
     assert dict(found) == {}
+
+
+# ---------------------------------------------------------------------------
+# 「the <社名> website at …」（BACKLOG 39）
+# ---------------------------------------------------------------------------
+
+
+def test_the_named_website_is_read_when_name_and_domain_match():
+    """Aptevo・UBS AG は所有格にしない書き方だけだった（2026-11-04 の probe）。"""
+    from mailauth.p1_population.annual_report import pick_domain, stated_domains
+
+    raw = "<p>The Aptevo website is located at www.AptevoTherapeutics.com . Aptevo</p>"
+    found, _, _ = stated_domains(raw, "Aptevo Therapeutics Inc.")
+    assert pick_domain(found) == "aptevotherapeutics.com"
+    raw = "<p>may also be found on the UBS website at www.ubs.com/investors .</p>"
+    found, _, _ = stated_domains(raw, "UBS AG")
+    assert pick_domain(found) == "ubs.com"
+
+
+def test_the_named_website_of_another_name_is_not_read():
+    """**名前が別の会社なら読まない。ドメインが社名と合わなくても読まない。**"""
+    from mailauth.p1_population.annual_report import pick_domain, stated_domains
+
+    raw = "<p>on The SEC website at www.sec.gov and the Acme website at www.acme.com</p>"
+    assert pick_domain(stated_domains(raw, "Zeta Corp")[0]) is None
+    raw = "<p>the Acme website at www.othervendor.com</p>"
+    assert pick_domain(stated_domains(raw, "Acme Corp")[0]) is None

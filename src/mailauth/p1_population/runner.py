@@ -1336,6 +1336,7 @@ def _run_sec(
     annual_reports: dict[str, Any] = {}
     registrations: dict[str, Any] = {}
     proxies: dict[str, Any] = {}
+    quarterlies: dict[str, Any] = {}
     renamed: dict[str, str] = {}
     releases: dict[str, list[str]] = {}
     forms_by_cik: dict[str, frozenset[str]] = {}
@@ -1345,6 +1346,7 @@ def _run_sec(
             annual_reports[row.cik] = facts.annual_report
             registrations[row.cik] = getattr(facts, "registration", None)
             proxies[row.cik] = getattr(facts, "proxy", None)
+            quarterlies[row.cik] = getattr(facts, "quarterly", None)
             if getattr(facts, "renamed_at", None):
                 renamed[row.cik] = facts.renamed_at
             releases[row.cik] = list(getattr(facts, "releases", None) or [])
@@ -1554,6 +1556,32 @@ def _run_sec(
             ),
         )
 
+    # **それでも残った分を、四半期報告書（10-Q）から**（BACKLOG 39）
+    quarterly_stats: dict[str, Any] = {}
+    wants_quarterly = any(str(e) == "sec_quarterly" for e in (cfg.source.enrich or []))
+    if wants_quarterly and client is not None and quarterlies:
+        from .annual_report import AnnualReportWebsites
+
+        quarterly_stats = _fill_from_sec_filings(
+            entities,
+            quarterlies,
+            AnnualReportWebsites(client),
+            manifest,
+            shared_code="SEC_QUARTERLY_SHARED_DOMAIN",
+            failed_code="ENRICH_FAILED_SEC_QUARTERLY",
+            what="四半期報告書",
+            check_taken=True,
+            not_before=renamed,
+        )
+    elif wants_quarterly:
+        manifest.add_warning(
+            "ENRICH_SKIPPED_SEC_QUARTERLY",
+            message=(
+                "submissions を引いていないため四半期報告書を読んでいない。"
+                "「サイトが無い」のではなく「引いていない」（原則5）"
+            ),
+        )
+
     # **年次報告書でも埋まらなかった分を、プレスリリースから拾う**（BACKLOG 15）。
     # 「About 〇〇」と問い合わせ先のメール（ドメイン部だけ）を読み、
     # **社名と合うドメインだけを採る**（IR 代行のドメインが混ざるため）
@@ -1600,6 +1628,7 @@ def _run_sec(
         sec_annual_report=annual_stats,
         sec_registration=registration_stats,
         sec_proxy=proxy_stats,
+        sec_quarterly=quarterly_stats,
         sec_press_release=release_stats,
         sec_enrichment={
             "submissions_fetched": client.stats.submissions_fetched if client else 0,

@@ -58,7 +58,8 @@ def test_年次報告書や_8K_は目論見書として読まない():
 def test_米国母集団は年次報告書のあと_プレスリリースの前に目論見書と委任状説明書を読む():
     enrich = yaml.safe_load(open(CONFIG, encoding="utf-8"))["source"]["enrich"]
     order = [enrich.index(k) for k in
-             ("sec_annual_report", "sec_registration", "sec_proxy", "sec_press_release")]
+             ("sec_annual_report", "sec_registration", "sec_proxy", "sec_quarterly",
+              "sec_press_release")]
     assert order == sorted(order)
 
 
@@ -188,3 +189,22 @@ def test_引いていないときはそう書く():
     result = run_p1(config=CONFIG, run_id=RUN, offline=True, rows=rows)
     codes = {w["code"] for w in result["warnings"]}
     assert "ENRICH_SKIPPED_SEC_REGISTRATION" in codes
+
+
+def test_四半期報告書は_10_Q_だけ():
+    """BACKLOG 39。10-Q の「Available Information」に書いている会社がある。"""
+    from mailauth.p1_population.annual_report import QUARTERLY_FORMS, latest_quarterly
+
+    assert QUARTERLY_FORMS == ("10-Q",)
+    subs = {
+        "filings": {
+            "recent": {
+                "form": ["8-K", "10-Q", "10-K"],
+                "accessionNumber": ["0001-26-000001", "0001-26-000002", "0001-26-000003"],
+                "primaryDocument": ["a.htm", "q.htm", "k.htm"],
+                "filingDate": ["2026-10-01", "2026-08-01", "2026-03-01"],
+            }
+        }
+    }
+    got = latest_quarterly("0000000001", subs)
+    assert got is not None and got.document == "q.htm"
