@@ -62,6 +62,7 @@ const L = {
     rDkim: "DKIM を既知セレクタで検出できた",
     rDkimNote: "未検出は未設定の証明ではない",
     rDmarc: "DMARC を公開している",
+    rDmarcInvalid: (n) => `うち ${n} はレコードが無効（2つある・p= が無いか不正）`,
     rEnforced: "DMARC が強制ポリシー", rEnforcedNote: "quarantine または reject",
     rEffective: "reject が実効している", rEffectiveNote: "pct 無し・t=n・rua 有",
     rMtaSts: "MTA-STS を公開している",
@@ -91,6 +92,7 @@ const L = {
     rDkim: "DKIM found among known selectors",
     rDkimNote: "not finding it is not proof it is unset",
     rDmarc: "Publishes DMARC",
+    rDmarcInvalid: (n) => `${n} of these have an invalid record (two records, or p= missing or invalid)`,
     rEnforced: "DMARC policy is enforcing", rEnforcedNote: "quarantine or reject",
     rEffective: "reject is in effect", rEffectiveNote: "no pct, t=n, rua present",
     rMtaSts: "Publishes MTA-STS",
@@ -149,7 +151,15 @@ export function indicators(stats, lang = "ja") {
   return [
     row(t.rSpf, stats.spf_adopted_domains),
     row(t.rDkim, stats.dkim_detected_domains, t.rDkimNote),
-    row(t.rDmarc, stats.dmarc_adopted_domains),
+    // **無効なレコードも「公開している」に入っている。** 集計していない月は
+    // 書かない（0 と読めてしまう）
+    row(
+      t.rDmarc,
+      stats.dmarc_adopted_domains,
+      Number.isFinite(stats.dmarc_invalid_domains) && stats.dmarc_invalid_domains > 0
+        ? t.rDmarcInvalid(stats.dmarc_invalid_domains)
+        : ""
+    ),
     row(t.rEnforced, stats.dmarc_enforced_domains, t.rEnforcedNote),
     row(t.rEffective, stats.enforced_reject_domains, t.rEffectiveNote),
     row(t.rMtaSts, stats.mta_sts_domains, t.rMtaStsNote),
