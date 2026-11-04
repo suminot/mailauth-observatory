@@ -268,3 +268,70 @@ rules:
       pattern: '^zcsend\.net$|^sender\.zcsend\.jp$'
     confidence: high
     source: https://help.zoho.com/portal/ja/kb/campaigns/deliverability-guide/domain-authentication/domain-authentication-techniques
+
+  # -------------------------------------------------------------------------
+  # 2026-11-04：DKIM の CNAME の行き先（提供元の資料に形があるもの）。
+  # DKIM の CNAME は「そこで署名している」痕跡で、SPF の include より強い。
+  # それまで DKIM の CNAME の規則は SES・M365・IIJ の4つしか無かった。
+  # 足さなかったもの：Mailchimp の dkim2/dkim3.mcsv.net（米国で約 1,000
+  # ドメインと最多だが、資料は「画面に出る値を貼る」としか書いていない）、
+  # Cvent の custdkim.eventscloud.com（頁が読めない）、dnssmarthost.net
+  # （運営者を資料で確かめられない）
+  # -------------------------------------------------------------------------
+
+  - id: mandrill-dkim-01
+    vendor: Intuit
+    product: Mailchimp Transactional (Mandrill)
+    match:
+      record: DKIM_CNAME
+      pattern: '^dkim[12]\.mandrillapp\.com\.?$'
+    confidence: high
+    source: https://mailchimp.com/developer/transactional/docs/authentication-delivery/
+
+  - id: hubspot-dkim-01
+    vendor: HubSpot
+    product: HubSpot
+    match:
+      record: DKIM_CNAME
+      # 資料：「yourdomain-com.hs[#]a.dkim.hubspotemail.net.」（a / b）
+      pattern: '\.hs\d+[ab]\.dkim\.hubspotemail\.net\.?$'
+    confidence: high
+    source: https://knowledge.hubspot.com/email/troubleshoot-your-email-sending-domain
+
+  - id: constantcontact-dkim-01
+    vendor: Constant Contact
+    product: Constant Contact
+    match:
+      record: DKIM_CNAME
+      pattern: '^(100|200)\._domainkey\.dkim[12]\.ccsend\.com\.?$'
+    confidence: high
+    source: https://knowledgebase.constantcontact.com/email-digital-marketing/articles/KnowledgeBase/49735-Troubleshooting-DKIM-self-authentication-using-CNAME-TXT-and-DMARC
+
+  - id: salesforce-dkim-01
+    vendor: Salesforce
+    product: Salesforce（DKIM 鍵）
+    match:
+      record: DKIM_CNAME
+      # 資料：「selectorname.XXXXXX.custdkim.salesforce.com」
+      pattern: '\.custdkim\.salesforce\.com\.?$'
+    confidence: high
+    source: https://help.salesforce.com/s/articleView?id=000391930&language=en_US&type=1
+
+  - id: sendgrid-dkim-01
+    vendor: Twilio
+    product: SendGrid
+    match:
+      record: DKIM_CNAME
+      # 資料：「s1.domainkey.[u00000000].[wl000].sendgrid.net」
+      pattern: '^s[12]\.domainkey\.u\d+\.wl\d*\.sendgrid\.net\.?$'
+    confidence: high
+    source: https://www.twilio.com/docs/sendgrid/ui/account-and-settings/how-to-set-up-domain-authentication
+
+  - id: socketlabs-dkim-01
+    vendor: SocketLabs
+    product: SocketLabs
+    match:
+      record: DKIM_CNAME
+      pattern: '^dkim\._domainkey\.email-od\.com\.?$'
+    confidence: high
+    source: https://help.socketlabs.com/docs/custom-dkim-signing-feature
