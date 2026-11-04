@@ -2,7 +2,7 @@
 
 - 母集団: `us-all-listed`
 - 状態: **partial**
-- 集計時刻: 2026-11-04T14:21:56+00:00
+- 集計時刻: 2026-11-04T14:57:29+00:00
 - 警告: 25 件
 
 ## 工程
@@ -12,11 +12,11 @@
 | p1_population 母集団確定 | success | 6059 | 5254 | 0 | 0 | 1790.462 |
 | p2_candidates ドメイン候補生成 | partial | 5254 | 5197 | 29 | 57 | 5744.155 |
 | p3_domains メールドメイン確定 | partial | 11848 | 11044 | 142 | 804 | 1777.505 |
-| p4_measure DNS計測 | success | 11044 | 0 | 0 | 10904 | 8.995 |
-| p5_parse パース | success | 452008 | 10801 | 0 | 0 | 566.296 |
-| p6_infer 推察 | success | 10801 | 36324 | 0 | 0 | 4.396 |
-| p7_aggregate 集計 | success | 10801 | 13 | 0 | 0 | 1.129 |
-| p8_publish 公開 | success | 306 | 2223 | 0 | 0 | 0.077 |
+| p4_measure DNS計測 | success | 11044 | 0 | 0 | 10904 | 9.002 |
+| p5_parse パース | success | 452008 | 10801 | 0 | 0 | 344.94 |
+| p6_infer 推察 | success | 10801 | 36324 | 0 | 0 | 4.821 |
+| p7_aggregate 集計 | success | 10801 | 13 | 0 | 0 | 1.263 |
+| p8_publish 公開 | success | 305 | 2221 | 0 | 0 | 0.09 |
 
 ## 工程間の件数
 
@@ -32,7 +32,7 @@
 | p4_measure | p5_parse | 0 | 452008 | 452008 |
 | p5_parse | p6_infer | 10801 | 10801 | 0 |
 | p6_infer | p7_aggregate | 36324 | 10801 | -25523 |
-| p7_aggregate | p8_publish | 13 | 306 | 293 |
+| p7_aggregate | p8_publish | 13 | 305 | 292 |
 
 ## 警告
 
@@ -53,7 +53,7 @@
 ### p4_measure
 
 - `RESUMED_FROM_EXISTING_BRONZE` ×10904: 同じ run の bronze に 10904 ドメインぶんが既にあったため測り直していない。**「観測していない」のではなく「前回の実行で観測済み」である**
-- `BRONZE_APPENDED_TO_EXISTING` ×15: 同じ run に既存の bronze があったため、上書きせず新しいパートに追記した（bronze は不変・追記のみ）。--resume なので、既に測り終えたドメインは測り直していない
+- `BRONZE_APPENDED_TO_EXISTING` ×16: 同じ run に既存の bronze があったため、上書きせず新しいパートに追記した（bronze は不変・追記のみ）。--resume なので、既に測り終えたドメインは測り直していない
 
 ### p5_parse
 
@@ -62,7 +62,7 @@
 - `RUA_DOMAIN_UNREGISTERED` ×3: rua の宛先ドメインが未登録。第三者が登録すればレポートが漏洩しうる（Hureau et al., PAM 2024）
 - `MTA_STS_POLICY_UNUSABLE` ×26: MTA-STS の TXT はあるが、ポリシーを取れない・読めないドメイン。**送る側の MTA も同じく読めないので、MTA-STS は効いていない**
 - `MTA_STS_MX_MISMATCH` ×6: MTA-STS のポリシーの mx に、実際の MX が入っていない。**enforce なら、対応している送り手からのメールが届かない**
-- `MX_UNREACHABLE` ×97: どの MX ホストにも宛先が無い（名前が無い、またはアドレスが無い）ドメイン。**このドメイン宛のメールは届かない。** 終わったサービスや綴りの誤りを指したままのものがある
+- `MX_UNREACHABLE` ×96: どの MX ホストにも宛先が無い（名前が無い、またはアドレスが無い）ドメイン。**このドメイン宛のメールは届かない。** 終わったサービスや綴りの誤りを指したままのものがある
 - `MX_DOMAIN_UNREGISTERED` ×3: MX ホストの登録ドメインが未登録。**第三者が登録すれば、その企業のドメイン宛のメールを受け取れる**（rua の未登録と同じ形）
 
 ### p6_infer
