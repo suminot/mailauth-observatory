@@ -47,6 +47,10 @@ class DiscoveryMethod(StrEnum):
     SPF_INCLUDE = "spf_include"
     DMARC_RUA = "dmarc_rua"
     MANUAL = "manual"
+    #: 主ドメインの下の、よく使われるメール用の名前（`mail.` など）を引いた。
+    #: 名前は推測だが、**測るのは自分の MX か `_dmarc` を持つものだけ**で、
+    #: ワイルドカードの MX は P3 で外す（BACKLOG 33）
+    COMMON_LABEL = "common_label"
 
 
 class DomainRole(StrEnum):

@@ -314,8 +314,13 @@ delivery or validation) carry neither, so they fall away.
   counted apart
 - **Only what was found.** There is no way to enumerate every subdomain from
   DNS. Absence here does not mean absence
-- The routes are limited to those three. A subdomain sending mail by any other
-  route is not visible here
+- The routes are limited to those three plus the one below. A subdomain sending
+  mail by any other route is not visible here
+- From the 2026-12 measurement, **`mail.` and `email.`** under the primary domain
+  are also queried. The names are a guess, but as above only those carrying an
+  MX or `_dmarc` record of their own are measured. **Where a domain returns an
+  MX for any name (a wildcard), it is not counted as the subdomain's own MX.**
+  Subdomain counts are not comparable with earlier months
 
 ### `p=` and `sp=` are different things
 
