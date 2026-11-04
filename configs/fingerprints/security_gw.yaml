@@ -633,6 +633,18 @@ rules:
     layer: outbound_gateway
     source: https://support.zixcorp.com/app/answers/detail/a_id/1606
 
+  # Harmony Email & Collaboration は API 連携（下の undetectable）が主だが、
+  # 送信の DLP を通す構成では SPF に載せるよう資料が書いている
+  - id: checkpoint-spf-01
+    vendor: Check Point
+    product: Harmony Email & Collaboration（送信の検査）
+    match:
+      record: SPF_INCLUDE
+      pattern: '^spfa\.cpmails\.com$'
+    confidence: high
+    layer: outbound_gateway
+    source: https://sc1.checkpoint.com/documents/Harmony_Email_and_Collaboration/Email_Security/Admin_Guide/Topics/dlp-policy-outgoing-emails-part2/prerequisites-to-avoid-failing-spf-checks.html
+
 # DNS に痕跡を残さない製品（DESIGN.md P6「API連携型製品という構造的盲点」）
 # 「検出されなかった＝使っていない」ではないことを出力とレポートに明示する。
 undetectable_by_dns:

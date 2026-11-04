@@ -310,4 +310,18 @@ unidentified_rua_domains:
   - domain: inboxmonster.com
   - domain: dmarcinput.com
   - domain: emailanalyst.com
+  # 以下は米国 2026-11（2026-11-04 に調べた）
+  - domain: dmp.cisco.com
+    note: >-
+      宛先は rua.dmp.cisco.com。米国 2026-11 で54社。Cisco Domain Protection
+      （DMP）と見られるが、Cisco の資料（223136 など）に宛先のドメインが無い
+  - domain: qiye.163.com
+    note: 24社。網易企業郵箱の宛先と見られるが、資料に DMARC の宛先の案内が無い
+  - domain: cyber.dhs.gov
+    note: >-
+      宛先は dmarc.cyber.dhs.gov（米国の連邦政府機関向けの集計）。**ベンダーではない**。
+      政府と取引のある企業が併記している
+  # cp-dmarc.com（上）について：Check Point の資料（External Reporting
+  # Authorization Record）に出てくるのは **dmarc-cp.com**（綴りが逆）で、
+  # 観測した us.cp-dmarc.com とは別。資料の頁は 2026-11-04 に 404 だった
   # emailfraudprotect.email は 2026-11-01 に rua-efp-01 として規則にした

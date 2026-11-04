@@ -2335,6 +2335,30 @@ NetEase は `default`（既に L1）。**当てられないもの**：Tencent（
 CYBERMAIL と WebARENA の資料（Zendesk）は WebFetch では 403 だったが、
 同じサイトの Help Center API（公開）で本文を読めた。
 
+## 31. SPF の include で同定できていなかった配信サービス（2026-11-04）
+
+2026-11 の silver で、どの規則にも当たらない SPF の include を頻度順に並べ、
+提供元の資料に同じ include があるものだけ足した（米国・国内の上位を2つの
+調べで並行して当たった）。
+
+| 区分 | 足したもの（silver で当たったドメイン数） |
+|---|---|
+| 配信など（esp） | 米国：KnowBe4 249・Mailgun 195・Oracle 129・NetSuite 78・Atlassian 62・Exclaimer 61・Mailjet 61・Qualtrics 55・Campaign Monitor 40・MailChannels 38／国内：エンバーポイント 120・WEBCAS 103・Zoho Campaigns 79・PR TIMES 76 |
+| 送信の前段 | Check Point Harmony（`spfa.cpmails.com`）米国 94 |
+| 実基盤 | エックスサーバー・KAGOYA・Tencent・Alibaba・M365 GCC High（MX で分からなかった分、国内 +40・米国 +11） |
+
+足さなかったもの（同定しない検査に固定）：Pardot（頁が読めず抜粋だけ）、
+Constant Contact（資料が「include は要らない」）、GoDaddy `secureserver.net`
+と Zoho `one.zoho.com`（1つの include が複数のサービスを指す）、
+ブラストメール（サイトが不正アクセスで停止中、2026-10-21 公表）、SHANON
+（頁が 403）、ベアメール・SATORI・Cuenote・BowNow（値が申込者向けで
+公開の資料に無い）、`spfhost.messageprovider.com`（運営者不明）。
+NTT の `_spf.mwprem.net` は手引きが 503 で、写しでしか確かめられていない。
+
+DMARC rua の宛先は、`rua.dmp.cisco.com`（54社）・`qiye.163.com`（24社）を
+同定できない一覧に。Check Point の資料にある宛先は `dmarc-cp.com` で、
+観測した `cp-dmarc.com` とは綴りが逆（別のドメイン）。
+
 ## 7. 規模に対する前提
 
 いまの国内 1 母集団では問題にならないが、DESIGN.md の 30,000 ドメインでは
