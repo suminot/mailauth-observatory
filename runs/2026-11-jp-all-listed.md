@@ -2,7 +2,7 @@
 
 - 母集団: `jp-all-listed`
 - 状態: **partial**
-- 集計時刻: 2026-11-03T16:15:06+00:00
+- 集計時刻: 2026-11-04T11:26:49+00:00
 - 警告: 23 件
 
 ## 工程
@@ -12,11 +12,11 @@
 | p1_population 母集団確定 | success | 11433 | 3812 | 0 | 7621 | 1286.218 |
 | p2_candidates ドメイン候補生成 | partial | 3812 | 3599 | 21 | 213 | 3229.661 |
 | p3_domains メールドメイン確定 | partial | 5202 | 4801 | 36 | 401 | 778.969 |
-| p4_measure DNS計測 | success | 4801 | 84 | 0 | 4733 | 65.178 |
-| p5_parse パース | success | 268868 | 4763 | 0 | 0 | 174.241 |
-| p6_infer 推察 | success | 4763 | 13047 | 0 | 0 | 2.206 |
-| p7_aggregate 集計 | success | 4763 | 13 | 0 | 0 | 0.589 |
-| p8_publish 公開 | success | 272 | 2127 | 0 | 0 | 0.092 |
+| p4_measure DNS計測 | success | 4801 | 0 | 0 | 4817 | 4.252 |
+| p5_parse パース | success | 268868 | 4763 | 0 | 0 | 193.254 |
+| p6_infer 推察 | success | 4763 | 13150 | 0 | 0 | 2.212 |
+| p7_aggregate 集計 | success | 4763 | 13 | 0 | 0 | 0.579 |
+| p8_publish 公開 | success | 279 | 2169 | 0 | 0 | 0.092 |
 
 ## 工程間の件数
 
@@ -29,10 +29,10 @@
 | p1_population | p2_candidates | 3812 | 3812 | 0 |
 | p2_candidates | p3_domains | 3599 | 5202 | 1603 |
 | p3_domains | p4_measure | 4801 | 4801 | 0 |
-| p4_measure | p5_parse | 84 | 268868 | 268784 |
+| p4_measure | p5_parse | 0 | 268868 | 268868 |
 | p5_parse | p6_infer | 4763 | 4763 | 0 |
-| p6_infer | p7_aggregate | 13047 | 4763 | -8284 |
-| p7_aggregate | p8_publish | 13 | 272 | 259 |
+| p6_infer | p7_aggregate | 13150 | 4763 | -8387 |
+| p7_aggregate | p8_publish | 13 | 279 | 266 |
 
 ## 警告
 
@@ -52,8 +52,8 @@
 
 ### p4_measure
 
-- `RESUMED_FROM_EXISTING_BRONZE` ×4733: 同じ run の bronze に 4733 ドメインぶんが既にあったため測り直していない。**「観測していない」のではなく「前回の実行で観測済み」である**
-- `BRONZE_APPENDED_TO_EXISTING` ×10: 同じ run に既存の bronze があったため、上書きせず新しいパートに追記した（bronze は不変・追記のみ）。--resume なので、既に測り終えたドメインは測り直していない
+- `RESUMED_FROM_EXISTING_BRONZE` ×4817: 同じ run の bronze に 4817 ドメインぶんが既にあったため測り直していない。**「観測していない」のではなく「前回の実行で観測済み」である**
+- `BRONZE_APPENDED_TO_EXISTING` ×11: 同じ run に既存の bronze があったため、上書きせず新しいパートに追記した（bronze は不変・追記のみ）。--resume なので、既に測り終えたドメインは測り直していない
 
 ### p5_parse
 
@@ -68,13 +68,13 @@
 ### p6_infer
 
 - `NO_STALE_HISTORY`: 前月の inferences.parquet が無いため stale の連続月数を引き継げない。3 か月連続の判定は今月を1か月目として数え直す
-- `UNKNOWN_MX_HOSTS` ×100: 辞書に無い MX ホストが 157 種、315 ドメインぶんある。**一覧に出しているのは上位 100 種まで**で、ほかに 57 種（57 ドメイン）が載っていない。**自社ドメイン配下の MX 666 ドメイン（561 社）は一覧から外している** ── 辞書に足してもその1社にしか効かない。**名前の無い MX ホスト 37 ドメインぶんも外している**（製品ではない。P5 の MX_UNREACHABLE を見ること）。頻度順の上位を手で辞書に追記すると推定率が上がる（DESIGN.md P6 実装メモ）
-- `SECURITY_GATEWAY_UNDETECTABLE` ×3410: セキュリティ製品を DNS 上で検出できなかったドメイン。**理由の内訳: api_mode_product 2878件、self_hosted_mx 488件、spf_flattened 44件、tenant_placeholder_mx 6件。** どれも「使っていない」と解釈してはならない
+- `UNKNOWN_MX_HOSTS` ×100: 辞書に無い MX ホストが 151 種、300 ドメインぶんある。**一覧に出しているのは上位 100 種まで**で、ほかに 51 種（51 ドメイン）が載っていない。**自社ドメイン配下の MX 666 ドメイン（561 社）は一覧から外している** ── 辞書に足してもその1社にしか効かない。**名前の無い MX ホスト 37 ドメインぶんも外している**（製品ではない。P5 の MX_UNREACHABLE を見ること）。頻度順の上位を手で辞書に追記すると推定率が上がる（DESIGN.md P6 実装メモ）
+- `SECURITY_GATEWAY_UNDETECTABLE` ×3401: セキュリティ製品を DNS 上で検出できなかったドメイン。**理由の内訳: api_mode_product 2870件、self_hosted_mx 488件、spf_flattened 43件、tenant_placeholder_mx 6件。** どれも「使っていない」と解釈してはならない
 
 ### p7_aggregate
 
 - `NO_PREVIOUS_FACTS`: 前月 2026-10 の facts が無いため差分を計算していない
-- `GOLD_OTHER_POPULATIONS_KEPT` ×68: 同じ月の gold にあった他の母集団の行を残した: us-all-listed
+- `GOLD_OTHER_POPULATIONS_KEPT` ×72: 同じ月の gold にあった他の母集団の行を残した: us-all-listed
 
 ### p8_publish
 

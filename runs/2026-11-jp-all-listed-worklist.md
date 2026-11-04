@@ -27,7 +27,6 @@
 | `dnsv.jp` | 4 | 1 | `mailforward.dnsv.jp` |
 | `index.or.jp` | 4 | 1 | `mskigw22.index.or.jp`, `mskigw21.index.or.jp`, `mskigw23.index.or.jp` |
 | `line-apps.com` | 4 | 1 | `mx2-common.line-apps.com`, `mx-common.line-apps.com`, `mx3-common.line-apps.com` |
-| `privateemail.com` | 4 | 1 | `mx1.privateemail.com`, `mx2.privateemail.com` |
 | `spaceship.net` | 4 | 1 | `mx1.efwd.spaceship.net`, `mx2.efwd.spaceship.net` |
 | `wni.co.jp` | 4 | 1 | `mx5.wni.co.jp`, `mx6.wni.co.jp` |
 | `aams.jp` | 3 | 1 | `bbsec-1.aams.jp`, `bbsec-0.aams.jp`, `bbsec.aams.jp` |
@@ -35,7 +34,6 @@
 | `cloudz.jp` | 3 | 1 | `mx-1.cloudz.jp`, `mx-0.cloudz.jp`, `mx.cloudz.jp` |
 | `enets.ne.jp` | 3 | 1 | `spamcs1.enets.ne.jp` |
 | `gmo.jp` | 3 | 1 | `mx.gmo.jp` |
-| `mailspamprotection.com` | 3 | 1 | `mx10.antispam.mailspamprotection.com`, `mx20.antispam.mailspamprotection.com`, `mx30.antispam.mailspamprotection.com` |
 | `memenet.or.jp` | 3 | 1 | `dr-web02.memenet.or.jp`, `dr-web01.memenet.or.jp`, `cache.memenet.or.jp` |
 | `mx.cloudflare.net` | 3 | 1 | `linda.mx.cloudflare.net`, `isaac.mx.cloudflare.net`, `amir.mx.cloudflare.net` |
 | `admiral.ne.jp` | 2 | 1 | `xmx01.admiral.ne.jp`, `zmx00.admiral.ne.jp` |
@@ -47,14 +45,11 @@
 | `fitweb.or.jp` | 2 | 1 | `mail02.van.fitweb.or.jp`, `mail01.van.fitweb.or.jp` |
 | `gol.com` | 2 | 1 | `mx2.mail.gol.com`, `mx.mail.gol.com` |
 | `hmng.net` | 2 | 1 | `sb03h.hmng.net`, `sb04h.hmng.net` |
-| `hostedemail.com` | 2 | 1 | `mx.hover.com.cust.hostedemail.com` |
-| `hostinger.com` | 2 | 1 | `mx2.hostinger.com`, `mx1.hostinger.com` |
 | `hostpoint.ch` | 2 | 1 | `mx2.mail.hostpoint.ch`, `mx1.mail.hostpoint.ch` |
 | `ichinen.co.jp` | 2 | 1 | `mx1.ichinen.co.jp`, `mx2.ichinen.co.jp` |
 | `icloud.com` | 2 | 1 | `mx01.mail.icloud.com`, `mx02.mail.icloud.com` |
 | `igws.jp` | 2 | 1 | `fuj-relay2.igws.jp`, `fuj-relay1.igws.jp` |
 | `imatrix.co.jp` | 2 | 1 | `mxacloud01.imatrix.co.jp`, `mxacloud02.imatrix.co.jp` |
-| `improvmx.com` | 2 | 1 | `mx1.improvmx.com`, `mx2.improvmx.com` |
 | `ipsol-dc.net` | 2 | 1 | `mgw02.ipsol-dc.net`, `mgw01.ipsol-dc.net` |
 | `kis-net.ne.jp` | 2 | 1 | `hsp2.kis-net.ne.jp` |
 | `kisc.co.jp` | 2 | 1 | `smtp-gate2.kisc.co.jp`, `smtp-gate1.kisc.co.jp` |
@@ -73,7 +68,6 @@
 | `ntvit.co.jp` | 2 | 1 | `mx07.ntvit.co.jp`, `mx08.ntvit.co.jp` |
 | `pacific-systems.co.jp` | 2 | 1 | `mail0.pacific-systems.co.jp`, `mail1.pacific-systems.co.jp` |
 | `primedrive.jp` | 2 | 1 | `primedrive.jp` |
-| `protonmail.ch` | 2 | 1 | `mailsec.protonmail.ch`, `mail.protonmail.ch` |
 | `sdx.ne.jp` | 2 | 1 | `scan-s1.sdx.ne.jp`, `scan-s2.sdx.ne.jp` |
 | `sendmail.ne.jp` | 2 | 1 | `acmf03.sendmail.ne.jp`, `acmf04.sendmail.ne.jp` |
 | `synapse.ne.jp` | 2 | 1 | `mx.synapse.ne.jp` |
@@ -105,6 +99,12 @@
 | `h-email.net` | 1 | 1 | `mail.h-email.net` |
 | `hammock.co.jp` | 1 | 1 | `mail.hammock.co.jp` |
 | `hetemail.jp` | 1 | 1 | `mx.hetemail.jp` |
+| `holo.ne.jp` | 1 | 1 | `rabbit.holo.ne.jp` |
+| `home-s.net` | 1 | 1 | `ns-01.home-s.net` |
+| `housei-inc.com` | 1 | 1 | `tokyo-proxy.housei-inc.com` |
+| `infoteria.com` | 1 | 1 | `sfw.infoteria.com` |
+| `isamu.jp` | 1 | 1 | `axuz.isamu.jp` |
+| `iwami.or.jp` | 1 | 1 | `drweb.iwami.or.jp` |
 
 ## 調査済み・同定できなかったもの（7 件）
 
