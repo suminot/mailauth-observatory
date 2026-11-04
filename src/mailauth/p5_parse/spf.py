@@ -7,6 +7,7 @@ records.py が「読み取り」なのに対し、ここは「仕様に照らし
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from ..records import (
@@ -14,6 +15,7 @@ from ..records import (
     spf_all_qualifier,
     spf_includes,
     spf_is_dynamic,
+    spf_redirect,
     spf_terms,
 )
 
@@ -186,3 +188,97 @@ def count_void_lookups(include_results: dict[str, bool]) -> int:
     2回を超えると PermError（SHOULD だが主要受信者は実質強制）。
     """
     return sum(1 for present in include_results.values() if not present)
+
+
+# -- include の先まで数える（BACKLOG 41） ------------------------------------
+
+#: 名前 → その名前の TXT（連結済み）。**引けなかったら None**（原則5）
+TxtFetch = Callable[[str], "list[str] | None"]
+
+
+@dataclass
+class SpfWalk:
+    """include と redirect の先までたどったときの、DNS を引く項の数。
+
+    RFC 7208 §4.6.4 の上限 10 は**評価の全体で1つ**で、include の先で数え
+    直さない。apex のレコードだけ数えると、`include:` を3つ並べただけの
+    ドメインが、先で 10 を超えていても「3」に見える。
+    """
+
+    #: 数えた数。`complete` が False なら下限
+    lookups: int = 0
+    #: 最後までたどれたか（マクロ・引けなかった名前があると False）
+    complete: bool = True
+    #: include / redirect の先に SPF が無かった名前（RFC 7208 §5.2 で PermError）
+    missing: list[str] = field(default_factory=list)
+    #: 先に v=spf1 が2つ以上あった名前（同じく PermError）
+    multiple: list[str] = field(default_factory=list)
+    #: マクロを含んでいて先を引けなかった名前
+    macro: list[str] = field(default_factory=list)
+    #: 引けなかった名前
+    unobserved: list[str] = field(default_factory=list)
+
+    @property
+    def exceeds(self) -> bool | None:
+        """上限を超えるか。**数えきれなかったら、超えたと分かったときだけ True。**"""
+        if self.lookups > MAX_LOOKUPS:
+            return True
+        return False if self.complete else None
+
+    @property
+    def broken_target(self) -> bool | None:
+        """include / redirect の先に SPF が無い・2つあるものがあるか。"""
+        if self.missing or self.multiple:
+            return True
+        return False if self.complete else None
+
+
+def _own_lookups(record: str) -> int:
+    """このレコードの項のうち DNS を引くものの数。redirect は効くときだけ。"""
+    count = 0
+    for term in spf_terms(record):
+        bare = term.lstrip("+-~?")
+        name = bare.split(":", 1)[0].split("=", 1)[0].split("/", 1)[0].lower()
+        if name in LOOKUP_MECHANISMS:
+            count += 1
+    if spf_redirect(record):
+        count += 1
+    return count
+
+
+def walk_lookups(record: str, fetch: TxtFetch) -> SpfWalk:
+    """include と redirect の先を引いて、評価の全体で DNS を引く項を数える。
+
+    **上限を超えた時点でやめる。** 先がさらに続いていても答えは変わらず、
+    include が輪になっていても必ずここで止まる（include は1つで1と数える
+    ので、輪を回るたびに数が増える）。
+    """
+    walk = SpfWalk()
+    queue = [record]
+    while queue:
+        current = queue.pop(0)
+        walk.lookups += _own_lookups(current)
+        if walk.lookups > MAX_LOOKUPS:
+            return walk
+        targets = list(spf_includes(current))
+        redirect = spf_redirect(current)
+        if redirect:
+            targets.append(redirect)
+        for target in targets:
+            if "%" in target:
+                walk.macro.append(target)
+                walk.complete = False
+                continue
+            txts = fetch(target)
+            if txts is None:
+                walk.unobserved.append(target)
+                walk.complete = False
+                continue
+            found = find_spf_records(txts)
+            if not found:
+                walk.missing.append(target)
+            elif len(found) > 1:
+                walk.multiple.append(target)
+            else:
+                queue.append(found[0])
+    return walk

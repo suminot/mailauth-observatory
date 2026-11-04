@@ -215,6 +215,42 @@ display(
 
 </div>
 
+### Whether SPF stays within its DNS lookup limit
+
+The SPF terms that make DNS lookups (`include`, `a`, `mx`, `exists`, `redirect`
+and so on) are limited to **10 in total, including those inside the `include`d
+records** (RFC 7208 §4.6.4). Past that, the receiver's evaluation can stop with
+an error (PermError) and SPF may not take effect. Counting only the domain's own
+record makes a domain with three `include`s look like "3" even when the records
+behind them push it past 10, so **the included records are looked up and counted
+as well.**
+
+```js
+display(
+  current?.spf_lookup_exceeded_domains == null
+    ? html`<p class="muted">Not counted for this month yet. <strong>This is not zero.</strong></p>`
+    : table(
+        [
+          { Category: "publishes SPF", Domains: current?.spf_adopted_domains },
+          { Category: "of which the count including included records exceeds 10", Domains: current?.spf_lookup_exceeded_domains },
+          { Category: "of which an include or redirect target has no SPF (or two)", Domains: current?.spf_target_broken_domains },
+        ],
+        { sort: null }
+      )
+);
+```
+
+<div class="limits">
+
+- The count follows every `include` and `redirect`. Receivers stop evaluating at
+  the first match, so **a domain over the limit may still pass for some senders**
+- Domains that could not be counted to the end (targets with macros such as
+  `%{i}`, or targets that could not be looked up) are in neither row, unless the
+  limit was already exceeded
+- Separate limits, such as the number of names behind an `mx` term, are not checked
+
+</div>
+
 ## The domain, and what sits under it
 
 A DMARC `p=` tag applies to the domain itself. **What applies to its

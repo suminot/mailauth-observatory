@@ -209,6 +209,8 @@ The main columns used in the tables above.
 | `rua_external_domains` | the DMARC aggregate report address (`rua=`) includes a destination outside the domain itself |
 | `rua_unauthorized_domains` | of those, the destination does not publish the record that accepts the reports (`<domain>._report._dmarc.<destination>`). **Receivers may not send the reports.** Lookups that failed are not counted |
 | `rua_unregistered_domains` | of those, the destination domain was confirmed to be unregistered (whoever registers it could receive the reports) |
+| `spf_lookup_exceeded_domains` | the SPF terms that make DNS lookups exceed 10 when the `include` and `redirect` targets are counted too. Domains that could not be counted to the end are left out unless already over the limit. Empty in months where the targets were not looked up |
+| `spf_target_broken_domains` | an SPF `include` or `redirect` target has no SPF record, or two (the receiver's evaluation errors). Empty in months where the targets were not looked up |
 | `bimi_domains` | publishes BIMI |
 | `dnssec_domains` | signed with DNSSEC |
 | `dane_domains` | has a TLSA record |

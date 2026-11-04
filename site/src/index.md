@@ -208,6 +208,39 @@ display(
 
 </div>
 
+### SPF が DNS を引く回数の上限を超えていないか
+
+SPF で DNS を引く項（`include` `a` `mx` `exists` `redirect` など）は、
+**`include` の先の分も合わせて 10 までです**（RFC 7208 §4.6.4）。超えると、
+受け手の評価が途中でエラー（PermError）になり、SPF が効かないことがあります。
+主ドメインのレコードだけ数えると、`include` を3つ並べたドメインが先で 10 を
+超えていても「3」に見えるので、**先まで引いて数えています。**
+
+```js
+display(
+  current?.spf_lookup_exceeded_domains == null
+    ? html`<p class="muted">この月はまだ集計していません。<strong>0 ではありません。</strong></p>`
+    : table(
+        [
+          { 区分: "SPF を出している", ドメイン: current?.spf_adopted_domains },
+          { 区分: "うち include の先まで数えて上限 10 を超える", ドメイン: current?.spf_lookup_exceeded_domains },
+          { 区分: "うち include・redirect の先に SPF が無い（または2つある）", ドメイン: current?.spf_target_broken_domains },
+        ],
+        { sort: null }
+      )
+);
+```
+
+<div class="limits">
+
+- 数えたのは、`include` と `redirect` を全部たどった場合の数です。受け手は
+  一致した時点で評価を止めるので、**超えていても送信元によっては通ります**
+- マクロ（`%{i}` など）を含む先や、引けなかった先があって数えきれない
+  ドメインは、どちらにも数えていません（上限を超えたと分かったものだけ数えます）
+- `mx` の先の名前の数など、別に決まっている上限は見ていません
+
+</div>
+
 ## 自分と、その配下
 
 DMARC の `p=` はそのドメイン自身に効きます。**配下のサブドメインに効くのは

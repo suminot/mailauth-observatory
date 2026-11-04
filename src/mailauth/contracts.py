@@ -504,6 +504,13 @@ class Fact(_Model):
     spf_lookup_count: int | None = None
     spf_void_count: int | None = None
     spf_exceeds_limit: bool | None = None
+    #: include と redirect の先までたどった、DNS を引く項の数（BACKLOG 41）。
+    #: 最後までたどれなかったら null（上限を超えたと分かったときは下限を入れる）
+    spf_lookup_total: int | None = None
+    #: 上の数が上限 10 を超えるか。**たどれず分からなければ null**
+    spf_total_exceeds: bool | None = None
+    #: include / redirect の先に SPF が無い・2つある（RFC 7208 §5.2 で PermError）
+    spf_target_broken: bool | None = None
     spf_includes: list[str] = Field(default_factory=list)
     #: include 以外のメカニズムも保持する。さくらインターネットのように
     #: 専用 include を持たず `a:wwwNNNN.sakura.ne.jp` で表現する事業者があり、
@@ -631,6 +638,9 @@ FACT_ARROW_SCHEMA = pa.schema(
         ("spf_lookup_count", pa.int32()),
         ("spf_void_count", pa.int32()),
         ("spf_exceeds_limit", pa.bool_()),
+        ("spf_lookup_total", pa.int32()),
+        ("spf_total_exceeds", pa.bool_()),
+        ("spf_target_broken", pa.bool_()),
         ("spf_includes", pa.list_(pa.string())),
         ("spf_mechanisms", pa.list_(pa.string())),
         ("spf_is_flattened", pa.bool_()),
@@ -869,6 +879,11 @@ class StatsOverall(_Model):
     rua_unauthorized_domains: int = 0
     #: そのうち宛先のドメインが登録されていない（NXDOMAIN と断定できたもの）
     rua_unregistered_domains: int = 0
+    #: SPF の DNS を引く項が、include の先まで数えて上限 10 を超える（apex、
+    #: SPF あり。BACKLOG 41）。先を引いていない run では null
+    spf_lookup_exceeded_domains: int | None = None
+    #: SPF の include / redirect の先に SPF が無い・2つある
+    spf_target_broken_domains: int | None = None
     bimi_domains: int = 0
     dnssec_domains: int = 0
 
@@ -947,6 +962,8 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("rua_external_domains", pa.int32()),
     ("rua_unauthorized_domains", pa.int32()),
     ("rua_unregistered_domains", pa.int32()),
+    ("spf_lookup_exceeded_domains", pa.int32()),
+    ("spf_target_broken_domains", pa.int32()),
     ("bimi_domains", pa.int32()),
     ("dnssec_domains", pa.int32()),
     ("maturity_stage_dist", pa.string()),

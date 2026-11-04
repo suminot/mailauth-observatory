@@ -98,6 +98,9 @@ class DomainRow:
     rua_external: bool = False
     rua_authorized: bool | None = None
     rua_domain_unregistered: bool | None = None
+    #: SPF を include の先まで数えて上限を超えるか / 先が壊れているか（P5。三値）
+    spf_total_exceeds: bool | None = None
+    spf_target_broken: bool | None = None
 
     @classmethod
     def from_fact(cls, fact: dict) -> DomainRow:
@@ -129,6 +132,8 @@ class DomainRow:
             rua_external=_truthy(fact.get("rua_external")),
             rua_authorized=_tristate(fact.get("rua_authorized")),
             rua_domain_unregistered=_tristate(fact.get("rua_domain_unregistered")),
+            spf_total_exceeds=_tristate(fact.get("spf_total_exceeds")),
+            spf_target_broken=_tristate(fact.get("spf_target_broken")),
         )
 
     @property
@@ -234,6 +239,11 @@ def aggregate(
     policy_fetched = not any(
         r.mta_sts_present and r.mta_sts_policy_status is None for r in observed
     )
+    # SPF の先をたどった run か。**たどっていない run（resolver 無し・過去の
+    # silver）では 0 ではなく null**。SPF があるのに両方 null なら、たどっていない
+    spf_walked = any(
+        r.spf_total_exceeds is not None or r.spf_target_broken is not None for r in observed
+    )
     stages = Counter(r.stage for r in observed)
     parked = [r for r in observed if r.park_class in _PARKED_CLASSES]
     hardened = sum(1 for r in parked if r.park_class == ParkClass.HARDENED_PARKED)
@@ -330,6 +340,18 @@ def aggregate(
             1
             for r in observed
             if r.dmarc_present and r.rua_external and r.rua_domain_unregistered is True
+        ),
+        # **include の先まで数える**（RFC 7208 §4.6.4 の上限は評価の全体で1つ）。
+        # たどれなかったもの（None）は数えない
+        spf_lookup_exceeded_domains=(
+            sum(1 for r in observed if r.spf_present and r.spf_total_exceeds is True)
+            if spf_walked
+            else None
+        ),
+        spf_target_broken_domains=(
+            sum(1 for r in observed if r.spf_present and r.spf_target_broken is True)
+            if spf_walked
+            else None
         ),
         bimi_domains=sum(1 for r in observed if r.bimi_present),
         dnssec_domains=sum(1 for r in observed if r.dnssec_signed),

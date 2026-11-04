@@ -1163,6 +1163,11 @@ rua_external         BOOLEAN
 rua_authorized       BOOLEAN  _report._dmarc の確認結果
 rua_domain_unregistered BOOLEAN
 
+-- SPF を include / redirect の先まで数える（P5 で先の TXT を引く。BACKLOG 41）
+spf_lookup_total     INT      DNS を引く項の数（評価の全体）。数えきれなければ NULL
+spf_total_exceeds    BOOLEAN  上の数が 10 を超える。分からなければ NULL
+spf_target_broken    BOOLEAN  include / redirect の先に SPF が無い・2つある
+
 -- MX の宛先（P5 で引く。断定できたときだけ値が立つ）
 mx_hosts_nxdomain    LIST<STRING>  名前が無いと確定した MX ホスト
 mx_unreachable       BOOLEAN  どの MX ホストにも宛先が無い（メールが届かない）
@@ -1210,6 +1215,8 @@ breakdown:
   dkim_wildcard_suspect:  N
   rua_unauthorized:       N
   rua_domain_unregistered: N
+  spf_lookup_total_exceeded: N  # include の先まで数えて 10 を超えるドメイン
+  spf_target_broken:      N   # include / redirect の先に SPF が無い・2つある
   mx_unreachable:         N   # どの MX ホストにも宛先が無いドメイン
   mx_has_nxdomain_host:   N   # 名前の無い MX ホストを1つ以上持つドメイン
   mx_domain_unregistered: N

@@ -40,7 +40,8 @@ from .orgdomain import resolve as resolve_org_domain
 
 PHASE = "p5_parse"
 OUTPUT_FILENAME = "facts.parquet"
-PARSER_VERSION = "1.0.0"
+#: 1.1.0（2026-11）：SPF を include と redirect の先まで数える（BACKLOG 41）
+PARSER_VERSION = "1.1.0"
 
 #: 返していないドメインを何件まで抱えるか（`ordered.in_input_order`）。
 #: 同時本数より十分大きくしないと、先頭の1件が遅いたびに手が止まる
@@ -90,6 +91,20 @@ def group_bronze_by_domain(records: list[dict]) -> dict[str, dict[str, list[dict
     for record in records:
         grouped[str(record.get("domain"))][str(record.get("purpose"))].append(record)
     return grouped
+
+
+def _txt_fetcher(resolver: Resolver) -> spf_mod.TxtFetch:
+    """名前 → TXT（連結済み）。引けなかったら None、無ければ空（原則5）。"""
+
+    def fetch(name: str) -> list[str] | None:
+        answer = resolver.query(name, "TXT")
+        if not answer.observed:
+            return None
+        if not answer.record_present:
+            return []
+        return [join_txt_strings(c) for c in answer.txt_strings] or list(answer.values)
+
+    return fetch
 
 
 def parse_domain(
@@ -145,6 +160,20 @@ def parse_domain(
         spf_is_flattened=spf.is_flattened,
         spf_is_dynamic=spf.is_dynamic,
     )
+
+    # include と redirect の先まで数える（BACKLOG 41）。先の TXT は resolver が
+    # 覚えているので、同じ include（spf.protection.outlook.com など）を何度も
+    # 引かない。resolver が無い run では null のまま
+    out.update(spf_lookup_total=None, spf_total_exceeds=None, spf_target_broken=None)
+    if resolver is not None and spf.present and spf.error != spf_mod.SpfError.MULTIPLE_RECORDS \
+            and spf.raw:
+        walk = spf_mod.walk_lookups(spf.raw, _txt_fetcher(resolver))
+        exceeds = walk.exceeds
+        out.update(
+            spf_lookup_total=walk.lookups if (walk.complete or exceeds) else None,
+            spf_total_exceeds=exceeds,
+            spf_target_broken=walk.broken_target,
+        )
 
     # apex TXT のうち SPF 以外。所有権確認 TXT の照合に使う（P6）。
     # SPF は専用フィールドがあるので重複させない
@@ -634,6 +663,10 @@ def run(
                 counters["org_domain_divergence"] += 1
             if parsed.get("dkim_wildcard_suspect"):
                 counters["dkim_wildcard_suspect"] += 1
+            if parsed.get("spf_total_exceeds") is True:
+                counters["spf_lookup_total_exceeded"] += 1
+            if parsed.get("spf_target_broken") is True:
+                counters["spf_target_broken"] += 1
             if parsed.get("rua_authorized") is False:
                 counters["rua_unauthorized"] += 1
             if parsed.get("rua_domain_unregistered"):
