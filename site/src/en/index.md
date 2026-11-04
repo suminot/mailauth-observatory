@@ -251,6 +251,37 @@ display(
 
 </div>
 
+The final `all` term of an SPF record tells receivers **what to do with senders
+not on the list**.
+
+```js
+display(
+  current?.spf_all_fail_domains == null
+    ? html`<p class="muted">Not counted for this month yet. <strong>This is not zero.</strong></p>`
+    : table(
+        [
+          { "Final term": "-all", Meaning: "senders not listed fail", Domains: current?.spf_all_fail_domains },
+          { "Final term": "~all", Meaning: "senders not listed are suspect (softfail)", Domains: current?.spf_all_softfail_domains },
+          { "Final term": "?all", Meaning: "says nothing about senders not listed", Domains: current?.spf_all_neutral_domains },
+          { "Final term": "+all (or all)", Meaning: "every sender passes", Domains: current?.spf_all_pass_domains },
+          { "Final term": "no all", Meaning: "says nothing about senders not listed", Domains: current?.spf_all_missing_domains },
+        ],
+        { sort: null }
+      )
+);
+```
+
+<div class="limits">
+
+- Choosing between `-all` and `~all` depends on how a domain operates SPF
+  together with DMARC. The table lists counts and does not rank them
+- An SPF record ending in `+all` lets anyone pass SPF
+- Domains with two `v=spf1` records are left out, since the whole record is invalid
+- When the record hands over to another with `redirect=`, the `all` of that other
+  record is not read (such domains are under "no all")
+
+</div>
+
 ## The domain, and what sits under it
 
 A DMARC `p=` tag applies to the domain itself. **What applies to its

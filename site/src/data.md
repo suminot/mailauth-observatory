@@ -204,6 +204,11 @@ Parquet は月ごとに保管しています。同じ数字を二重に持つと
 | `rua_unregistered_domains` | そのうち、宛先のドメインが登録されていないと確かめられた（第三者が登録すればレポートを受け取れる） |
 | `spf_lookup_exceeded_domains` | SPF で DNS を引く項が、`include` と `redirect` の先まで数えて上限 10 を超える。数えきれなかったものは数えていない（超えたと分かったものを除く）。先を引いていない月は空 |
 | `spf_target_broken_domains` | SPF の `include` か `redirect` の先に SPF が無い、または2つある（受け手の評価がエラーになる）。先を引いていない月は空 |
+| `spf_all_fail_domains` | SPF の最後の項が `-all`。この5列は `v=spf1` が2つあるドメインを数えていない |
+| `spf_all_softfail_domains` | SPF の最後の項が `~all` |
+| `spf_all_neutral_domains` | SPF の最後の項が `?all` |
+| `spf_all_pass_domains` | SPF の最後の項が `+all`（修飾子の無い `all` を含む） |
+| `spf_all_missing_domains` | SPF に `all` が無い |
 | `bimi_domains` | BIMI を公開している |
 | `dnssec_domains` | DNSSEC で署名されている |
 | `dane_domains` | TLSA レコードがある |

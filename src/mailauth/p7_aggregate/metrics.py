@@ -101,6 +101,9 @@ class DomainRow:
     #: SPF を include の先まで数えて上限を超えるか / 先が壊れているか（P5。三値）
     spf_total_exceeds: bool | None = None
     spf_target_broken: bool | None = None
+    #: 最後の `all` の修飾子（- ~ ? +）。無ければ None
+    spf_all_qualifier: str | None = None
+    spf_error: str | None = None
 
     @classmethod
     def from_fact(cls, fact: dict) -> DomainRow:
@@ -134,6 +137,8 @@ class DomainRow:
             rua_domain_unregistered=_tristate(fact.get("rua_domain_unregistered")),
             spf_total_exceeds=_tristate(fact.get("spf_total_exceeds")),
             spf_target_broken=_tristate(fact.get("spf_target_broken")),
+            spf_all_qualifier=_text(fact.get("spf_all_qualifier")),
+            spf_error=_text(fact.get("spf_error")),
         )
 
     @property
@@ -244,6 +249,12 @@ def aggregate(
     spf_walked = any(
         r.spf_total_exceeds is not None or r.spf_target_broken is not None for r in observed
     )
+    # **SPF が1つだけのもの。** v=spf1 が2つあるとレコード全体が無効で、
+    # `all` を読む意味が無い（RFC 7208 §4.5）
+    spf_single = [
+        r for r in observed if r.spf_present and r.spf_error != "multiple_records"
+    ]
+    all_q = Counter(r.spf_all_qualifier for r in spf_single)
     stages = Counter(r.stage for r in observed)
     parked = [r for r in observed if r.park_class in _PARKED_CLASSES]
     hardened = sum(1 for r in parked if r.park_class == ParkClass.HARDENED_PARKED)
@@ -353,6 +364,11 @@ def aggregate(
             if spf_walked
             else None
         ),
+        spf_all_fail_domains=all_q.get("-", 0),
+        spf_all_softfail_domains=all_q.get("~", 0),
+        spf_all_neutral_domains=all_q.get("?", 0),
+        spf_all_pass_domains=all_q.get("+", 0),
+        spf_all_missing_domains=all_q.get(None, 0),
         bimi_domains=sum(1 for r in observed if r.bimi_present),
         dnssec_domains=sum(1 for r in observed if r.dnssec_signed),
         maturity_stage_dist=json.dumps(

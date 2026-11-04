@@ -1205,3 +1205,33 @@ def test_rua_の三値は欠損を_False_にしない():
         {"domain_id": "d:1", "rua_external": True, "rua_authorized": float("nan")}
     )
     assert row.rua_authorized is None
+
+
+def test_SPF_の_all_の修飾子を数える():
+    """`all` だけ（修飾子の省略）は `+all`。v=spf1 が2つあるものは数えない。"""
+    rows = [
+        _row(domain_id="d:1", spf_present=True, spf_all_qualifier="-"),
+        _row(domain_id="d:2", spf_present=True, spf_all_qualifier="~"),
+        _row(domain_id="d:3", spf_present=True, spf_all_qualifier="~"),
+        _row(domain_id="d:4", spf_present=True, spf_all_qualifier="?"),
+        _row(domain_id="d:5", spf_present=True, spf_all_qualifier="+"),
+        _row(domain_id="d:6", spf_present=True, spf_all_qualifier=None),
+        _row(domain_id="d:7", spf_present=True, spf_all_qualifier=None,
+             spf_error="multiple_records"),
+        _row(domain_id="d:8", spf_present=False),
+        _row(domain_id="d:9", is_apex=False, spf_present=True, spf_all_qualifier="+"),
+    ]
+    s = _agg(rows)
+    assert (s.spf_all_fail_domains, s.spf_all_softfail_domains, s.spf_all_neutral_domains,
+            s.spf_all_pass_domains, s.spf_all_missing_domains) == (1, 2, 1, 1, 1)
+
+
+def test_SPF_の_all_は_fact_から読む():
+    from mailauth.p7_aggregate.metrics import DomainRow
+
+    row = DomainRow.from_fact({"domain_id": "d:1", "spf_present": True,
+                               "spf_all_qualifier": float("nan")})
+    assert row.spf_all_qualifier is None
+    row = DomainRow.from_fact({"domain_id": "d:1", "spf_present": True,
+                               "spf_all_qualifier": "+"})
+    assert row.spf_all_qualifier == "+"
