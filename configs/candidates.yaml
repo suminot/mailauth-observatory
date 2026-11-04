@@ -37,6 +37,20 @@ subdomains:
   # 同じ枠から取ると、サブドメインが apex を押し出して
   # **分母が月ごとに変わる**（前月との比較が効かなくなる）
   max_per_entity: 20
+  # **主ドメインの下のよく使われる名前を引く**（BACKLOG 33、2026-11-04）。
+  #
+  # CT にも rua にも出てこない、メールを受けるサブドメインがある。DoH で
+  # 標本 150 社ずつを引くと、ワイルドカードを除いて国内 15%・米国 25% の
+  # 主ドメインに、自分の MX か `_dmarc` を持つ `mail.` / `email.` などが
+  # あった（いまは国内 63・米国 48 しか測っていない）。
+  #
+  # 1つの名前で P3 が3本（MX / TXT / _dmarc）引くので、名前を増やすと
+  # P3 の時間がそのまま延びる（qps 20）。当たりの多い2つだけにする
+  # （標本では国内の 63%・米国の 54% がこの2つ）。ワイルドカードの MX は
+  # P3 で外す。apex の候補には混ぜない
+  common_labels: [mail, email]
+  # どの経路で見つけた apex の下で引くか。主ドメイン（公式サイト・手動辞書）だけ
+  common_labels_under: [official_url, manual]
 
 manual_domains: configs/domains/manual_domains.csv
 

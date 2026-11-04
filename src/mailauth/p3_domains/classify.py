@@ -41,6 +41,8 @@ class Probe:
     spf_includes: list[str] = field(default_factory=list)
     dmarc_exists: bool = False
     dkim_found: bool = False
+    #: MX がワイルドカード（`*.apex`）から来ていた。自分の MX とは見なさない
+    wildcard_mx: bool = False
     #: 発見経路のうち、DNS 一次実証から独立しているものの数
     independent_evidence_count: int = 0
     discovery_methods: list[str] = field(default_factory=list)

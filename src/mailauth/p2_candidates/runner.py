@@ -227,6 +227,30 @@ class _Collector:
             return
         self.subdomains.setdefault(name, {}).setdefault(method, detail)
 
+    def add_common_labels(self, labels: list[str], from_methods: frozenset[str]) -> int:
+        """主ドメインの下の `mail.` などを、サブドメインの候補に足す（BACKLOG 33）。
+
+        **他の経路で見つけたサブドメインを押し出さないよう、最後に呼ぶ。**
+        枠（subdomain_limit）が埋まっていれば足さずに数える。apex 側には
+        触らない（apex の発見経路に混ぜると、apex の確度の内訳が変わる）。
+        """
+        added = 0
+        for apex in sorted(self.found):
+            if not set(self.found[apex]) & from_methods:
+                continue
+            for label in labels:
+                name = f"{label}.{apex}"
+                if name in self.subdomains:
+                    continue
+                if len(self.subdomains) >= self.subdomain_limit:
+                    self.subdomains_truncated += 1
+                    continue
+                self.subdomains[name] = {
+                    DiscoveryMethod.COMMON_LABEL: f"common label under {apex}"
+                }
+                added += 1
+        return added
+
 
 def load_report_vendor_patterns(
     path: str = "configs/vendors/dmarc_rua_vendors.yaml",
@@ -544,6 +568,15 @@ def run(
             else frozenset()
         )
         subdomain_limit = int(sub_cfg.get("max_per_entity", 20))
+        #: 主ドメインの下で引く名前（BACKLOG 33）。空なら引かない
+        common_labels = [
+            str(x).strip().lower()
+            for x in (sub_cfg.get("common_labels") or [])
+            if str(x).strip()
+        ] if sub_cfg.get("enabled") else []
+        common_label_from = frozenset(
+            str(m) for m in (sub_cfg.get("common_labels_under") or ["official_url", "manual"])
+        )
 
         # 起点となる official_domain が無い企業は、手動辞書が無ければ候補ゼロになる
         without_domain = [
@@ -993,6 +1026,14 @@ def run(
                 ),
             )
 
+        # **よく使われる名前は最後に足す。** 他の経路で見つけたものを押し出さない
+        common_label_count = 0
+        if common_labels:
+            for collector in collectors.values():
+                common_label_count += collector.add_common_labels(
+                    common_labels, common_label_from
+                )
+
         # 候補レコードの組み立て
         candidates: list[DomainCandidate] = []
         # discovered_at は実行時刻ではなく run の月initialにする。
@@ -1087,6 +1128,7 @@ def run(
             ct_org=ct_org_stats,
             subdomain_candidates=subdomain_count,
             shared_subdomains_dropped=len(shared_subdomains),
+            common_label_candidates=common_label_count,
             ct=ct_stats,
             tls_san=tls_stats,
             # **crt.sh にどれだけ待たされたかを残す。** 2026-09 の実行は

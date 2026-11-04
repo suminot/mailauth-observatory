@@ -1235,11 +1235,15 @@ def test_p3_counts_apex_and_subdomains_apart(seeded_run):
     混ぜると confirmed 率の意味が月ごとに変わり、前月と比べられなくなる。
     """
     _run_subdomain_p2()
+    # よく使われる名前（BACKLOG 33）で足した分は、この固定データでは MX も
+    # _dmarc も無いので「自分のメールが無い」側に入る
+    methods = candidates().groupby("domain")["discovery_method"].apply(set)
+    common = int(sum(1 for ms in methods if ms == {"common_label"}))
     out = run_p3(run_id=RUN, resolver=StaticResolver(SUBDOMAIN_ANSWERS))
     b = out["breakdown"]
-    assert b["subdomains"] == 2
+    assert b["subdomains"] == 2 + common
     assert b["subdomains_measured"] == 1
-    assert b["subdomains_without_own_mail"] == 1
+    assert b["subdomains_without_own_mail"] == 1 + common
     assert b["apex_domains"] == sum(b["by_confidence"].values())
 
 
@@ -1794,3 +1798,67 @@ def test_遅れて届いた前の応答を今の答えと取り違えない(monk
     assert second.observed is True
     assert second.name == "fast.example"
     assert r.stats["timeouts@127.0.0.1"] == 1
+
+
+# ===========================================================================
+# 主ドメインの下のよく使われる名前（BACKLOG 33）
+# ===========================================================================
+
+
+def test_p2_adds_common_labels_under_the_primary_domain(seeded_run):
+    """`mail.` / `email.` を主ドメインの下に足す。**apex の発見経路には混ぜない。**"""
+    _run_subdomain_p2()
+    df = candidates()
+    rows = df[df["domain"] == "email.sample-info.co.jp"]
+    assert len(rows) == 1, sorted(df["domain"])
+    assert rows.iloc[0]["discovery_method"] == "common_label"
+    assert not bool(rows.iloc[0]["is_apex"])
+    apex = set(df[df["domain"] == "sample-info.co.jp"]["discovery_method"])
+    assert "common_label" not in apex
+
+
+def test_p2_common_labels_do_not_replace_found_subdomains(seeded_run):
+    """rua で見つけた `mail.` は rua のまま。推測の名前で上書きしない。"""
+    _run_subdomain_p2()
+    df = candidates()
+    methods = set(df[df["domain"] == "mail.sample-info.co.jp"]["discovery_method"])
+    assert "dmarc_rua" in methods
+    assert "common_label" not in methods
+
+
+def test_p3_drops_common_labels_whose_mx_is_a_wildcard(seeded_run):
+    """**どんな名前にも MX が返る apex** の `email.` を、自分の MX と数えない。"""
+    from mailauth.p3_domains.runner import WILDCARD_PROBE_LABEL
+
+    answers = {
+        **SUBDOMAIN_ANSWERS,
+        ("email.sample-info.co.jp", "MX"): make_answer(
+            "email.sample-info.co.jp", "MX", ["mx.sample-info.co.jp."]
+        ),
+        (f"{WILDCARD_PROBE_LABEL}.sample-info.co.jp", "MX"): make_answer(
+            f"{WILDCARD_PROBE_LABEL}.sample-info.co.jp", "MX", ["mx.sample-info.co.jp."]
+        ),
+    }
+    run_p2(run_id=RUN, resolver=StaticResolver(answers), ct_source=CT)
+    out = run_p3(run_id=RUN, resolver=StaticResolver(answers))
+    df = domains()
+    row = df[df["domain"] == "email.sample-info.co.jp"].iloc[0]
+    assert not bool(row["is_measured"])
+    assert row["exclusion_reason"] == "subdomain_without_own_mail"
+    assert out["breakdown"]["common_label_wildcard_mx"] >= 1
+
+
+def test_p3_keeps_a_common_label_with_its_own_mx(seeded_run):
+    """ワイルドカードでなければ、自分の MX を持つ `email.` は測る。"""
+    answers = {
+        **SUBDOMAIN_ANSWERS,
+        ("email.sample-info.co.jp", "MX"): make_answer(
+            "email.sample-info.co.jp", "MX", ["mx.sample-info.co.jp."]
+        ),
+    }
+    run_p2(run_id=RUN, resolver=StaticResolver(answers), ct_source=CT)
+    out = run_p3(run_id=RUN, resolver=StaticResolver(answers))
+    df = domains()
+    row = df[df["domain"] == "email.sample-info.co.jp"].iloc[0]
+    assert bool(row["is_measured"])
+    assert out["breakdown"]["common_label_wildcard_mx"] == 0

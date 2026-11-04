@@ -23,6 +23,7 @@ from ..contracts import (
     DOMAIN_ARROW_SCHEMA,
     DOMAIN_SORT_KEYS,
     Confidence,
+    DiscoveryMethod,
     Domain,
     EntityStatus,
 )
@@ -30,6 +31,7 @@ from ..exclusions import load as load_exclusions
 from ..exclusions import require_available
 from ..io import read_parquet, write_parquet
 from ..manifest import RunManifest, config_hash
+from ..normalize import etld_plus_one
 from ..ordered import in_input_order
 from ..paths import config_path, phase_dir, phase_output
 from ..records import (
@@ -84,6 +86,44 @@ def _probe_in_order(
 
 class MissingInputError(RuntimeError):
     pass
+
+
+#: ワイルドカードの MX を見分けるために引く名前（BACKLOG 33）。
+#: **固定にする**（乱数にすると同じ入力で問い合わせが変わる。原則6）
+WILDCARD_PROBE_LABEL = "mailauth-wildcard-check-7f3a"
+
+
+class WildcardMxCache:
+    """apex ごとに「どんな名前にも MX が返るか」を1回だけ引いて覚える。
+
+    `mail.` などの名前は推測で足したもの（DiscoveryMethod.COMMON_LABEL）なので、
+    `*.example.co.jp` の MX がそのまま返ってくることがある。それを「自分の
+    MX を持つサブドメイン」と数えると、存在しない名前を測ることになる。
+    """
+
+    def __init__(self, resolver: Resolver) -> None:
+        import threading
+
+        self.resolver = resolver
+        self._lock = threading.Lock()
+        self._seen: dict[str, bool | None] = {}
+        self.queries = 0
+
+    def is_wildcard(self, apex: str) -> bool | None:
+        """True / False。**引けなければ None**（原則5：分からないを無いにしない）。"""
+        with self._lock:
+            if apex in self._seen:
+                return self._seen[apex]
+        result = self.resolver.query(f"{WILDCARD_PROBE_LABEL}.{apex}", "MX")
+        value: bool | None
+        if not result.observed:
+            value = None
+        else:
+            value = bool(result.record_present and extract_mx_hosts(result.values))
+        with self._lock:
+            self.queries += 1
+            self._seen[apex] = value
+        return value
 
 
 def domain_id(entity_id: str, domain: str) -> str:
@@ -246,6 +286,8 @@ def run(
         entities_with_confirmed: set[str] = set()
         all_entities: set[str] = set()
         failed_probes = 0
+        wildcards = WildcardMxCache(resolver)
+        wildcard_dropped = 0
 
         def _probe(key: tuple[str, str]) -> Probe:
             """1ドメインぶんの一次実証。**worker スレッドから呼ばれる。**
@@ -254,12 +296,27 @@ def run(
             キャッシュと統計を錠で守ってあるので、複数スレッドから呼んでよい。
             """
             _entity_id, domain = key
-            return probe_domain(
+            probe = probe_domain(
                 domain,
                 resolver,
                 discovery_methods=grouped[key],
                 independent_methods=independent,
             )
+            # **推測で足した名前は、ワイルドカードの MX を自分の MX と数えない**
+            if (
+                probe.mx_exists
+                and DiscoveryMethod.COMMON_LABEL in grouped[key]
+                and set(grouped[key]) == {DiscoveryMethod.COMMON_LABEL}
+            ):
+                apex = etld_plus_one(domain)
+                wildcard = wildcards.is_wildcard(apex) if apex else None
+                if wildcard is None:
+                    # 確かめられなかった。自分の MX とは言えない
+                    probe.mx_exists = False
+                elif wildcard:
+                    probe.mx_exists = False
+                    probe.wildcard_mx = True
+            return probe
 
         # **応答待ちだけを重ねる。** 結果は入力順に受け取る
         # （完了順にすると出力の並びが実行ごとに変わる）
@@ -267,6 +324,8 @@ def run(
             keys, _probe_in_order(_probe, keys, concurrency), strict=True
         ):
             all_entities.add(entity_id)
+            if probe.wildcard_mx:
+                wildcard_dropped += 1
             if not probe.observed:
                 failed_probes += 1
                 for failure in probe.failures:
@@ -384,6 +443,10 @@ def run(
             subdomains_without_own_mail=sum(
                 1 for d in domains if d.exclusion_reason == "subdomain_without_own_mail"
             ),
+            # 推測で足した名前（mail. など）のうち、MX がワイルドカードだったもの
+            # （BACKLOG 33）。自分の MX とは数えていない
+            common_label_wildcard_mx=wildcard_dropped,
+            wildcard_checks=wildcards.queries,
             # **除外は黙って行わない。** 分母から抜いた分を記録する（原則4）
             excluded=excluded.to_dict(),
         )
