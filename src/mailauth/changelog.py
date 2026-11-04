@@ -284,6 +284,7 @@ PAGE_TEXT: dict[str, dict[str, str]] = {
             "「解釈」の欄が空いている月は、まだ書かれていないということである。"
         ),
         "measurement_changes": "### 計測側の変更",
+        "hand_notes": "### この月の計測方法の変更（人が書いたもの）",
         "no_measurement_change": "計測側の変更はない。",
         "config_changed": "`{phase}` の設定が変わった （{before} → {after}）",
         "version_changed": "`{phase}` の {key}: `{before}` → `{after}`",
@@ -312,6 +313,7 @@ PAGE_TEXT: dict[str, dict[str, str]] = {
             "\u201cinterpretation\u201d line is blank is one nobody has written up yet."
         ),
         "measurement_changes": "### Changes on the measurement side",
+        "hand_notes": "### Changes to the method this month (written by hand)",
         "no_measurement_change": "No change on the measurement side.",
         "config_changed": "`{phase}` configuration changed ({before} → {after})",
         "version_changed": "`{phase}` {key}: `{before}` → `{after}`",
@@ -354,8 +356,13 @@ def to_markdown(
         "",
     ]
 
+    hand = hand_notes(lang)
     for entry in sorted(entries, key=lambda e: e.month, reverse=True):
         lines += [f"## {entry.month}", ""]
+        if hand.get(entry.month):
+            lines += [T["hand_notes"], ""]
+            lines += [f"- {text}" for text in hand[entry.month]]
+            lines.append("")
 
         if entry.has_measurement_change:
             lines += [T["measurement_changes"], ""]
@@ -411,6 +418,31 @@ def to_markdown(
 
     lines += [T["policy_title"], "", *T["policy_body"].split("\n"), ""]
     return "\n".join(lines)
+
+
+#: 人が書く「その月の計測方法の変更」（configs/changelog_notes.yaml）
+HAND_NOTES_PATH = "configs/changelog_notes.yaml"
+
+
+def hand_notes(lang: str = "ja", path: str = HAND_NOTES_PATH) -> dict[str, list[str]]:
+    """月 → 人が書いた計測方法の変更。**無ければ空**（無いことを誤りにしない）。
+
+    同じ月のうちに辞書や集計の定義を変えて流し直した変更は、前の月との
+    差からは機械で拾えない。数字が動いた理由を読み手が区別できるように、
+    人が書いたものを月の頭に出す。
+    """
+    from .config import load_yaml
+    from .paths import config_path
+
+    try:
+        raw = load_yaml(str(config_path(path))) or {}
+    except (OSError, FileNotFoundError):
+        return {}
+    out: dict[str, list[str]] = {}
+    for month, body in (raw.get("months") or {}).items():
+        items = (body or {}).get(lang) or []
+        out[str(month)] = [str(i).strip() for i in items if str(i).strip()]
+    return out
 
 
 def _short(value: str | None) -> str:
