@@ -77,3 +77,29 @@ providers:
       # さくらは専用 include ではなく a:wwwNNNN.sakura.ne.jp mx 形式（DESIGN.md P6）
       spf_mechanism_pattern: 'a:www\d+\.sakura\.ne\.jp'
     selectors: [rs, sakura, default]
+
+  # --- 2026-11-04：事業者の資料に固定の名前があるもの ---------------------
+  # 米国 2026-11 で「既知のセレクタに無い」1,610 ドメインを実基盤別に分けて
+  # 資料を当たった。DoH で鍵を確かめると、米国 +17・国内 +4 ドメイン
+  - id: hostinger
+    label: Hostinger Email
+    triggers:
+      mx_pattern: '^mx[12]\.hostinger\.com\.?$'
+    # 「hostingermail-a._domainkey」など3つ（CNAME → <selector>.dkim.mail.hostinger.com）
+    # https://www.hostinger.com/support/4456413-what-are-the-dkim-records-for-hostinger-email/
+    selectors: [hostingermail-a, hostingermail-b, hostingermail-c]
+
+  - id: godaddy_titan
+    label: GoDaddy Professional Email（Titan）
+    triggers:
+      mx_pattern: '^(smtp|mailstore1)\.secureserver\.net\.?$'
+    # https://www.godaddy.com/en/help/add-spf-dkim-and-dmarc-to-my-domain-for-professional-email-powered-by-titan-42437
+    selectors: [secureserver1, secureserver2]
+
+  - id: ionos
+    label: IONOS Mail
+    triggers:
+      mx_pattern: '^mx0[01]\.ionos\.com\.?$'
+    # 「s1-ionos._domainkey」「s2-ionos._domainkey」。s<数字> は契約ごとなので入れない
+    # https://www.ionos.com/help/domains/configuring-mail-servers-and-other-related-records/email-authentication-with-dkim
+    selectors: [s1-ionos, s2-ionos]

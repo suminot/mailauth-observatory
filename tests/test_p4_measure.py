@@ -832,3 +832,20 @@ def test_l1_has_the_documented_jp_selectors():
     selectors = SelectorDictionary.load().selectors_for([], [])
     assert "mg" in selectors
     assert "20231221" in selectors
+
+
+@pytest.mark.parametrize(
+    ("mx", "provider", "expected"),
+    [
+        ("mx1.hostinger.com", "hostinger", "hostingermail-a"),
+        ("smtp.secureserver.net", "godaddy_titan", "secureserver1"),
+        ("mx00.ionos.com", "ionos", "s1-ionos"),
+    ],
+)
+def test_l2_documented_provider_selectors(mx, provider, expected):
+    """事業者の資料に固定の名前があるセレクタ（2026-11-04）。MX が合うときだけ足す。"""
+    d = SelectorDictionary.load()
+    selectors = d.selectors_for([mx], [])
+    assert expected in selectors
+    assert d.provider_hits[provider] == 1
+    assert expected not in SelectorDictionary.load().selectors_for([], [])

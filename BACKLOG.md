@@ -2323,6 +2323,15 @@ L2（事業者別）ではなく L1（全ドメイン）に入れた。**効く�
 （2026-12）から**（P4 の --resume は測り終えたドメインを測り直さない）。
 見込みは国内で +77 ドメイン前後。
 
+**米国（同日）**：既知のセレクタに無い 1,610 の内訳は Microsoft 725・Google 362・
+不明 298・Tencent Exmail 61・Alibaba 29・Titan/GoDaddy 20・Lark 12・Hostinger 11、
+前段が Proofpoint 286・Mimecast 149。資料に固定の名前があったのは Hostinger
+（`hostingermail-a/b/c`）・GoDaddy（`secureserver1/2`）・IONOS（`s1-ionos`/`s2-ionos`）
+だけで、L2（MX が合うときだけ）に足した。DoH で米国 +17・国内 +4。Alibaba・
+NetEase は `default`（既に L1）。**当てられないもの**：Tencent（ドメインごとに
+生成）、Lark（日時入りとみられる）、Mimecast（`mimecastYYYYMMDD`）、Proofpoint
+（管理者が決める）、Intermedia（日時の数字）。日付を総当たりにはしない。
+
 CYBERMAIL と WebARENA の資料（Zendesk）は WebFetch では 403 だったが、
 同じサイトの Help Center API（公開）で本文を読めた。
 
