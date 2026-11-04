@@ -19,7 +19,6 @@
 | `open.ch` | 34 | 1 | `mx13.ubs.open.ch`, `mx14.ubs.open.ch`, `mx12.ubs.open.ch` |
 | `netnames.net` | 24 | 1 | `relay2.netnames.net`, `relay1.netnames.net` |
 | `verisign.com` | 24 | 1 | `mail4.verisign.com`, `mail2.verisign.com`, `mail3.verisign.com` |
-| `locaweb.com.br` | 15 | 1 | `mx.a.locaweb.com.br`, `mx.core.locaweb.com.br`, `mx.b.locaweb.com.br` |
 | `amazon.com` | 12 | 1 | `amazon-smtp.amazon.com`, `smtp-0102.amazon.com`, `smtp-2102.amazon.com` |
 | `metlife.com` | 12 | 1 | `mx2.metlife.com`, `mx1.metlife.com` |
 | `paypalcorp.com` | 12 | 1 | `mx1.paypalcorp.com`, `mx2.paypalcorp.com` |
@@ -111,6 +110,7 @@
 | `cloudfilter.net` | 2 | 1 | `chr-west.mx.a.cloudfilter.net`, `chr-east.mx.a.cloudfilter.net` |
 | `connect.com.au` | 2 | 1 | `warrane.connect.com.au`, `yarrina.connect.com.au` |
 | `csof.net` | 2 | 1 | `mx1.csof.net`, `mx2.csof.net` |
+| `deere.com` | 2 | 1 | `edxgw1.dx.deere.com`, `edxgw2.dx.deere.com` |
 
 ## 調査済み・同定できなかったもの（1 件）
 
