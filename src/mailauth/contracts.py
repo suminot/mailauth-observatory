@@ -862,6 +862,13 @@ class StatsOverall(_Model):
     #: ポリシーの mx に実際の MX が入っていない
     mta_sts_mx_mismatch_domains: int | None = None
     tls_rpt_domains: int = 0
+    #: DMARC の rua に外部の宛先がある（apex、DMARC あり）
+    rua_external_domains: int = 0
+    #: そのうち宛先が認可レコード（`_report._dmarc`）を出していない。
+    #: 受け手がレポートを送らないことがある
+    rua_unauthorized_domains: int = 0
+    #: そのうち宛先のドメインが登録されていない（NXDOMAIN と断定できたもの）
+    rua_unregistered_domains: int = 0
     bimi_domains: int = 0
     dnssec_domains: int = 0
 
@@ -937,6 +944,9 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("mta_sts_unusable_domains", pa.int32()),
     ("mta_sts_mx_mismatch_domains", pa.int32()),
     ("tls_rpt_domains", pa.int32()),
+    ("rua_external_domains", pa.int32()),
+    ("rua_unauthorized_domains", pa.int32()),
+    ("rua_unregistered_domains", pa.int32()),
     ("bimi_domains", pa.int32()),
     ("dnssec_domains", pa.int32()),
     ("maturity_stage_dist", pa.string()),

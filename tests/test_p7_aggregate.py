@@ -1173,3 +1173,35 @@ def test_ポリシーを取っていない月は_0_ではなく空():
 def test_MTA_STS_が1つも無ければ_0_でよい():
     stats = _agg([_row()], total_entities=1)
     assert stats.mta_sts_enforce_domains == 0
+
+
+# ---------------------------------------------------------------------------
+# rua の外部宛先の認可（BACKLOG 38）
+# ---------------------------------------------------------------------------
+
+
+def test_rua_の外部宛先の認可を数える():
+    """**引けなかったもの（None）は「認可されていない」に入れない**（原則5）。"""
+    rows = [
+        _row(domain_id="d:1", dmarc_present=True, rua_external=True, rua_authorized=True),
+        _row(domain_id="d:2", entity_id="jp:2", dmarc_present=True, rua_external=True,
+             rua_authorized=False),
+        _row(domain_id="d:3", entity_id="jp:3", dmarc_present=True, rua_external=True,
+             rua_authorized=None),
+        _row(domain_id="d:4", entity_id="jp:4", dmarc_present=True, rua_external=True,
+             rua_authorized=False, rua_domain_unregistered=True),
+        _row(domain_id="d:5", entity_id="jp:5", dmarc_present=True, rua_external=False),
+    ]
+    stats = _agg(rows, total_entities=5)
+    assert stats.rua_external_domains == 4
+    assert stats.rua_unauthorized_domains == 2
+    assert stats.rua_unregistered_domains == 1
+
+
+def test_rua_の三値は欠損を_False_にしない():
+    from mailauth.p7_aggregate.metrics import DomainRow
+
+    row = DomainRow.from_fact(
+        {"domain_id": "d:1", "rua_external": True, "rua_authorized": float("nan")}
+    )
+    assert row.rua_authorized is None

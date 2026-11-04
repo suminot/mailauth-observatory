@@ -54,6 +54,16 @@ def _text(value: Any) -> str | None:
     return str(value)
 
 
+
+def _tristate(value: object) -> bool | None:
+    """True / False / None（欠損・NaN は None）。**欠損を False にしない**（原則5）。"""
+    if value is None:
+        return None
+    if isinstance(value, float) and value != value:  # NaN
+        return None
+    return bool(value)
+
+
 @dataclass
 class DomainRow:
     """集計に必要な範囲だけ抜いた fact。列が増えても P7 を触らずに済む。"""
@@ -83,6 +93,11 @@ class DomainRow:
     mta_sts_mode: str | None = None
     mta_sts_policy_status: str | None = None
     mta_sts_mx_mismatch: bool = False
+    #: rua に外部の宛先がある / 宛先の認可レコード / 宛先ドメインの登録
+    #: （P5。三値：引けなかったものは None）
+    rua_external: bool = False
+    rua_authorized: bool | None = None
+    rua_domain_unregistered: bool | None = None
 
     @classmethod
     def from_fact(cls, fact: dict) -> DomainRow:
@@ -111,6 +126,9 @@ class DomainRow:
             mta_sts_mode=_text(fact.get("mta_sts_mode")),
             mta_sts_policy_status=_text(fact.get("mta_sts_policy_status")),
             mta_sts_mx_mismatch=_truthy(fact.get("mta_sts_mx_mismatch")),
+            rua_external=_truthy(fact.get("rua_external")),
+            rua_authorized=_tristate(fact.get("rua_authorized")),
+            rua_domain_unregistered=_tristate(fact.get("rua_domain_unregistered")),
         )
 
     @property
@@ -297,6 +315,22 @@ def aggregate(
             sum(1 for r in observed if r.mta_sts_mx_mismatch) if policy_fetched else None
         ),
         tls_rpt_domains=sum(1 for r in observed if r.tls_rpt_present),
+        # **rua の外部宛先の認可**（RFC 7489 §7.1 / RFC 9990）。宛先のドメインが
+        # `<自ドメイン>._report._dmarc.<宛先>` を公開していないと、受け手は
+        # レポートを送らないことがある。**引けなかったもの（None）は数えない**
+        rua_external_domains=sum(
+            1 for r in observed if r.dmarc_present and r.rua_external
+        ),
+        rua_unauthorized_domains=sum(
+            1
+            for r in observed
+            if r.dmarc_present and r.rua_external and r.rua_authorized is False
+        ),
+        rua_unregistered_domains=sum(
+            1
+            for r in observed
+            if r.dmarc_present and r.rua_external and r.rua_domain_unregistered is True
+        ),
         bimi_domains=sum(1 for r in observed if r.bimi_present),
         dnssec_domains=sum(1 for r in observed if r.dnssec_signed),
         maturity_stage_dist=json.dumps(

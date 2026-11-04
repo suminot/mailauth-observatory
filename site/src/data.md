@@ -199,6 +199,9 @@ Parquet は月ごとに保管しています。同じ数字を二重に持つと
 | `mta_sts_unusable_domains` | TXT はあるが、ポリシーを取れない・読めない。**送る側も読めないので効いていない** |
 | `mta_sts_mx_mismatch_domains` | ポリシーの `mx` に実際の MX が入っていない |
 | `tls_rpt_domains` | TLS-RPT を公開している |
+| `rua_external_domains` | DMARC の集計レポートの宛先（`rua=`）に、自分のドメインの外の宛先がある |
+| `rua_unauthorized_domains` | そのうち、宛先のドメインが受け取りを認めるレコード（`<ドメイン>._report._dmarc.<宛先>`）を出していない。**受け手がレポートを送らないことがある**。引けなかったものは数えていない |
+| `rua_unregistered_domains` | そのうち、宛先のドメインが登録されていないと確かめられた（第三者が登録すればレポートを受け取れる） |
 | `bimi_domains` | BIMI を公開している |
 | `dnssec_domains` | DNSSEC で署名されている |
 | `dane_domains` | TLSA レコードがある |

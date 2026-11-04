@@ -206,6 +206,9 @@ The main columns used in the tables above.
 | `mta_sts_unusable_domains` | has the TXT, but the policy could not be fetched or read. **Senders cannot read it either, so it has no effect** |
 | `mta_sts_mx_mismatch_domains` | the actual MX is not listed in the policy's `mx` |
 | `tls_rpt_domains` | publishes TLS-RPT |
+| `rua_external_domains` | the DMARC aggregate report address (`rua=`) includes a destination outside the domain itself |
+| `rua_unauthorized_domains` | of those, the destination does not publish the record that accepts the reports (`<domain>._report._dmarc.<destination>`). **Receivers may not send the reports.** Lookups that failed are not counted |
+| `rua_unregistered_domains` | of those, the destination domain was confirmed to be unregistered (whoever registers it could receive the reports) |
 | `bimi_domains` | publishes BIMI |
 | `dnssec_domains` | signed with DNSSEC |
 | `dane_domains` | has a TLSA record |
