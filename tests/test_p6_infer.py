@@ -819,7 +819,7 @@ IDENTIFIED_MX_HOSTS = [
         "mx.bizmail.nifcloud.com",  # 資料を取得できていない
         # 2026-11-03：資料にホスト名が無い（転送・個人向けの設定画面にしか出ない）
         "eforward3.registrar-servers.com",
-        "mx01.mail.icloud.com",
+        # mx01.mail.icloud.com は 2026-11-04 に Apple の資料で確かめて規則にした
         "amir.mx.cloudflare.net",  # Cloudflare の資料は route1〜3 だけ
         "mx1.efwd.spaceship.net",
         "mx.example.org.cust.test.hostedemail.com",  # OpenSRS の試験用
@@ -1634,3 +1634,36 @@ def test_undocumented_dkim_cnames_stay_unidentified(rules, target):
     drafts = build_drafts(_fact(dkim_cname_targets=[target]), rules)
     named = [d for d in drafts if d.vendor != NOT_DETECTED_VENDOR]
     assert not named, f"資料で確かめていない {target} に {[d.vendor for d in named]} が付いた"
+
+
+@pytest.mark.parametrize(
+    ("mx", "vendor"),
+    [
+        ("mx01.mail.icloud.com", "Apple"),
+        ("aspmx.daum.net", "Kakao"),
+        ("2a3cc3c040b13c30.mx2.emailprofi.seznam.cz", "Seznam.cz"),
+        ("mail.messaging.microsoft.com", "Microsoft"),
+        ("mx2-hosting.jellyfish.systems", "Namecheap"),
+        ("mx01.dm.aliyun.com", "Alibaba Cloud"),
+    ],
+)
+def test_documented_mx_hosts_are_identified(rules, mx, vendor):
+    """運営会社の資料にホスト名がある MX（2026-11-04）。"""
+    drafts = build_drafts(_fact(mx_hosts=[mx], mx_present=True), rules)
+    assert vendor in {d.vendor for d in drafts}
+
+
+@pytest.mark.parametrize(
+    "mx",
+    [
+        "qiye163mx02.mxmail.netease.com",
+        "mx2.c5.icoremail.net",
+        "mx2.efwd.spaceship.net",
+        "washpostco.com.s9b1.psmtp.com",
+        "custmx.cscdns.net",
+    ],
+)
+def test_undocumented_mx_hosts_stay_unidentified(rules, mx):
+    drafts = build_drafts(_fact(mx_hosts=[mx], mx_present=True), rules)
+    named = [d for d in drafts if d.vendor != NOT_DETECTED_VENDOR]
+    assert not named, f"資料で確かめていない {mx} に {[d.vendor for d in named]} が付いた"

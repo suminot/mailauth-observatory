@@ -335,3 +335,14 @@ rules:
       pattern: '^dkim\._domainkey\.email-od\.com\.?$'
     confidence: high
     source: https://help.socketlabs.com/docs/custom-dkim-signing-feature
+
+  # 送信ドメインの確認のための MX（資料の GoDaddy の例）。送信の痕跡ではないので
+  # 「配信に使われているサービス」には数えない（SPF / DKIM ではないため）
+  - id: alibaba-directmail-mx-01
+    vendor: Alibaba Cloud
+    product: Direct Mail（邮件推送）
+    match:
+      record: MX
+      pattern: '^mx01\.dm\.aliyun\.com\.?$'
+    confidence: high
+    source: https://help.aliyun.com/zh/direct-mail/user-guide/how-to-configure-sending-domain-names

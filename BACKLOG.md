@@ -2476,6 +2476,20 @@ stats_platform に載っていた（サイトには出していなかった）�
 1ドメインが複数のサービスを使うので割合を足すと 100% を超えること、SPF は
 宣言であること、rua を書いていても契約とは限らないことを併記した。
 
+## 37. 実基盤が分からない MX の残り（2026-11-04）
+
+規則にも作業リストにも無い MX を頻度順に並べ、運営会社の資料に名前がある
+ものを足した：Apple iCloud+（`mx0[12].mail.icloud.com`。11-03 は頁が読めず
+保留）、Kakao Daum（`aspmx.daum.net`）、Seznam Email Profi（16進の前置き付き。
+これも 11-03 は保留）、Microsoft の旧い MX の値（`mail.messaging.microsoft.com`。
+資料が置き換えを求めている値なので確度 medium、受信の前段）、Namecheap の
+Jellyfish（受信の前段）、Alibaba Direct Mail（送信ドメインの確認用の MX。
+配信の区分には数えない）。
+
+足さなかったもの：網易の `qiye163mx0N`（資料は `hzmx0N` だけ）、Coremail の
+`c5`（資料は C1〜C3）、Spaceship の転送（頁が 403）、Postini の `psmtp.com`・
+MX Logic・CSC（現行の資料に無い）。
+
 ## 7. 規模に対する前提
 
 いまの国内 1 母集団では問題にならないが、DESIGN.md の 30,000 ドメインでは
