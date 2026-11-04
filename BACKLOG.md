@@ -2552,6 +2552,28 @@ gold の stats_overall に `rua_external_domains`・`rua_unauthorized_domains`�
 国内の残りは EDINET の有価証券報告書（公告掲載方法の URL）が一番の候補で、
 **`MAILAUTH_EDINET_SUBSCRIPTION_KEY` を待つ**（BACKLOG 15）。
 
+## 41. SPF の上限 10 を、主ドメインのレコードだけで数えていた ── **先まで数える（2026-11-04）**
+
+RFC 7208 §4.6.4 の「DNS を引く項は 10 まで」は**評価の全体で1つ**で、
+`include` の先で数え直さない。P5 は主ドメインのレコードの項だけを数えて
+いたので、2026-11 の国内 silver（4,763 ドメイン）で上限超えは **3 件**しか
+出ていなかった（`include:` を3つ並べたドメインは、先で 10 を超えていても「3」）。
+しかもこの数は集計にも公開にも出ていなかった。
+
+- P5 で `include` と `redirect` の先の TXT を引いて数える（`spf.walk_lookups`）。
+  先の TXT は resolver が覚えているので、`spf.protection.outlook.com` などの
+  同じ先を何度も引かない。上限を超えた時点でやめるので、include の輪でも止まる
+- 三値：マクロ（`%{i}`）の先・引けなかった先があって数えきれなければ null。
+  ただし**それまでに 10 を超えたと分かったものは「超える」**
+- 先に SPF が無い・2つある（RFC 7208 §5.2 で PermError）も別に数える
+- 集計：`spf_lookup_exceeded_domains` / `spf_target_broken_domains`（apex、
+  SPF あり）。先を引いていない run では 0 でなく null
+- `PARSER_VERSION` 1.1.0
+
+限界（サイトにも書いた）：数えたのは全部たどった場合の数で、受け手は一致した
+時点で評価を止める。超えていても送信元によっては通る。`mx` の先の名前の数
+など、別の上限は見ていない。
+
 ## 7. 規模に対する前提
 
 いまの国内 1 母集団では問題にならないが、DESIGN.md の 30,000 ドメインでは

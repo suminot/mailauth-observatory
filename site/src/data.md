@@ -202,6 +202,8 @@ Parquet は月ごとに保管しています。同じ数字を二重に持つと
 | `rua_external_domains` | DMARC の集計レポートの宛先（`rua=`）に、自分のドメインの外の宛先がある |
 | `rua_unauthorized_domains` | そのうち、宛先のドメインが受け取りを認めるレコード（`<ドメイン>._report._dmarc.<宛先>`）を出していない。**受け手がレポートを送らないことがある**。引けなかったものは数えていない |
 | `rua_unregistered_domains` | そのうち、宛先のドメインが登録されていないと確かめられた（第三者が登録すればレポートを受け取れる） |
+| `spf_lookup_exceeded_domains` | SPF で DNS を引く項が、`include` と `redirect` の先まで数えて上限 10 を超える。数えきれなかったものは数えていない（超えたと分かったものを除く）。先を引いていない月は空 |
+| `spf_target_broken_domains` | SPF の `include` か `redirect` の先に SPF が無い、または2つある（受け手の評価がエラーになる）。先を引いていない月は空 |
 | `bimi_domains` | BIMI を公開している |
 | `dnssec_domains` | DNSSEC で署名されている |
 | `dane_domains` | TLSA レコードがある |
