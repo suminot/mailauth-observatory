@@ -49,6 +49,16 @@ def _truthy_or(value: Any, *, default: bool) -> bool:
 _VALID_DMARC_P = frozenset({"none", "quarantine", "reject"})
 
 
+def _nonempty(values: Any) -> bool:
+    """list・numpy 配列に要素があるか。None・NaN・文字列は False。"""
+    if values is None or isinstance(values, (str, bytes, float)):
+        return False
+    try:
+        return len(values) > 0
+    except TypeError:
+        return False
+
+
 def _min_int(values: Any) -> int | None:
     """list・numpy 配列・None から、いちばん小さい整数。"""
     if values is None or isinstance(values, (str, bytes)):
@@ -121,6 +131,8 @@ class DomainRow:
     dmarc_multiple_records: bool = False
     #: 見つかった RSA 鍵のうち最も短いものの長さ。無ければ None
     dkim_min_key_bits: int | None = None
+    #: DMARC の rua= に宛先が1つでもあるか
+    dmarc_has_rua: bool = False
 
     @classmethod
     def from_fact(cls, fact: dict) -> DomainRow:
@@ -158,6 +170,7 @@ class DomainRow:
             spf_error=_text(fact.get("spf_error")),
             dmarc_multiple_records=_truthy(fact.get("dmarc_multiple_records")),
             dkim_min_key_bits=_min_int(fact.get("dkim_key_bits")),
+            dmarc_has_rua=_nonempty(fact.get("dmarc_rua")),
         )
 
     @property
@@ -307,6 +320,16 @@ def aggregate(
             if r.dmarc_present
             and (r.dmarc_multiple_records or r.dmarc_p not in _VALID_DMARC_P)
         ),
+        # **集計レポートを受け取る宛先が無い。** 何が届いて何が落ちているかが
+        # 分からない。p=none（観察する方針）でこれだと、観察もしていない
+        dmarc_no_rua_domains=sum(
+            1 for r in observed if r.dmarc_present and not r.dmarc_has_rua
+        ),
+        dmarc_none_no_rua_domains=sum(
+            1
+            for r in observed
+            if r.dmarc_present and not r.dmarc_has_rua and r.dmarc_p == "none"
+        ),
         # 名目は「そう書いてある」、実効は「それが効いている」
         nominal_reject_domains=sum(1 for r in observed if r.dmarc_p == "reject"),
         enforced_reject_domains=sum(
@@ -406,6 +429,7 @@ def aggregate(
         spf_all_pass_domains=all_q.get("+", 0),
         spf_all_missing_domains=all_q.get(None, 0),
         bimi_domains=sum(1 for r in observed if r.bimi_present),
+        bimi_vmc_domains=sum(1 for r in observed if r.bimi_present and r.bimi_has_vmc),
         dnssec_domains=sum(1 for r in observed if r.dnssec_signed),
         maturity_stage_dist=json.dumps(
             {str(k): stages.get(k, 0) for k in range(5)}, sort_keys=True

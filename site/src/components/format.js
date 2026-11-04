@@ -74,6 +74,7 @@ const L = {
     rMtaStsEnforceNote: "ポリシーを取得して確認。testing・取得できないものを除く",
     rTlsRpt: "TLS-RPT を公開している",
     rBimi: "BIMI を公開している",
+    rBimiNote: (n) => `うち ${n} は証明書（a=）の場所を書いている。証明書が有効かは見ていない`,
     rDnssec: "DNSSEC で署名されている",
     rDane: "DANE（TLSA）がある", rDaneNote: "うち DNSSEC 未確認は別掲",
     eSpf: "SPF を公開している企業",
@@ -107,6 +108,7 @@ const L = {
     rMtaStsEnforceNote: "policy fetched and read; excludes testing and unreadable policies",
     rTlsRpt: "Publishes TLS-RPT",
     rBimi: "Publishes BIMI",
+    rBimiNote: (n) => `${n} of these give a certificate location (a=); whether it is valid is not checked`,
     rDnssec: "Signed with DNSSEC",
     rDane: "Has DANE (TLSA)", rDaneNote: "those without confirmed DNSSEC are listed separately",
     eSpf: "Companies publishing SPF",
@@ -180,7 +182,13 @@ export function indicators(stats, lang = "ja") {
       ? [row(t.rMtaStsEnforce, stats.mta_sts_enforce_domains, t.rMtaStsEnforceNote)]
       : []),
     row(t.rTlsRpt, stats.tls_rpt_domains),
-    row(t.rBimi, stats.bimi_domains),
+    row(
+      t.rBimi,
+      stats.bimi_domains,
+      Number.isFinite(stats.bimi_vmc_domains) && stats.bimi_domains > 0
+        ? t.rBimiNote(stats.bimi_vmc_domains)
+        : ""
+    ),
     row(t.rDnssec, stats.dnssec_domains),
     row(t.rDane, stats.dane_domains, t.rDaneNote),
   ];

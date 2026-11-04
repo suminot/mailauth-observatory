@@ -1277,3 +1277,27 @@ def test_DKIM_の鍵の長さは配列から最小を読む():
     for empty in (None, []):
         row = DomainRow.from_fact({"domain_id": "d:1", "dkim_key_bits": empty})
         assert row.dkim_min_key_bits is None
+
+
+def test_rua_の無い_DMARC_と_BIMI_の証明書を数える():
+    import numpy as np
+
+    from mailauth.p7_aggregate.metrics import DomainRow
+
+    def fact(i, **kw):
+        base = {"domain_id": f"d:{i}", "entity_id": f"jp:{i}", "is_apex": True,
+                "observed": True}
+        base.update(kw)
+        return DomainRow.from_fact(base)
+
+    rows = [
+        fact(1, dmarc_present=True, dmarc_p="none", dmarc_rua=np.array(["a.example"])),
+        fact(2, dmarc_present=True, dmarc_p="none", dmarc_rua=np.array([], dtype=object)),
+        fact(3, dmarc_present=True, dmarc_p="reject", dmarc_rua=None),
+        fact(4, dmarc_present=False, dmarc_rua=None),
+        fact(5, bimi_present=True, bimi_has_vmc=True),
+        fact(6, bimi_present=True, bimi_has_vmc=False),
+    ]
+    s = _agg(rows)
+    assert (s.dmarc_no_rua_domains, s.dmarc_none_no_rua_domains) == (2, 1)
+    assert (s.bimi_domains, s.bimi_vmc_domains) == (2, 1)

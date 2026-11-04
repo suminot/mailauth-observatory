@@ -213,7 +213,10 @@ Parquet は月ごとに保管しています。同じ数字を二重に持つと
 | `dkim_key_2048_domains` | DKIM を検出したドメインのうち、見つかった RSA 鍵がすべて 2048 ビット以上 |
 | `dkim_key_1024_domains` | 同じく、最も短い RSA 鍵が 1024 ビット |
 | `dkim_key_short_domains` | 同じく、最も短い RSA 鍵が 1024 ビット未満（RFC 8301 は受け手がこの鍵の署名を有効と見なしてはならないとする） |
+| `dmarc_no_rua_domains` | DMARC を公開しているが、集計レポートの宛先（`rua=`）が無い |
+| `dmarc_none_no_rua_domains` | そのうち `p=none` |
 | `bimi_domains` | BIMI を公開している |
+| `bimi_vmc_domains` | そのうち、証明書（VMC など）の場所（`a=`）を書いている。証明書が有効かは見ていない |
 | `dnssec_domains` | DNSSEC で署名されている |
 | `dane_domains` | TLSA レコードがある |
 | `dane_orphan` | TLSA はあるが DNSSEC 署名が確認できない |
