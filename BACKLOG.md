@@ -2359,6 +2359,28 @@ DMARC rua の宛先は、`rua.dmp.cisco.com`（54社）・`qiye.163.com`（24社
 同定できない一覧に。Check Point の資料にある宛先は `dmarc-cp.com` で、
 観測した `cp-dmarc.com` とは綴りが逆（別のドメイン）。
 
+## 32. 受信の前段の背後の実基盤が分からないドメイン ── **規則では増やせない（2026-11-04）**
+
+2026-11 の silver に今の辞書（#182〜#185 のあと）を当て直すと、受信の前段が
+あって実基盤が分からないドメインは **米国 124（Proofpoint 65・Mimecast 32・
+Cisco 12・Broadcom 8）、国内 121（IIJ 65・Trend Micro 20・Broadcom 13）**。
+
+SPF の include・DKIM の CNAME・確認用 TXT を全部並べても、**取りこぼしている
+実基盤の痕跡は無かった**（`spf.protection.outlook.com` や `_spf.google.com`
+のようなものが1件も残っていない）。残っているのは：
+
+- **SPF が代行管理で中身が見えない**：Proofpoint Hosted SPF
+  （`%{ir}.%{v}.%{d}.spf.has.pphosted.com`、米国 26）、Valimail の
+  マクロ。送信元 IP を入れないと展開できない
+- **自社のサーバー**：`mx`・`a`・`a:mail.<自社>` だけ（米国 15 以上）
+- **前段の include だけ**：`spf.securemx.jp`（国内 45）、Trend Micro、
+  Broadcom。前段が送信も握っていて、背後は DNS に出ない
+- **include が無い**：米国 35・国内 33
+
+確認用 TXT の `google-gws-recovery-domain-verification`（米国 3）は
+Google Workspace の**復旧用ドメイン**の確認で、メールの基盤の証拠にならない
+ので使わない。
+
 ## 7. 規模に対する前提
 
 いまの国内 1 母集団では問題にならないが、DESIGN.md の 30,000 ドメインでは
