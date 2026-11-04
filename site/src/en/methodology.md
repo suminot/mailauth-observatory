@@ -73,7 +73,11 @@ Japanese companies missing from both are filled in, in this order:
 - the official site in the infobox of the Japanese Wikipedia article. **The
   article is confirmed to be about the same company by the securities code in
   its listing field**, and a domain already assigned to another company is not
-  used
+  used. When no article is found under a title built from the trade name, the
+  articles are searched by trade name and securities code, and a result is used
+  **only when, besides the code, the article title or the infobox name carries
+  that trade name** (a code can be reassigned to another company after a
+  delisting)
 
 For US companies that
 Wikidata lacks, the site is read from the annual report filed with the SEC
