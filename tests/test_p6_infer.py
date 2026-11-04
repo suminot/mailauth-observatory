@@ -1465,3 +1465,82 @@ def test_the_second_round_of_worklist_hosts(rules, host, vendor):
     """2026-09 の測り直しで上がってきたもの。"""
     drafts = build_drafts(_fact(mx_hosts=[host], mx_present=True), rules)
     assert any(d.vendor == vendor for d in drafts), (host, [d.vendor for d in drafts])
+
+
+# ===========================================================================
+# 受信の前段の製品が送信も通している痕跡（SPF）── 2026-11-04
+#
+# 米国 2026-11 で「送信の前段」が 2 ドメインだった。辞書が国内の送信専用
+# 製品しか持っていなかった。**各社の資料が送信のために載せると書く形だけ。**
+# ===========================================================================
+
+
+@pytest.mark.parametrize(
+    ("includes", "mechanisms", "vendor"),
+    [
+        (["us._netblocks.mimecast.com"], [], "Mimecast"),
+        (["usb._netblocks.mimecast.com"], [], "Mimecast"),
+        (["_netblocks.mimecast.com"], [], "Mimecast"),
+        (["uspcom._netblocks.mimecast-pscom-us.com"], [], "Mimecast"),
+        ([], ["a:dispatch-us.ppe-hosted.com"], "Proofpoint"),
+        (["spf.ess.barracudanetworks.com"], [], "Barracuda"),
+        (["spf.ess.ca.barracudanetworks.com"], [], "Barracuda"),
+        ([], ["exists:%{i}.spf.hc1234-56.iphmx.com"], "Cisco"),
+        ([], ["exists:%{i}.spf.hc1234-56.eu.iphmx.com"], "Cisco"),
+        (["spf.tmes.trendmicro.com"], [], "Trend Micro"),
+        (["spf-us.tmes.trendmicro.com"], [], "Trend Micro"),
+        (["spf.tmems-jp.trendmicro.com"], [], "Trend Micro"),
+        (["_spf.fireeyecloud.com"], [], "Trellix"),
+        (["spf.hornetsecurity.com"], [], "Hornetsecurity"),
+        (["_spf.prod.hydra.sophos.com"], [], "Sophos"),
+        (["_spf_uswest2.prod.hydra.sophos.com"], [], "Sophos"),
+        (["spf.zixsmbhosted.com"], [], "OpenText"),
+    ],
+)
+def test_gateway_spf_is_outbound(rules, includes, mechanisms, vendor):
+    drafts = build_drafts(
+        _fact(spf_includes=includes, spf_mechanisms=mechanisms, spf_present=True), rules
+    )
+    out = [d for d in drafts if d.layer == InferenceLayer.OUTBOUND_GATEWAY]
+    assert [d.vendor for d in out] == [vendor]
+    assert out[0].category == InferenceCategory.SECURITY_GATEWAY
+
+
+def test_gateway_spf_and_mx_are_two_layers(rules):
+    """同じ会社が受信と送信の両方を握る。**層ごとに1行**（受信を消さない）。"""
+    drafts = build_drafts(
+        _fact(
+            mx_hosts=["us-smtp-inbound-1.mimecast.com"],
+            mx_present=True,
+            spf_includes=["us._netblocks.mimecast.com"],
+            spf_present=True,
+        ),
+        rules,
+    )
+    layers = {d.layer for d in drafts if d.vendor == "Mimecast"}
+    assert layers == {InferenceLayer.INBOUND_GATEWAY, InferenceLayer.OUTBOUND_GATEWAY}
+
+
+@pytest.mark.parametrize(
+    ("includes", "mechanisms"),
+    [
+        # 公開資料に形が無い
+        (["spf-00512b01.pphosted.com"], []),
+        (["_spf-us.ppe-hosted.com"], []),
+        (["mailcontrol.com"], []),
+        # Hosted SPF（SPF の代行管理）。送信の経路ではない
+        (["%{ir}.%{v}.%{d}.spf.has.pphosted.com"], []),
+        # 送信を通していなくても載せるよう資料が勧めている
+        (["spf.messagelabs.com"], []),
+        # 暗号化メールの配送用
+        (["res.cisco.com"], []),
+        # 受信側の製品
+        (["spf.us1.defend.egress.com"], []),
+    ],
+)
+def test_undocumented_gateway_spf_is_not_outbound(rules, includes, mechanisms):
+    drafts = build_drafts(
+        _fact(spf_includes=includes, spf_mechanisms=mechanisms, spf_present=True), rules
+    )
+    out = [d for d in drafts if d.layer == InferenceLayer.OUTBOUND_GATEWAY]
+    assert not out, f"資料で確かめていない {includes or mechanisms} に送信の前段が付いた"

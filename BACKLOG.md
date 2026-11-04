@@ -2254,6 +2254,43 @@ CT の持ち時間切れ（CT_FETCH_BUDGET_SPENT）の警告は消えた。月�
 まで動かなかった。月次計測が待つのは、**補充が確かめ終えて crt.sh を叩くと
 決めた実行だけ**にした（「補充」の段がまだ終わっていないもの）。
 
+## 29. 米国の「送信の前段」が 2 ドメインしか無かった ── **辞書に足した（2026-11-04）**
+
+gold 2026-11 の米国で、送信の前段（outbound_gateway）が同定できたのは
+**10,753 ドメイン中 2**。国内は 756。辞書の送信側の規則が国内の送信専用
+製品（HENNGE・m-FILTER・Active! gate SS など）だけで、**米国で多い
+受信の前段の製品が送信も通している痕跡（SPF）を1件も持っていなかった。**
+
+silver（11-03 の米国、7,235 ドメイン）の SPF に載っていた数：Proofpoint の
+Hosted SPF 485、Mimecast 約 450、Proofpoint の `spf-<16進>.pphosted.com`
+約 250、Barracuda 約 100、Proofpoint Essentials 約 130、Cisco 約 40、
+Trend Micro 約 27 など。
+
+**各社の資料が「送信を通すときに SPF に載せる」と書いている形だけ**を
+足した（Mimecast・Proofpoint Essentials の `a:dispatch-*`・Barracuda・
+Cisco の `exists:%{i}.spf.<allocation>.iphmx.com`・Trend Micro・Trellix・
+Hornetsecurity・Sophos・Zix）。同じ silver で **2 → 740 ドメイン
+（687 社）**、うち 608 は受信の前段と同じ会社。
+
+足さなかったもの（理由は `security_gw.yaml` に書いた）：
+
+| 形 | 理由 |
+|---|---|
+| `spf-<16進>.pphosted.com` | Proofpoint の公開資料に形が無い。**一番多いが入れない** |
+| `…spf.has.pphosted.com` | Hosted SPF（SPF の代行管理）。送信の経路ではない |
+| `_spf-us.ppe-hosted.com` | 資料の頁が読めなかった（検索結果の抜粋だけ） |
+| `spf.messagelabs.com` | Broadcom が「送信を通していなくても載せる」よう勧めている |
+| `mailcontrol.com` | Forcepoint の資料に無い |
+| `res.cisco.com` | 暗号化メールの配送用 |
+| `spf.*.defend.egress.com` | 受信側の製品 |
+
+Mimecast の資料（Zendesk の頁）は WebFetch では 403 だったが、同じ
+サイトの Help Center API（公開、認証なし）で本文を読めた。
+
+サイトの「送信の前段」の説明が「MX を握らず、送信だけを通す製品」だった
+ので、受信の前段の製品も入ること、**SPF に載っていても全送信が通るとは
+限らない**ことを日英で書き直した。
+
 ## 7. 規模に対する前提
 
 いまの国内 1 母集団では問題にならないが、DESIGN.md の 30,000 ドメインでは
