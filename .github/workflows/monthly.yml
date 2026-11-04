@@ -874,6 +874,25 @@ jobs:
           gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref main
           echo "自動で頼まれた実行なので、公開サイトのデプロイを頼んだ" >> "$GITHUB_STEP_SUMMARY"
 
+      # **月初の自動実行は国内だけ。米国は続けてここから頼む。**
+      #
+      # schedule は入力を持てないので、既定の母集団（国内）しか回らない。
+      # 2026-11 の米国は手で起こしていた ── 頼み忘れると、その月の米国が
+      # まるごと抜ける。同時に流すと crt.sh から見た本数が倍になるので、
+      # 国内が終わってから頼む。国内が落ちても米国は頼む（別の母集団の
+      # 計測を、国内の失敗で止めない）。補充（下）より先に頼むのは、補充が
+      # 月次計測の走っている間は何もしないため
+      - name: 米国の計測を頼む
+        if: always() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run monthly.yml --repo "$GITHUB_REPOSITORY" --ref main \
+            -f run_id="${{ steps.run.outputs.id }}" \
+            -f population=configs/populations/us-all-listed.yaml \
+            -f publish=yes
+          echo "月初の自動実行なので、続けて米国の計測を頼んだ" >> "$GITHUB_STEP_SUMMARY"
+
       # **CT の積み残しがあれば、補充を頼む。** 補充は月次計測が走っている間は
       # 何もしない。毎時の schedule が起動しないこともあるので（2026-11-01）、
       # 終わったここから再開させる。--limit の動作確認では頼まない

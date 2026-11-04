@@ -2246,6 +2246,28 @@ def test_自動で頼まれた月次はデプロイを自分で頼む():
     )
 
 
+def test_月初の自動実行は続けて米国を頼む():
+    """**schedule は入力を持てないので、既定の母集団（国内）しか回らない。**
+
+    2026-11 の米国は手で起こしていた。頼み忘れると、その月の米国が抜ける。
+    同時に流すと crt.sh から見た本数が倍になるので、国内の後に頼む。
+    """
+    text = (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "- name: 米国の計測を頼む" in text, "月初の自動実行が米国を頼んでいない"
+    step = text[text.index("- name: 米国の計測を頼む") :]
+    step = step[: step.index("- name:", 10)]
+    assert "github.event_name == 'schedule'" in step, (
+        "手で起こした実行でも米国を頼んでしまう（米国の実行が米国を頼み続ける）"
+    )
+    assert "always()" in step, "国内が落ちると米国まで止まる"
+    assert "population=configs/populations/us-all-listed.yaml" in step
+    assert 'run_id="${{ steps.run.outputs.id }}"' in step, "別の月を測ってしまう"
+    # 補充より先に頼む（補充は月次計測の走っている間は何もしない）
+    assert text.index("- name: 米国の計測を頼む") < text.index("- name: CT の補充を頼む")
+
+
 def test_資格情報つきの確認も配り終わるまで待つ():
     """**認証なしの 401 は関数が返すので、中身より先に返る。**
 
