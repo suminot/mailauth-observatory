@@ -60,6 +60,8 @@ const rows = platforms.filter(
   accumulate, leftovers cannot be told apart from current use
 - **Contracts are not visible.** A tenant used for something other than mail
   will not appear, and a trace may remain after the service was dropped
+- **An SPF entry is a declaration that a product may send.** It does not show
+  that all outgoing mail passes through that product
 
 </div>
 
