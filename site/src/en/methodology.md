@@ -207,7 +207,7 @@ So the inferences are split into three layers and counted separately.
 |---|---|
 | Platform | where the mailboxes are |
 | Inbound front-end | products holding the MX record; a platform sits behind them |
-| Outbound front-end | products that do not hold MX and only handle outgoing mail |
+| Outbound front-end | products that outgoing mail passes through (counted from SPF traces; may be the same product as the inbound front-end) |
 
 **One company can appear in all three layers.** We have observed companies
 using different vendors for inbound and outbound mail. Within one layer a

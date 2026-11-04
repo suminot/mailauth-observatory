@@ -516,6 +516,123 @@ rules:
     layer: inbound_gateway
     source: https://docs.trendmicro.com/en-us/documentation/article/trend-micro-email-security-online-help-configuring-a-domain
 
+  # -------------------------------------------------------------------------
+  # 受信の前段の製品が**送信も通している**痕跡（SPF）
+  #
+  # 2026-11 の米国で「送信の前段」が 2 ドメインしか無かった。辞書が国内の
+  # 送信専用製品しか持っておらず、米国で多い Proofpoint・Mimecast・
+  # Barracuda などの SPF を1件も拾えていなかった（silver の SPF には
+  # 数百ドメイン単位で載っている）。
+  #
+  # **各社の資料が「送信を通すときに SPF に載せる」と書いている名前だけ。**
+  # 2026-11-04 に確かめた。載せていないもの：
+  #   - Proofpoint の `spf-<16進>.pphosted.com`：公開資料に形が無い
+  #   - Proofpoint の `%{ir}.%{v}.%{d}.spf.has.pphosted.com`：Hosted SPF
+  #     （SPF の代行管理）で、送信の経路ではない。平坦化として扱う（match.py）
+  #   - Proofpoint Essentials の `_spf-us.ppe-hosted.com`：資料の頁が読めなかった
+  #   - Broadcom の `spf.messagelabs.com`：資料が「送信を通していなくても
+  #     載せる」よう勧めているので、送信の経路の証拠にならない
+  #   - Forcepoint の `mailcontrol.com`：資料にこの形が無い
+  #   - Cisco の `res.cisco.com`：暗号化メールの配送用で、前段の中継ではない
+  #   - Egress Defend：受信側の製品
+  # -------------------------------------------------------------------------
+
+  - id: mimecast-spf-01
+    vendor: Mimecast
+    product: Mimecast Email Security
+    match:
+      record: SPF_INCLUDE
+      # 資料の地域別の表（eu/de/us/usb/ca/za/au/sg）と全地域の `_netblocks`、
+      # 別ドメインの USPCOM。`_extnetblocks` も同じ頁の表にある
+      pattern: '^((eu|de|us|usb|ca|za|au|sg)\._(ext)?netblocks|_netblocks)\.mimecast\.com$|^uspcom\._netblocks\.mimecast-pscom-us\.com$'
+    confidence: high
+    layer: outbound_gateway
+    source: https://mimecastsupport.zendesk.com/hc/en-us/articles/34000792642963-Connect-Application-Implementing-SPF-for-Outbound-Email
+
+  - id: pp-essentials-spf-01
+    vendor: Proofpoint
+    product: Proofpoint Essentials
+    match:
+      record: SPF_MECHANISM
+      pattern: '^a:dispatch-(us|eu)\.ppe-hosted\.com\.?$'
+    confidence: high
+    layer: outbound_gateway
+    source: https://www.proofpoint.com/sites/default/files/getting_started_guide_us1-cm.pdf
+
+  - id: barracuda-spf-01
+    vendor: Barracuda
+    product: Barracuda Email Gateway Defense
+    match:
+      record: SPF_INCLUDE
+      pattern: '^spf\.ess(\.(au|ca|de|in|uk))?\.barracudanetworks\.com$'
+    confidence: high
+    layer: outbound_gateway
+    source: https://documentation.campus.barracuda.com/wiki/display/EGD/Sender+Policy+Framework+for+Outbound+Mail
+
+  # 資料は `exists:%{i}.spf.<allocation>.iphmx.com`。<allocation> は契約ごと
+  - id: cisco-spf-01
+    vendor: Cisco
+    product: Cisco Secure Email (Cloud Gateway)
+    match:
+      record: SPF_MECHANISM
+      pattern: '^exists:%\{i\}\.spf\.[a-z0-9.-]+\.iphmx\.com\.?$'
+    confidence: high
+    layer: outbound_gateway
+    source: https://www.cisco.com/c/en/us/support/docs/security/cloud-email-security/213938-understanding-the-ces-spf-record.html
+
+  # 地域別。日本は `tmems-jp`（綴りが他と違う）。`spf.tmes.trendmicro.com` は
+  # 資料が旧形として載せている
+  - id: trendmicro-spf-01
+    vendor: Trend Micro
+    product: Trend Micro Email Security
+    match:
+      record: SPF_INCLUDE
+      pattern: '^spf(-us)?\.tmes\.trendmicro\.(com|eu)$|^spf\.(tmes-(anz|sg|in|uae|uk|ca|za|id)|tmems-jp)\.trendmicro\.com$'
+    confidence: high
+    layer: outbound_gateway
+    source: https://docs.trendmicro.com/en-us/documentation/article/trend-micro-email-security-online-help-adding-spf-records
+
+  - id: trellix-spf-01
+    vendor: Trellix
+    product: Trellix Email Security – Cloud
+    match:
+      record: SPF_INCLUDE
+      pattern: '^_spf\.fireeye(cloud|gov)\.com$'
+    confidence: high
+    layer: outbound_gateway
+    source: docs-be.trellix.com（Email Security – Cloud の導入資料 PDF、p.29）
+
+  - id: hornetsecurity-spf-01
+    vendor: Hornetsecurity
+    product: Hornetsecurity Secure Email Gateway (旧 Vade を含む)
+    match:
+      record: SPF_INCLUDE
+      pattern: '^spf\.hornetsecurity\.com$'
+    confidence: high
+    layer: outbound_gateway
+    source: https://www.hornetsecurity.com/en/onboarding-information/
+
+  # `_spf.prod.hydra` は資料で旧形。地域別は `_spf_<地域>.prod.hydra`
+  - id: sophos-spf-01
+    vendor: Sophos
+    product: Sophos Email
+    match:
+      record: SPF_INCLUDE
+      pattern: '^_spf(_[a-z0-9]+)?\.prod\.hydra\.sophos\.com$'
+    confidence: high
+    layer: outbound_gateway
+    source: docs.sophos.com/central/customer/help/en-us/ManageYourProducts/EmailSecurity/EmailDomainInfo/
+
+  - id: zix-spf-01
+    vendor: OpenText
+    product: Zix（SMB 向けのホスト型ゲートウェイ）
+    match:
+      record: SPF_INCLUDE
+      pattern: '^spf\.zixsmbhosted\.com$'
+    confidence: high
+    layer: outbound_gateway
+    source: https://support.zixcorp.com/app/answers/detail/a_id/1606
+
 # DNS に痕跡を残さない製品（DESIGN.md P6「API連携型製品という構造的盲点」）
 # 「検出されなかった＝使っていない」ではないことを出力とレポートに明示する。
 undetectable_by_dns:

@@ -122,9 +122,15 @@ display(layerTable("inbound_gateway"));
 
 ## Outbound front-end
 
-Products that do not hold MX and only handle outgoing mail, such as
-misdelivery controls. **A zero under `MX points here` is expected** — these
-products do not receive.
+Products that outgoing mail passes through. We count a product when the SPF
+record contains a name that the vendor's own documentation tells customers to
+publish for sending. This covers send-only products, such as misdelivery
+controls, and inbound front-end products that also relay outgoing mail (those
+also appear in the inbound table). **A zero under `MX points here` is
+expected** — this layer is counted from SPF traces, not from MX.
+
+An SPF entry declares that the product may send for the domain; **it does not
+show that all outgoing mail goes through it.**
 
 ```js
 display(layerTable("outbound_gateway"));
