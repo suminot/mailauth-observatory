@@ -2,7 +2,7 @@
 
 - 母集団: `jp-all-listed`
 - 状態: **partial**
-- 集計時刻: 2026-11-04T19:11:35+00:00
+- 集計時刻: 2026-11-04T19:25:20+00:00
 - 警告: 23 件
 
 ## 工程
@@ -12,11 +12,11 @@
 | p1_population 母集団確定 | success | 11433 | 3812 | 0 | 7621 | 1286.218 |
 | p2_candidates ドメイン候補生成 | partial | 3812 | 3599 | 21 | 213 | 3229.661 |
 | p3_domains メールドメイン確定 | partial | 5202 | 4801 | 36 | 401 | 778.969 |
-| p4_measure DNS計測 | success | 4801 | 0 | 0 | 4817 | 4.4 |
-| p5_parse パース | success | 268868 | 4763 | 0 | 0 | 267.342 |
-| p6_infer 推察 | success | 4763 | 14527 | 0 | 0 | 3.941 |
-| p7_aggregate 集計 | success | 4763 | 13 | 0 | 0 | 0.901 |
-| p8_publish 公開 | success | 305 | 2221 | 0 | 0 | 0.157 |
+| p4_measure DNS計測 | success | 4801 | 0 | 0 | 4817 | 4.377 |
+| p5_parse パース | success | 268868 | 4763 | 0 | 0 | 282.207 |
+| p6_infer 推察 | success | 4763 | 14527 | 0 | 0 | 2.919 |
+| p7_aggregate 集計 | success | 4763 | 13 | 0 | 0 | 0.807 |
+| p8_publish 公開 | success | 305 | 2221 | 0 | 0 | 0.132 |
 
 ## 工程間の件数
 
@@ -53,7 +53,7 @@
 ### p4_measure
 
 - `RESUMED_FROM_EXISTING_BRONZE` ×4817: 同じ run の bronze に 4817 ドメインぶんが既にあったため測り直していない。**「観測していない」のではなく「前回の実行で観測済み」である**
-- `BRONZE_APPENDED_TO_EXISTING` ×18: 同じ run に既存の bronze があったため、上書きせず新しいパートに追記した（bronze は不変・追記のみ）。--resume なので、既に測り終えたドメインは測り直していない
+- `BRONZE_APPENDED_TO_EXISTING` ×19: 同じ run に既存の bronze があったため、上書きせず新しいパートに追記した（bronze は不変・追記のみ）。--resume なので、既に測り終えたドメインは測り直していない
 
 ### p5_parse
 
