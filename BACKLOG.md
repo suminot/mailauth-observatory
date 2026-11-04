@@ -2549,7 +2549,7 @@ gold の stats_overall に `rua_external_domains`・`rua_unauthorized_domains`�
 
 ---
 
-## 9. 小さいもの ── **Google Fonts の同梱を除き対応済み**
+## 9. 小さいもの ── **対応済み**（Google Fonts の同梱は 11 で 2026-11-01 に対応）
 
 - ~~`site/static/_headers` に `Strict-Transport-Security` と
   `Content-Security-Policy` が無い~~ **ヘッダは対応済み。**
