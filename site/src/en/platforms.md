@@ -138,6 +138,39 @@ show that all outgoing mail goes through it.**
 display(layerTable("outbound_gateway"));
 ```
 
+## Services used for sending
+
+Mail delivery services and business systems that send notifications —
+**services that appear in SPF or DKIM so that mail can be sent from the
+company's domain.**
+
+- Only names the service itself tells customers to publish, in **SPF
+  `include:` or a DKIM CNAME**, are counted. Domain-ownership TXT records alone
+  are left out, since they are not evidence of sending
+- **One domain can use several services, and each is counted.** The shares can
+  add up to more than 100%
+- An SPF entry declares that a service may send; it does not show that it
+  does. DKIM covers only what was found among known selectors
+- `MX points here` is 0 in this table (MX is not looked at)
+
+```js
+display(layerTable("sending_service"));
+```
+
+## DMARC report aggregation services
+
+Domains whose DMARC aggregate report address (`rua=`) points at a service that
+processes reports.
+
+- Only addresses whose domain identifies a service are counted. The company's
+  own addresses, and addresses that cannot be identified, are not included
+- One domain can list several addresses, and each is counted
+- Listing an address does not show a contract with that service
+
+```js
+display(layerTable("dmarc_report_service"));
+```
+
 ## Notes on reading this
 
 - **One company can appear in all three layers.** We have observed companies
