@@ -61,6 +61,9 @@ const L = {
     rSpf: "SPF を公開している",
     rDkim: "DKIM を既知セレクタで検出できた",
     rDkimNote: "未検出は未設定の証明ではない",
+    rDkim2048: "うち DKIM の鍵がすべて 2048 ビット以上",
+    rDkim2048Note: (n1024, nShort) =>
+      `見つかった RSA 鍵のうち最も短いもので分けた。1024 ビットは ${n1024}、1024 ビット未満は ${nShort}`,
     rDmarc: "DMARC を公開している",
     rDmarcInvalid: (n) => `うち ${n} はレコードが無効（2つある・p= が無いか不正）`,
     rEnforced: "DMARC が強制ポリシー", rEnforcedNote: "quarantine または reject",
@@ -91,6 +94,9 @@ const L = {
     rSpf: "Publishes SPF",
     rDkim: "DKIM found among known selectors",
     rDkimNote: "not finding it is not proof it is unset",
+    rDkim2048: "of which every DKIM key is 2048 bits or longer",
+    rDkim2048Note: (n1024, nShort) =>
+      `by the shortest RSA key found: ${n1024} at 1024 bits, ${nShort} under 1024 bits`,
     rDmarc: "Publishes DMARC",
     rDmarcInvalid: (n) => `${n} of these have an invalid record (two records, or p= missing or invalid)`,
     rEnforced: "DMARC policy is enforcing", rEnforcedNote: "quarantine or reject",
@@ -151,6 +157,11 @@ export function indicators(stats, lang = "ja") {
   return [
     row(t.rSpf, stats.spf_adopted_domains),
     row(t.rDkim, stats.dkim_detected_domains, t.rDkimNote),
+    // 鍵の長さを集計していない月は行ごと出さない（0 と読めてしまう）
+    ...(Number.isFinite(stats.dkim_key_2048_domains)
+      ? [row(t.rDkim2048, stats.dkim_key_2048_domains,
+             t.rDkim2048Note(stats.dkim_key_1024_domains, stats.dkim_key_short_domains))]
+      : []),
     // **無効なレコードも「公開している」に入っている。** 集計していない月は
     // 書かない（0 と読めてしまう）
     row(

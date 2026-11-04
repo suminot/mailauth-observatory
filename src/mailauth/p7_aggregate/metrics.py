@@ -49,6 +49,17 @@ def _truthy_or(value: Any, *, default: bool) -> bool:
 _VALID_DMARC_P = frozenset({"none", "quarantine", "reject"})
 
 
+def _min_int(values: Any) -> int | None:
+    """list・numpy 配列・None から、いちばん小さい整数。"""
+    if values is None or isinstance(values, (str, bytes)):
+        return None
+    try:
+        nums = [int(v) for v in values if v is not None and v == v]
+    except TypeError:
+        return None
+    return min(nums) if nums else None
+
+
 def _text(value: Any) -> str | None:
     if value is None:
         return None
@@ -108,6 +119,8 @@ class DomainRow:
     spf_all_qualifier: str | None = None
     spf_error: str | None = None
     dmarc_multiple_records: bool = False
+    #: 見つかった RSA 鍵のうち最も短いものの長さ。無ければ None
+    dkim_min_key_bits: int | None = None
 
     @classmethod
     def from_fact(cls, fact: dict) -> DomainRow:
@@ -144,6 +157,7 @@ class DomainRow:
             spf_all_qualifier=_text(fact.get("spf_all_qualifier")),
             spf_error=_text(fact.get("spf_error")),
             dmarc_multiple_records=_truthy(fact.get("dmarc_multiple_records")),
+            dkim_min_key_bits=_min_int(fact.get("dkim_key_bits")),
         )
 
     @property
@@ -260,6 +274,11 @@ def aggregate(
         r for r in observed if r.spf_present and r.spf_error != "multiple_records"
     ]
     all_q = Counter(r.spf_all_qualifier for r in spf_single)
+    dkim_keys = [
+        r.dkim_min_key_bits
+        for r in observed
+        if r.dkim_status == DkimStatus.DETECTED and r.dkim_min_key_bits is not None
+    ]
     stages = Counter(r.stage for r in observed)
     parked = [r for r in observed if r.park_class in _PARKED_CLASSES]
     hardened = sum(1 for r in parked if r.park_class == ParkClass.HARDENED_PARKED)
@@ -324,6 +343,9 @@ def aggregate(
             for r in observed
             if r.dkim_status == DkimStatus.NOT_FOUND_IN_KNOWN_SELECTORS
         ),
+        dkim_key_short_domains=sum(1 for b in dkim_keys if b < 1024),
+        dkim_key_1024_domains=sum(1 for b in dkim_keys if 1024 <= b < 2048),
+        dkim_key_2048_domains=sum(1 for b in dkim_keys if b >= 2048),
         mta_sts_domains=sum(1 for r in observed if r.mta_sts_present),
         # **TXT があるだけでは効いていない。** ポリシーを取って mode を見る
         # （P5 `mta_sts_policy.py`）。取っていない run では 0 ではなく null

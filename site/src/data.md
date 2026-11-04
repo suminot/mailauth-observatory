@@ -210,6 +210,9 @@ Parquet は月ごとに保管しています。同じ数字を二重に持つと
 | `spf_all_pass_domains` | SPF の最後の項が `+all`（修飾子の無い `all` を含む） |
 | `spf_all_missing_domains` | SPF に `all` が無い |
 | `dmarc_invalid_domains` | DMARC を公開しているが、レコードが無効（`v=DMARC1` が2つある、`p=` が無いか不正）。`dmarc_adopted_domains` の内数 |
+| `dkim_key_2048_domains` | DKIM を検出したドメインのうち、見つかった RSA 鍵がすべて 2048 ビット以上 |
+| `dkim_key_1024_domains` | 同じく、最も短い RSA 鍵が 1024 ビット |
+| `dkim_key_short_domains` | 同じく、最も短い RSA 鍵が 1024 ビット未満（RFC 8301 は受け手がこの鍵の署名を有効と見なしてはならないとする） |
 | `bimi_domains` | BIMI を公開している |
 | `dnssec_domains` | DNSSEC で署名されている |
 | `dane_domains` | TLSA レコードがある |

@@ -112,7 +112,9 @@ def parse_key(selector: str, txt: str, cname_target: str | None = None) -> DkimK
         return key
 
     key.valid = True
-    key.key_bits = estimate_key_bits(p_value)
+    # **長さを見積もるのは RSA だけ。** Ed25519（RFC 8463）の公開鍵は 32 バイトで、
+    # RSA の式に掛けると 64 ビットと出て「短すぎる」に入ってしまう
+    key.key_bits = estimate_key_bits(p_value) if key.key_type == "rsa" else None
     if key.key_bits and key.key_bits < 1024:
         key.notes.append(f"鍵長 {key.key_bits} bit は短すぎる（1024bit 未満）")
     if key.testing:
