@@ -77,9 +77,10 @@ const denom = view(
 **前者だけだと分母が何か伝わらず、後者だけだと採用が少なく見えます。**
 
 ```js
-function layerTable(layer) {
+function layerTable(layer, emptyText) {
   const items = rows.filter((d) => d.layer === layer);
-  if (!items.length) return html`<p class="muted">この月のデータはありません。</p>`;
+  if (!items.length)
+    return html`<p class="muted">${emptyText ?? "この月のデータはありません。"}</p>`;
   const total = denom === "identified" ? "identified" : "observed";
   return table(
     items
@@ -128,6 +129,43 @@ SPF に載っているのは「その製品から送ってよい」という宣�
 
 ```js
 display(layerTable("outbound_gateway"));
+```
+
+## 配信に使われているサービス
+
+```js
+// この区分は 2026-11 の再集計から数えている。それより前の月には行が無い
+const NEW_SECTION = "この区分は 2026-11 の再集計から数えています。この月の表はありません。";
+```
+
+メールの配信サービスや、業務システムの通知メールなど、**会社のドメインで
+メールを送るために SPF または DKIM に載っているサービス**です。
+
+- 数えているのは **SPF の `include:` と DKIM の CNAME** に、そのサービスが
+  案内している名前があるものだけです。ドメインの所有を確かめるための TXT
+  レコードだけのものは入れていません（送っている証拠にはならないため）
+- **1つのドメインが複数のサービスを使っていることがあり、それぞれに数えます。**
+  割合を足すと100%を超えます
+- SPF に載っているのは送ってよいという宣言で、実際に送っているかまでは
+  分かりません。DKIM は既知のセレクタで見つかった分だけです
+- `うち受信が向いている` はこの表では 0 です（MX は見ていません）
+
+```js
+display(layerTable("sending_service", NEW_SECTION));
+```
+
+## DMARC レポートの集計サービス
+
+DMARC の集計レポート（`rua=`）の宛先が、集計を請け負うサービスになって
+いるものです。
+
+- 宛先のドメインからサービスを判別できたものだけです。自社の宛先や、
+  判別できない宛先は入っていません
+- 1つのドメインが複数の宛先を書いていることがあり、それぞれに数えます
+- 宛先を書いていることは、そのサービスと契約していることまでは示しません
+
+```js
+display(layerTable("dmarc_report_service", NEW_SECTION));
 ```
 
 ## 読み方の補足

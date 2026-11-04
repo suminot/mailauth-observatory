@@ -40,11 +40,67 @@ from ..contracts import (
     MIN_CELL_SIZE,
     SUPPRESSED_VENDOR,
     EvidenceRecordType,
+    InferenceCategory,
     StatsPlatform,
 )
 from ..p6_infer.match import NOT_DETECTED_VENDOR
 
-__all__ = ["aggregate_platform", "counts_as_using"]
+__all__ = ["aggregate_platform", "counts_as_using", "effective_layer"]
+
+#: 層を持たない推定の、集計上の区分（BACKLOG 36）。
+#:
+#: 以前は層の無い行を `str(layer)` で数えていて、parquet から読んだ欠損が
+#: 文字列 "nan" になり、**配信・確認用 TXT・DMARC 集計が "nan" という層に
+#: まとめて公開されていた。** 区分を名前で持つ
+SENDING_SERVICE = "sending_service"
+DMARC_REPORT_SERVICE = "dmarc_report_service"
+
+#: 送信に使っている証拠になる痕跡。**確認用 TXT は入らない**
+#: （ドメインの所有を確かめただけで、そこから送っているとは限らない）
+_SENDING_EVIDENCE = {
+    EvidenceRecordType.SPF_INCLUDE,
+    EvidenceRecordType.SPF_MECHANISM,
+    EvidenceRecordType.DKIM_CNAME,
+}
+
+
+def _layer_value(row: dict) -> str | None:
+    layer = row.get("layer")
+    if isinstance(layer, str) and layer and layer.lower() != "nan":
+        return layer
+    return None
+
+
+def _evidence_types(row: dict) -> set[str]:
+    raw = row.get("evidence")
+    if not isinstance(raw, str) or not raw:
+        return set()
+    try:
+        items = json.loads(raw)
+    except (TypeError, ValueError):
+        return set()
+    if not isinstance(items, list):
+        return set()
+    return {str(i.get("record_type")) for i in items if isinstance(i, dict)}
+
+
+def effective_layer(row: dict) -> str | None:
+    """集計で使う層。層の無い推定は区分に振る。**振れないものは数えない。**
+
+      層がある            その層（実基盤・受信の前段・送信の前段）
+      esp で SPF / DKIM   配信に使われているサービス
+      dmarc_vendor        DMARC レポートの集計サービス（rua の宛先）
+      それ以外            None（確認用 TXT だけの esp など）
+    """
+    layer = _layer_value(row)
+    if layer:
+        return layer
+    category = str(row.get("category") or "")
+    if category == InferenceCategory.ESP:
+        return SENDING_SERVICE if _evidence_types(row) & _SENDING_EVIDENCE else None
+    if category == InferenceCategory.DMARC_VENDOR:
+        return DMARC_REPORT_SERVICE
+    return None
 
 
 def counts_as_using(row: dict) -> bool:
@@ -60,7 +116,7 @@ def counts_as_using(row: dict) -> bool:
         return False
     if row.get("is_layer_primary") is False:
         return False
-    return bool(row.get("layer"))
+    return effective_layer(row) is not None
 
 
 def _is_receiving(row: dict) -> bool:
@@ -115,7 +171,7 @@ def aggregate_platform(
             continue
         if not counts_as_using(row):
             continue
-        layer = str(row.get("layer"))
+        layer = str(effective_layer(row))
         vendor = str(row.get("vendor") or "")
         domain_id = str(row.get("domain_id") or "")
         key = (layer, vendor)

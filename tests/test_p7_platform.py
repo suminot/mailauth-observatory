@@ -230,3 +230,48 @@ def test_the_engine_is_kept_for_oem_rows():
         ]
     )
     assert rows[0].engine == "Active! gate SS"
+
+
+# ---------------------------------------------------------------------------
+# 層を持たない推定（BACKLOG 36）
+# ---------------------------------------------------------------------------
+
+
+def _ev(*types: str) -> str:
+    return json.dumps([{"record_type": t, "matched_value": "x", "rule_id": "r"} for t in types])
+
+
+def test_a_missing_layer_never_becomes_the_string_nan():
+    """**parquet の欠損が "nan" という層になって公開されていた。**"""
+    rows = [
+        _inf(category=InferenceCategory.ESP, vendor="Twilio", layer=float("nan"),
+             is_layer_primary=None, evidence=_ev("DKIM_CNAME")),
+        _inf(category=InferenceCategory.DMARC_VENDOR, vendor="Valimail", layer=None,
+             is_layer_primary=None, evidence=_ev("DMARC_RUA_DOMAIN")),
+    ]
+    layers = {r.layer for r in _agg(rows)}
+    assert "nan" not in layers and "None" not in layers
+    assert layers == {platform_mod.SENDING_SERVICE, platform_mod.DMARC_REPORT_SERVICE}
+
+
+def test_verification_txt_alone_is_not_a_sending_service():
+    """**確認用 TXT はドメインの所有を確かめただけ。** 送っている証拠ではない。"""
+    rows = [
+        _inf(category=InferenceCategory.ESP, vendor="Atlassian", layer=float("nan"),
+             is_layer_primary=None, evidence=_ev("VERIFICATION_TXT")),
+    ]
+    assert _agg(rows) == []
+
+
+def test_spf_or_dkim_makes_a_sending_service():
+    rows = [
+        _inf(domain_id="d:1", category=InferenceCategory.ESP, vendor="Atlassian",
+             layer=None, is_layer_primary=None, evidence=_ev("VERIFICATION_TXT", "SPF_INCLUDE")),
+        _inf(domain_id="d:2", category=InferenceCategory.ESP, vendor="Twilio",
+             layer=None, is_layer_primary=None, evidence=_ev("DKIM_CNAME")),
+    ]
+    out = {r.vendor: r for r in _agg(rows)}
+    assert out["Atlassian"].layer == platform_mod.SENDING_SERVICE
+    assert out["Twilio"].layer == platform_mod.SENDING_SERVICE
+    # 受信の向きは MX だけで決まる
+    assert out["Twilio"].domains_receiving == 0
