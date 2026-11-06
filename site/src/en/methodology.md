@@ -82,7 +82,10 @@ Japanese companies missing from both are filled in, in this order:
   its listing field**, and a domain already assigned to another company is not
   used
 
-For US companies that
+For US companies, the site the company states in its own annual report takes
+precedence over Wikidata where the two differ (Wikidata sometimes still holds the
+site from before a name change); the earlier site is kept as an additional
+candidate domain. For US companies that
 Wikidata lacks, the site is read from the annual report filed with the SEC
 (10-K / 20-F / 40-F), **only where the company itself states "our website is
 …"**. Other URLs in the document (the SEC, auditors, business partners) are
