@@ -1641,6 +1641,21 @@ def _run_sec(
             ),
         )
 
+    # **公式サイトのある会社も、年次報告書に会社が自分で書いたサイトを優先する**
+    # （BACKLOG 48）。Wikidata の公式サイトが社名変更の前のまま（Accendra Health
+    # → owens-minor.com、Magnera → glatfelter.com）や、別の国向けのサイト
+    # （Apple → apple.com.cn）のことがある。前の公式サイトは alt_domains に残す
+    prefer_stats: dict[str, Any] = {}
+    wants_prefer = any(
+        str(e) == "sec_annual_report_prefer" for e in (cfg.source.enrich or [])
+    )
+    if wants_prefer and client is not None and annual_reports:
+        from .annual_report import AnnualReportWebsites
+
+        prefer_stats = _prefer_sec_stated(
+            entities, annual_reports, AnnualReportWebsites(client), not_before=renamed
+        )
+
     # **年次報告書がまだ無い会社（新規上場）は、目論見書・登録届出から**
     # （BACKLOG 28）。S-1 / F-1 / 424B4 の「Corporate Information」に会社が
     # 自分で書いた「Our website address is …」を、年次報告書と同じ読み方で読む
@@ -1773,6 +1788,7 @@ def _run_sec(
     manifest.set_breakdown(
         wikidata_ticker=weak_stats,
         sec_annual_report=annual_stats,
+        sec_annual_report_prefer=prefer_stats,
         sec_registration=registration_stats,
         sec_proxy=proxy_stats,
         sec_quarterly=quarterly_stats,
@@ -1881,6 +1897,69 @@ def _run_sec(
             manifest.add_output(EXCLUDED_FILENAME, records=n_ex)
 
     return manifest.to_dict()
+
+
+def _prefer_sec_stated(
+    entities: list[Any],
+    reports: dict[str, Any],
+    reader: Any,
+    *,
+    not_before: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """公式サイトのある会社も、年次報告書の「Our website is …」を優先する（BACKLOG 48）。
+
+    probe（run 2026-11-06、米国 300 社）：同じ 254・違う 24・書いていない 22。
+    違うものには社名変更の前のサイト・別の国向けのサイトがあった。
+
+    **前の公式サイトは捨てずに `alt_domains` に残す**（P2 が候補に足す）。
+    ブランドのドメイン（shopify.com）でメールを出し、年次報告書には会社の
+    サイト（shopifyinvestors.com）を書く会社がある。**他の会社の公式サイトと
+    同じドメインは、社名と合うときだけ使う**（子会社が親のサイトを書くなど）。
+    """
+    from collections import Counter
+
+    from .annual_report import name_matches_domain
+
+    uses = Counter(e.official_domain for e in entities if e.official_domain)
+    checked = same = replaced = shared = none = 0
+    sample: list[str] = []
+    for e in entities:
+        if not e.official_domain:
+            continue
+        report = reports.get(e.cik or "")
+        if report is None:
+            continue
+        checked += 1
+        website = reader.website_for(
+            report, e.name, not_before=(not_before or {}).get(e.cik or "")
+        )
+        domain = domain_from_url(website) if website else None
+        if not domain:
+            none += 1
+            continue
+        if domain == e.official_domain:
+            same += 1
+            continue
+        if uses[domain] > 0 and not name_matches_domain(e.name, domain):
+            shared += 1
+            continue
+        if len(sample) < 20:
+            sample.append(f"{e.official_domain} → {domain}（{e.name}）")
+        if e.official_domain not in e.alt_domains:
+            e.alt_domains.append(e.official_domain)
+        uses[e.official_domain] -= 1
+        uses[domain] += 1
+        e.official_url = website
+        e.official_domain = domain
+        replaced += 1
+    return {
+        "checked": checked,
+        "same": same,
+        "replaced": replaced,
+        "not_stated": none,
+        "shared_skipped": shared,
+        "sample_replaced": sample,
+    }
 
 
 def _fill_from_sec_filings(

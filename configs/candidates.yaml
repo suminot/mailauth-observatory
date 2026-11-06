@@ -17,6 +17,9 @@ discovery:
   # 有報の公告掲載方法に会社が書いた自社ドメイン（koukoku-scan が作る一覧、
   # BACKLOG 46）。公式サイトと違うもの（mhi.com・murata.com など）
   edinet_koukoku: true
+  # P1 で公式サイトを年次報告書のサイトに置き換えたときの、前の公式サイト
+  # （ブランドのドメインでメールを出す会社がある。BACKLOG 48）
+  official_alt: true
   spf_redirect: true      # SPF の redirect= が別組織を指していれば候補に
   spf_include: true       # SPF の include: が自社サブドメインを指していれば候補に
   dmarc_rua: true         # rua 宛先が自社ドメインなら候補に
@@ -245,7 +248,7 @@ resolver:
 confidence:
   # 独立した裏付けと見なす発見経路。
   # spf_redirect と dmarc_rua は DNS 由来なので、DNS 一次実証からは独立でない
-  independent_methods: [official_url, ct_log, ct_org, tls_san, site_link, edinet_koukoku, manual]
+  independent_methods: [official_url, official_alt, ct_log, ct_org, tls_san, site_link, edinet_koukoku, manual]
 
 acceptance:
   # DESIGN.md P2 / P3 の受け入れ基準。満たさなくても止めず manifest に記録する

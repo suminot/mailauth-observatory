@@ -859,6 +859,15 @@ def run(
                 for domain, note in manual.get(entity_id, []):
                     collector.add(domain, DiscoveryMethod.MANUAL, note or "manual dictionary")
 
+            if discovery.get("official_alt"):
+                alts = row.get("alt_domains")
+                if alts is not None and not isinstance(alts, (str, float)):
+                    for domain in alts:
+                        if domain:
+                            collector.add(
+                                str(domain), DiscoveryMethod.OFFICIAL_ALT, "P1 前の公式サイト"
+                            )
+
             edinet_code = row.get("edinet_code")
             if koukoku and isinstance(edinet_code, str):
                 for domain in koukoku.get(edinet_code, []):

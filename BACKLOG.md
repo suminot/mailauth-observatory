@@ -2709,6 +2709,23 @@ koukoku-scan の1回目（1,200 社、1,071 社にドメイン）を、いまの
   okashinet.co.jp）は捨てる。P2 の経路で見つかればまた測る
 - 検査は本物の一覧を読まない（conftest で差し替える）
 
+## 48. 米国：公式サイトのある会社も、年次報告書に書いたサイトを優先する（2026-11-06）
+
+`probe-us-stated-site`（米国 300 社）：年次報告書の「Our website is …」と
+いまの公式サイト（多くは Wikidata）が 同じ 254・違う 24・書いていない 22。
+
+違うものには、**社名変更の前のサイト**（Accendra Health → owens-minor.com、
+Magnera → glatfelter.com、Beacon Financial → berkshirebank.com、ARS Pharma →
+silverbacktx.com）、**別の国向けのサイト**（Apple → apple.com.cn）があった。
+残りはブランドと会社のサイトの違い（shopify.com / shopifyinvestors.com、
+disney.com / thewaltdisneycompany.com）。
+
+- P1 の `sec_annual_report_prefer`：公式サイトのある会社も年次報告書を読み、
+  違えば置き換える（読んだ結果は受付番号でキャッシュされる）
+- **前の公式サイトは `Entity.alt_domains` に残し、P2 が経路 `official_alt` で
+  候補にする** ── ブランドのドメインでメールを出す会社がある
+- 他社の公式サイトと同じドメインは、社名と合うときだけ使う
+
 ## 7. 規模に対する前提
 
 いまの国内 1 母集団では問題にならないが、DESIGN.md の 30,000 ドメインでは

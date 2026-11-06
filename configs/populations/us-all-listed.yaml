@@ -36,6 +36,9 @@ source:
     # 会社が「Our website address is …」と自分で書いた箇所だけを読む。
     # 2026-10-18、無作為30社で年次報告書のある22社中13社が取れた
     - sec_annual_report
+    # **公式サイトのある会社も、年次報告書に書いたサイトを優先する**（BACKLOG 48）。
+    # 前の公式サイトは alt_domains に残して P2 の候補にする
+    - sec_annual_report_prefer
     # **年次報告書がまだ無い会社（新規上場）は、目論見書・登録届出から。**
     # S-1 / F-1 / 424B4 / Form 10 の「Our website address is …」を同じ読み方で
     - sec_registration

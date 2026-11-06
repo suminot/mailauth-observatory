@@ -341,16 +341,21 @@ def test_起点の無い企業だけを年次報告書で埋める(monkeypatch, 
     from mailauth.io import read_parquet
 
     df = read_parquet(phase_output(RUN, "p1_population", "entities.parquet")).set_index("cik")
-    assert df.loc["0000000001", "official_domain"] == "wikico.com"
     assert df.loc["0000000002", "official_domain"] == "reportco.com"
     assert df.loc["0000000002", "official_url"] == "https://www.reportco.com"
     assert df["official_domain"].isna().sum() == 1
 
-    # Wikidata で埋まった会社の書類は落としていない
-    assert _report(1).url not in client_holder["c"].calls
+    # 「起点の無い会社を埋める」段は、Wikidata で埋まった会社を数えない
     stats = result["breakdown"]["sec_annual_report"]
     assert (stats["missing_before"], stats["found"], stats["not_stated"]) == (2, 1, 1)
     assert stats["still_missing"] == 1
+
+    # **そのあと、公式サイトのある会社も年次報告書に書いたサイトを優先する**
+    # （BACKLOG 48）。前の公式サイトは alt_domains に残す
+    assert df.loc["0000000001", "official_domain"] == "wrong-for-wiki.com"
+    assert list(df.loc["0000000001", "alt_domains"]) == ["wikico.com"]
+    prefer = result["breakdown"]["sec_annual_report_prefer"]
+    assert prefer["replaced"] == 1
 
 
 def test_its_website_は読まない():
@@ -593,3 +598,36 @@ def test_the_named_website_of_another_name_is_not_read():
     assert pick_domain(stated_domains(raw, "Zeta Corp")[0]) is None
     raw = "<p>the Acme website at www.othervendor.com</p>"
     assert pick_domain(stated_domains(raw, "Acme Corp")[0]) is None
+
+
+def test_年次報告書のサイトを優先し_前の公式サイトを残す_他社のドメインは社名と合うときだけ():
+    from mailauth.contracts import Entity
+    from mailauth.p1_population.runner import _prefer_sec_stated
+
+    def ent(eid, cik, name, domain):
+        return Entity(entity_id=eid, run_id="2026-11", country="US",
+                      population_ids=["us-all-listed"], name=name, name_normalized=name,
+                      cik=cik, official_domain=domain, official_url=f"https://{domain}/")
+
+    class Reader:
+        def __init__(self, sites):
+            self.sites = sites
+
+        def website_for(self, report, name, *, not_before=None):
+            return self.sites.get(report)
+
+    stale = ent("us:1", "1", "Accendra Health Inc", "owens-minor.com")
+    same = ent("us:2", "2", "Same Co", "same.com")
+    child = ent("us:3", "3", "Child Sub Inc", "child.com")
+    parent = ent("us:4", "4", "Parent Corp", "parent.com")
+    reports = {"1": "r1", "2": "r2", "3": "r3", "4": "r4"}
+    reader = Reader({"r1": "https://www.accendrahealth.com", "r2": "https://same.com",
+                     "r3": "https://www.parent.com"})
+    stats = _prefer_sec_stated([stale, same, child, parent], reports, reader)
+    assert (stale.official_domain, stale.alt_domains) == ("accendrahealth.com", ["owens-minor.com"])
+    assert same.official_domain == "same.com" and same.alt_domains == []
+    # 子会社が親のサイトを書いていても、社名と合わなければ使わない
+    assert child.official_domain == "child.com"
+    assert (stats["replaced"], stats["same"], stats["shared_skipped"], stats["not_stated"]) == (
+        1, 1, 1, 1,
+    )

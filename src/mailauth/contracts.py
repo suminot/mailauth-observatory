@@ -46,6 +46,8 @@ class DiscoveryMethod(StrEnum):
     SITE_LINK = "site_link"
     #: 有報の公告掲載方法に会社が書いた自社ドメイン（configs/domains/koukoku_domains.csv）
     EDINET_KOUKOKU = "edinet_koukoku"
+    #: P1 で公式サイトを置き換えたときの、前の公式サイト（Entity.alt_domains）
+    OFFICIAL_ALT = "official_alt"
     SPF_REDIRECT = "spf_redirect"
     #: `include:` が自社サブドメインを指している場合のみ。
     #: 他社を指す include は「その基盤を使っている」であって所有ではない
@@ -269,6 +271,10 @@ class Entity(_Model):
 
     official_url: str | None = None
     official_domain: str | None = None
+    #: 公式サイトを置き換えたときの、前の公式サイト（BACKLOG 48）。**捨てずに
+    #: P2 の候補に残す** ── 年次報告書の会社のサイト（shopifyinvestors.com）と、
+    #: メールを出しているブランドのドメイン（shopify.com）が違うことがある
+    alt_domains: list[str] = Field(default_factory=list)
 
     industry_scheme: str | None = None
     industry_code: str | None = None
@@ -308,6 +314,7 @@ ENTITY_ARROW_SCHEMA = pa.schema(
         ("ticker", pa.string()),
         ("official_url", pa.string()),
         ("official_domain", pa.string()),
+        ("alt_domains", pa.list_(pa.string())),
         ("industry_scheme", pa.string()),
         ("industry_code", pa.string()),
         ("industry_label", pa.string()),
