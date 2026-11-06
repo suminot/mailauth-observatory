@@ -42,7 +42,8 @@ PHASE = "p5_parse"
 OUTPUT_FILENAME = "facts.parquet"
 #: 1.1.0（2026-11）：SPF を include と redirect の先まで数える（BACKLOG 41）
 #: 1.2.0（2026-11）：DKIM の鍵の長さを RSA だけ見積もる（Ed25519 を短い鍵と誤らない）
-PARSER_VERSION = "1.2.0"
+#: 1.3.0（2026-11）：SPF の最後に効く all を redirect の先まで読む
+PARSER_VERSION = "1.3.0"
 
 #: 返していないドメインを何件まで抱えるか（`ordered.in_input_order`）。
 #: 同時本数より十分大きくしないと、先頭の1件が遅いたびに手が止まる
@@ -166,6 +167,13 @@ def parse_domain(
     # 覚えているので、同じ include（spf.protection.outlook.com など）を何度も
     # 引かない。resolver が無い run では null のまま
     out.update(spf_lookup_total=None, spf_total_exceeds=None, spf_target_broken=None)
+    # 最後に効く all。自分のレコードに all があればそれ。redirect で任せて
+    # いれば任せた先の all（resolver が無ければ自分の分だけ）
+    out["spf_all_effective"] = spf.all_qualifier
+    if resolver is not None and spf.present and spf.raw and spf.all_qualifier is None:
+        qualifier, known = spf_mod.effective_all(spf.raw, _txt_fetcher(resolver))
+        out["spf_all_effective"] = qualifier if known else None
+        out["spf_all_unknown"] = not known
     if resolver is not None and spf.present and spf.error != spf_mod.SpfError.MULTIPLE_RECORDS \
             and spf.raw:
         walk = spf_mod.walk_lookups(spf.raw, _txt_fetcher(resolver))

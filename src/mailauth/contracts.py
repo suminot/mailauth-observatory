@@ -511,6 +511,10 @@ class Fact(_Model):
     spf_total_exceeds: bool | None = None
     #: include / redirect の先に SPF が無い・2つある（RFC 7208 §5.2 で PermError）
     spf_target_broken: bool | None = None
+    #: 最後に効く all の修飾子（redirect で任せていれば任せた先の all）
+    spf_all_effective: str | None = None
+    #: redirect の先を引けず、最後に効く all が分からなかった
+    spf_all_unknown: bool | None = None
     spf_includes: list[str] = Field(default_factory=list)
     #: include 以外のメカニズムも保持する。さくらインターネットのように
     #: 専用 include を持たず `a:wwwNNNN.sakura.ne.jp` で表現する事業者があり、
@@ -641,6 +645,8 @@ FACT_ARROW_SCHEMA = pa.schema(
         ("spf_lookup_total", pa.int32()),
         ("spf_total_exceeds", pa.bool_()),
         ("spf_target_broken", pa.bool_()),
+        ("spf_all_effective", pa.string()),
+        ("spf_all_unknown", pa.bool_()),
         ("spf_includes", pa.list_(pa.string())),
         ("spf_mechanisms", pa.list_(pa.string())),
         ("spf_is_flattened", pa.bool_()),
@@ -902,6 +908,8 @@ class StatsOverall(_Model):
     spf_all_neutral_domains: int = 0
     spf_all_pass_domains: int = 0
     spf_all_missing_domains: int = 0
+    #: redirect の先を引けず、最後に効く all が分からなかった（上のどれにも入れない）
+    spf_all_unknown_domains: int = 0
     #: SPF の include / redirect の先に SPF が無い・2つある
     spf_target_broken_domains: int | None = None
     bimi_domains: int = 0
@@ -996,6 +1004,7 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("spf_all_neutral_domains", pa.int32()),
     ("spf_all_pass_domains", pa.int32()),
     ("spf_all_missing_domains", pa.int32()),
+    ("spf_all_unknown_domains", pa.int32()),
     ("spf_target_broken_domains", pa.int32()),
     ("bimi_domains", pa.int32()),
     ("bimi_vmc_domains", pa.int32()),

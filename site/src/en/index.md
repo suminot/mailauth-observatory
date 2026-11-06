@@ -307,8 +307,9 @@ display(
   together with DMARC. The table lists counts and does not rank them
 - An SPF record ending in `+all` lets anyone pass SPF
 - Domains with two `v=spf1` records are left out, since the whole record is invalid
-- When the record hands over to another with `redirect=`, the `all` of that other
-  record is not read (such domains are under "no all")
+- When the record hands over to another with `redirect=`, **the `all` of that
+  other record** is counted. Domains whose target could not be looked up are left
+  out of the table
 
 </div>
 
