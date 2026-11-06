@@ -23,6 +23,7 @@ months:
       - 国内企業の公式サイトの経路に、有価証券報告書の「公告掲載方法」に会社が書いている URL を足した（ページに商号が載っているものだけ）。国内で測れた会社数の増加はこれによる。
       - ドメインの候補に、公式サイトのトップページがリンクしている別ドメインのうち、そのページのタイトルに商号があり MX があるものを足した。測るドメイン数の増加はこれによる。
       - ドメインの候補に、国内企業が有価証券報告書の公告掲載方法に書いている自社ドメインを足した（公告の掲載を引き受ける事業者のドメインは除く）。
+      - 国内企業の公式サイトは、有価証券報告書に会社が書いた自社ドメインを優先するようにした。会社のものでないページ（企業情報サイトなど）が公式サイトとして入っていた企業がある。
     en:
       - The outbound front-end check now includes the names that Proofpoint, Mimecast, Barracuda, Cisco, Trend Micro and others ask customers to publish in SPF for sending (only names found in each vendor's documentation). The number of US companies with an outbound front-end rose largely because of this.
       - Rules were added for DKIM CNAME targets (SendGrid, HubSpot, Constant Contact, Salesforce and others) and SPF includes (KnowBe4, Mailgun, Oracle and Japanese delivery services). The rise in sending-service counts comes from this.
@@ -37,3 +38,4 @@ months:
       - For Japanese companies, the URL given as the method of public notice in the annual securities report was added as a source of the official site (used only when the page carries the trade name). The rise in Japanese companies measured comes from this.
       - Other domains linked from the official site's top page, where that page's title carries the trade name and the domain has MX, were added as candidate domains. The rise in the number of domains measured comes from this.
       - The company's own domain that Japanese companies give as their method of public notice in the annual securities report was added as a candidate domain (domains of providers that post notices for others are excluded).
+      - For Japanese companies, the company's own domain given in the annual securities report now takes precedence as the official site. Some companies had a page that is not their own (such as a company-profile site) recorded as their official site.
