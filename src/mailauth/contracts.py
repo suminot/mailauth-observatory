@@ -41,6 +41,9 @@ class DiscoveryMethod(StrEnum):
     #: 公式サイトが出している TLS 証明書の SAN（tls_san.py）。検証に通った
     #: 証明書だけ。CT と同じ「同じ証明書に載っている」という裏付け
     TLS_SAN = "tls_san"
+    #: 公式サイトのトップページのリンク先で、そのページに商号があったもの
+    #: （site_links.py。多くの会社が張るドメイン・MX の無いものは除く）
+    SITE_LINK = "site_link"
     SPF_REDIRECT = "spf_redirect"
     #: `include:` が自社サブドメインを指している場合のみ。
     #: 他社を指す include は「その基盤を使っている」であって所有ではない

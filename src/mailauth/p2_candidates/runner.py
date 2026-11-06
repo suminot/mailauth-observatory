@@ -58,6 +58,7 @@ from ..records import (
     spf_redirect,
 )
 from ..resolver import DnsAnswer, DnsResolver, Resolver, shuffled
+from ..site_links import SiteCompany, SiteLinkSource
 from ..tls_san import DisabledTlsSanSource, SanResult, TlsSanSource
 
 #: CT ログを何社ぶんまとめて先回りして取るか。
@@ -438,6 +439,7 @@ def run(
     ct_source: CtSource | None = None,
     config: str = "configs/candidates.yaml",
     tls_source: TlsSanSource | DisabledTlsSanSource | None = None,
+    site_source: SiteLinkSource | None = None,
 ) -> dict[str, Any]:
     """P2 を実行し manifest の内容を返す。
 
@@ -601,6 +603,57 @@ def run(
             order = [int(i) for i in shuffled([str(i) for i in order], res_cfg.get("shuffle_seed"))]
 
         rows = active.reset_index(drop=True)
+
+        # -- 公式サイトのリンク先（BACKLOG 44） -------------------------------
+        # **全社を先に読む。** 多くの会社がリンクしているドメインを第三者として
+        # 捨てるので、1社ずつは決められない（site_links.py）
+        site_found: dict[str, list[str]] = {}
+        site_stats: dict[str, Any] | None = None
+        if discovery.get("site_link"):
+            if site_source is None and offline:
+                manifest.add_warning(
+                    "SITE_LINK_SKIPPED_OFFLINE",
+                    message=(
+                        "offline のため公式サイトのリンク先を読んでいない。"
+                        "**「無い」ではなく「読んでいない」**"
+                    ),
+                )
+            elif site_source is None:
+                from ..config import credential
+
+                contact = credential("MAILAUTH_CONTACT_EMAIL")
+                if contact:
+                    site_source = _live_site_source(contact, resolver)
+                else:
+                    manifest.add_warning(
+                        "SITE_LINK_SKIPPED",
+                        message=(
+                            "MAILAUTH_CONTACT_EMAIL が無いため公式サイトのリンク先を読んでいない"
+                            "（企業のサイトを読むので、連絡先つきの User-Agent を付ける）"
+                        ),
+                    )
+            if site_source is not None:
+                companies = []
+                for i in range(len(rows)):
+                    r = rows.iloc[i]
+                    official_i = r.get("official_domain")
+                    if not official_i or str(official_i) == "nan":
+                        continue
+
+                    def _text(v):
+                        return None if v is None or str(v) == "nan" else str(v)
+
+                    companies.append(
+                        SiteCompany(
+                            official=str(official_i),
+                            name=_text(r.get("name")),
+                            name_en=_text(r.get("name_en")),
+                            country=str(_text(r.get("country")) or ""),
+                        )
+                    )
+                site_found = site_source.discover(companies)
+                site_stats = site_source.stats.to_dict()
+
         collectors: dict[str, _Collector] = {}
         method_counts: dict[str, int] = {}
         ct_stats = {
@@ -835,6 +888,9 @@ def run(
                     if siblings:
                         tls_stats["sibling_domains"] += len(siblings)
                         tls_stats["entities_with_siblings"] += 1
+
+                for domain in site_found.get(official, []):
+                    collector.add(domain, DiscoveryMethod.SITE_LINK, f"link on {official}")
 
                 _discover_from_dns(
                     official,
@@ -1131,6 +1187,7 @@ def run(
             common_label_candidates=common_label_count,
             ct=ct_stats,
             tls_san=tls_stats,
+            site_link=site_stats if site_stats is not None else {"enabled": False},
             # **crt.sh にどれだけ待たされたかを残す。** 2026-09 の実行は
             # P2 に4時間21分かかったが、残っていたのは失敗の件数だけで、
             # 時間切れだったのか重かったのかが分からなかった
@@ -1306,3 +1363,47 @@ def _check_acceptance(
             )
 
     manifest.set_breakdown(acceptance=checks)
+
+
+def _live_site_source(contact: str, resolver: Resolver) -> SiteLinkSource:
+    """企業のトップページを読む。連絡先つきの User-Agent、全体で 1 秒 5 本まで。"""
+    import threading
+
+    import httpx
+
+    from ..p1_population.co_jp_guess import MAX_BYTES, decode_page
+
+    client = httpx.Client(
+        timeout=15,
+        follow_redirects=True,
+        headers={"User-Agent": f"mailauth-observatory/0.1 ({contact})"},
+    )
+    last = [0.0]
+    lock = threading.Lock()
+
+    def fetch(url: str) -> str | None:
+        # 相手はそれぞれ別の会社のサイトで、1社あたり数本しか読まない
+        with lock:
+            wait = 0.2 - (time.monotonic() - last[0])
+            if wait > 0:
+                time.sleep(wait)
+            last[0] = time.monotonic()
+        deadline = time.monotonic() + 20
+        try:
+            with client.stream("GET", url) as resp:
+                if resp.status_code >= 400:
+                    return None
+                body = b""
+                for chunk in resp.iter_bytes():
+                    body += chunk
+                    if len(body) >= MAX_BYTES or time.monotonic() > deadline:
+                        break
+                return decode_page(body, resp.charset_encoding)
+        except httpx.HTTPError:
+            return None
+
+    def has_mx(domain: str) -> bool:
+        answer = resolver.query(domain, "MX")
+        return bool(answer.observed and answer.record_present)
+
+    return SiteLinkSource(fetch, has_mx)

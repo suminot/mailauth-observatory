@@ -1862,3 +1862,24 @@ def test_p3_keeps_a_common_label_with_its_own_mx(seeded_run):
     row = df[df["domain"] == "email.sample-info.co.jp"].iloc[0]
     assert bool(row["is_measured"])
     assert out["breakdown"]["common_label_wildcard_mx"] == 0
+
+
+def test_p2_公式サイトのリンク先で確かめられたドメインを候補にする(seeded_run):
+    """BACKLOG 44。リンク先の判定は site_links.py の検査で見ている。ここは繋ぎ込み。"""
+    from mailauth.site_links import SiteLinkSource
+
+    seeds = sorted(SEED_DOMAINS.values())
+    own = seeds[0]
+    entity = next(k for k, v in SEED_DOMAINS.items() if v == own)
+    entities = pd.read_parquet(seeded_run)
+    name = str(entities.set_index("entity_id").loc[entity, "name"])
+    pages = {
+        f"https://www.{own}/": f'<title>{name}</title><a href="https://www.brand-site.jp/">b</a>',
+        "https://www.brand-site.jp/": f"<title>{name} ブランドサイト</title>",
+    }
+    source = SiteLinkSource(pages.get, lambda d: d == "brand-site.jp", concurrency=1)
+    result = _run_p2(site_source=source)
+    df = candidates()
+    hit = df[(df["domain"] == "brand-site.jp") & (df["entity_id"] == entity)]
+    assert set(hit["discovery_method"]) == {"site_link"}
+    assert result["breakdown"]["site_link"]["found"] == 1

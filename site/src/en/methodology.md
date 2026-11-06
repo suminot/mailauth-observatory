@@ -259,6 +259,7 @@ as `example.com`) and widens from there.
 |---|---|
 | Official site | the official URL from government registries, Wikidata, Japanese Wikipedia (checked by securities code), US annual reports, prospectuses, proxy statements and press releases (as stated by the company), and Japanese sites confirmed by the trade name on the page |
 | CT logs | names appearing in Certificate Transparency logs |
+| Links on the official site | other domains linked from the official site's top page, **where that page's title carries the company's trade name and the domain has MX**. Domains linked by many companies (social media, exchanges and so on) are not used |
 | SPF `redirect=` | where SPF is delegated |
 | SPF `include:` | own subdomains the record has been split across |
 | DMARC `rua=` | the report destination, where it is the company's own domain |
