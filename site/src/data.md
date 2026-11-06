@@ -204,11 +204,12 @@ Parquet は月ごとに保管しています。同じ数字を二重に持つと
 | `rua_unregistered_domains` | そのうち、宛先のドメインが登録されていないと確かめられた（第三者が登録すればレポートを受け取れる） |
 | `spf_lookup_exceeded_domains` | SPF で DNS を引く項が、`include` と `redirect` の先まで数えて上限 10 を超える。数えきれなかったものは数えていない（超えたと分かったものを除く）。先を引いていない月は空 |
 | `spf_target_broken_domains` | SPF の `include` か `redirect` の先に SPF が無い、または2つある（受け手の評価がエラーになる）。先を引いていない月は空 |
-| `spf_all_fail_domains` | SPF の最後の項が `-all`。この5列は `v=spf1` が2つあるドメインを数えていない |
+| `spf_all_fail_domains` | SPF の最後の項が `-all`。この5列は `v=spf1` が2つあるドメインを数えていない。`redirect=` で任せているものは任せた先の `all` で数える |
 | `spf_all_softfail_domains` | SPF の最後の項が `~all` |
 | `spf_all_neutral_domains` | SPF の最後の項が `?all` |
 | `spf_all_pass_domains` | SPF の最後の項が `+all`（修飾子の無い `all` を含む） |
 | `spf_all_missing_domains` | SPF に `all` が無い |
+| `spf_all_unknown_domains` | `redirect=` の先を引けず、最後に効く `all` が分からない（上の5列のどれにも入れていない） |
 | `dmarc_invalid_domains` | DMARC を公開しているが、レコードが無効（`v=DMARC1` が2つある、`p=` が無いか不正）。`dmarc_adopted_domains` の内数 |
 | `dkim_key_2048_domains` | DKIM を検出したドメインのうち、見つかった RSA 鍵がすべて 2048 ビット以上 |
 | `dkim_key_1024_domains` | 同じく、最も短い RSA 鍵が 1024 ビット |

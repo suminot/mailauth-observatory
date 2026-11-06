@@ -282,3 +282,35 @@ def walk_lookups(record: str, fetch: TxtFetch) -> SpfWalk:
             else:
                 queue.append(found[0])
     return walk
+
+
+def effective_all(
+    record: str, fetch: TxtFetch, *, max_hops: int = MAX_LOOKUPS
+) -> tuple[str | None, bool]:
+    """評価の最後に効く `all` の修飾子と、それが分かったか。
+
+    `all` が無く `redirect=` があれば、**任せた先のレコードの `all`** が効く
+    （RFC 7208 §6.1）。2026-11 の米国で「all が無い」212 件中 192 件が
+    redirect（多くは Mimecast の `_spf._d.mim.ec`）だった。
+
+    返り値：(修飾子, 分かったか)。先を引けない・マクロ・先に SPF が無いときは
+    (None, False)。redirect も all も無ければ (None, True)（本当に all が無い）。
+    """
+    current = record
+    for _ in range(max_hops):
+        qualifier = spf_all_qualifier(current)
+        if qualifier is not None:
+            return qualifier, True
+        target = spf_redirect(current)
+        if not target:
+            return None, True
+        if "%" in target:
+            return None, False
+        txts = fetch(target)
+        if txts is None:
+            return None, False
+        found = find_spf_records(txts)
+        if len(found) != 1:
+            return None, False
+        current = found[0]
+    return None, False

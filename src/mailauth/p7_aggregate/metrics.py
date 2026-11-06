@@ -128,6 +128,8 @@ class DomainRow:
     #: 最後の `all` の修飾子（- ~ ? +）。無ければ None
     spf_all_qualifier: str | None = None
     spf_error: str | None = None
+    #: redirect の先を引けず、最後に効く all が分からない
+    spf_all_unknown: bool = False
     dmarc_multiple_records: bool = False
     #: 見つかった RSA 鍵のうち最も短いものの長さ。無ければ None
     dkim_min_key_bits: int | None = None
@@ -166,7 +168,14 @@ class DomainRow:
             rua_domain_unregistered=_tristate(fact.get("rua_domain_unregistered")),
             spf_total_exceeds=_tristate(fact.get("spf_total_exceeds")),
             spf_target_broken=_tristate(fact.get("spf_target_broken")),
-            spf_all_qualifier=_text(fact.get("spf_all_qualifier")),
+            # **最後に効く all を優先する**（redirect の先の all）。列が無い過去の
+            # run では自分のレコードの all
+            spf_all_qualifier=(
+                _text(fact.get("spf_all_effective"))
+                if "spf_all_effective" in fact
+                else _text(fact.get("spf_all_qualifier"))
+            ),
+            spf_all_unknown=_truthy(fact.get("spf_all_unknown")),
             spf_error=_text(fact.get("spf_error")),
             dmarc_multiple_records=_truthy(fact.get("dmarc_multiple_records")),
             dkim_min_key_bits=_min_int(fact.get("dkim_key_bits")),
@@ -286,7 +295,7 @@ def aggregate(
     spf_single = [
         r for r in observed if r.spf_present and r.spf_error != "multiple_records"
     ]
-    all_q = Counter(r.spf_all_qualifier for r in spf_single)
+    all_q = Counter(r.spf_all_qualifier for r in spf_single if not r.spf_all_unknown)
     dkim_keys = [
         r.dkim_min_key_bits
         for r in observed
@@ -428,6 +437,7 @@ def aggregate(
         spf_all_neutral_domains=all_q.get("?", 0),
         spf_all_pass_domains=all_q.get("+", 0),
         spf_all_missing_domains=all_q.get(None, 0),
+        spf_all_unknown_domains=sum(1 for r in spf_single if r.spf_all_unknown),
         bimi_domains=sum(1 for r in observed if r.bimi_present),
         bimi_vmc_domains=sum(1 for r in observed if r.bimi_present and r.bimi_has_vmc),
         dnssec_domains=sum(1 for r in observed if r.dnssec_signed),

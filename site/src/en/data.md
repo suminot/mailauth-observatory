@@ -211,11 +211,12 @@ The main columns used in the tables above.
 | `rua_unregistered_domains` | of those, the destination domain was confirmed to be unregistered (whoever registers it could receive the reports) |
 | `spf_lookup_exceeded_domains` | the SPF terms that make DNS lookups exceed 10 when the `include` and `redirect` targets are counted too. Domains that could not be counted to the end are left out unless already over the limit. Empty in months where the targets were not looked up |
 | `spf_target_broken_domains` | an SPF `include` or `redirect` target has no SPF record, or two (the receiver's evaluation errors). Empty in months where the targets were not looked up |
-| `spf_all_fail_domains` | the final SPF term is `-all`. These five columns leave out domains with two `v=spf1` records |
+| `spf_all_fail_domains` | the final SPF term is `-all`. These five columns leave out domains with two `v=spf1` records. Records that hand over with `redirect=` are counted by the `all` of the target |
 | `spf_all_softfail_domains` | the final SPF term is `~all` |
 | `spf_all_neutral_domains` | the final SPF term is `?all` |
 | `spf_all_pass_domains` | the final SPF term is `+all` (including a bare `all`) |
 | `spf_all_missing_domains` | the SPF record has no `all` |
+| `spf_all_unknown_domains` | the `redirect=` target could not be looked up, so the final `all` is unknown (in none of the five columns above) |
 | `dmarc_invalid_domains` | publishes DMARC, but the record is invalid (two `v=DMARC1` records, or `p=` missing or invalid). Included in `dmarc_adopted_domains` |
 | `dkim_key_2048_domains` | of the domains where DKIM was found, every RSA key found is 2048 bits or longer |
 | `dkim_key_1024_domains` | likewise, the shortest RSA key found is 1024 bits |

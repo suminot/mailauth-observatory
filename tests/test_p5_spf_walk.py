@@ -215,3 +215,75 @@ def test_先をたどっていない_run_は_0_ではなく_null():
                       total_entities=1)
     assert stats.spf_lookup_exceeded_domains is None
     assert stats.spf_target_broken_domains is None
+
+
+# -- 最後に効く all（redirect の先） ------------------------------------------------
+
+
+def test_all_が無く_redirect_なら任せた先の_all():
+    from mailauth.p5_parse.spf import effective_all
+
+    table = {"x._spf._d.mim.ec": ["v=spf1 ip4:192.0.2.0/24 -all"]}
+    assert effective_all("v=spf1 ip4:198.51.100.1 redirect=x._spf._d.mim.ec", _fetch(table)) == (
+        "-", True,
+    )
+
+
+def test_自分に_all_があれば先は引かない():
+    from mailauth.p5_parse.spf import effective_all
+
+    fetch = _fetch({})
+    assert effective_all("v=spf1 ~all redirect=other.example", fetch) == ("~", True)
+    assert fetch.calls == []
+
+
+def test_redirect_も_all_も無ければ本当に無い():
+    from mailauth.p5_parse.spf import effective_all
+
+    assert effective_all("v=spf1 ip4:192.0.2.1", _fetch({})) == (None, True)
+
+
+def test_先を引けない_先に_SPF_が無いときは分からない():
+    from mailauth.p5_parse.spf import effective_all
+
+    assert effective_all("v=spf1 redirect=down.example", _fetch({"down.example": None})) == (
+        None, False,
+    )
+    assert effective_all("v=spf1 redirect=gone.example", _fetch({})) == (None, False)
+    assert effective_all("v=spf1 redirect=%{d}.x.example", _fetch({})) == (None, False)
+
+
+def test_redirect_の輪でも止まる():
+    from mailauth.p5_parse.spf import effective_all
+
+    table = {"a.example": ["v=spf1 redirect=b.example"], "b.example": ["v=spf1 redirect=a.example"]}
+    assert effective_all("v=spf1 redirect=a.example", _fetch(table)) == (None, False)
+
+
+def test_fact_に最後に効く_all_を出す():
+    fact, _ = _fact("v=spf1 redirect=_spf.vendor.example", {"_spf.vendor.example": ["v=spf1 -all"]})
+    assert fact["spf_all_qualifier"] is None  # 自分のレコードの all はそのまま
+    assert fact["spf_all_effective"] == "-"
+    assert fact["spf_all_unknown"] is False
+
+
+def test_集計は最後に効く_all_で数え_分からないものは別に数える():
+    from mailauth.p7_aggregate.metrics import DomainRow, aggregate
+
+    def row(i, **kw):
+        base = {"domain_id": f"d:{i}", "entity_id": f"jp:{i}", "is_apex": True,
+                "observed": True, "spf_present": True}
+        base.update(kw)
+        return DomainRow.from_fact(base)
+
+    rows = [
+        row(1, spf_all_qualifier=None, spf_all_effective="-", spf_all_unknown=False),
+        row(2, spf_all_qualifier=None, spf_all_effective=None, spf_all_unknown=True),
+        row(3, spf_all_qualifier=None, spf_all_effective=None, spf_all_unknown=False),
+        # 列の無い過去の run は自分のレコードの all
+        row(4, spf_all_qualifier="~"),
+    ]
+    s = aggregate(rows, measured_month=dt.date(2026, 12, 1), population_id="jp-all-listed",
+                  total_entities=4)
+    assert (s.spf_all_fail_domains, s.spf_all_softfail_domains, s.spf_all_missing_domains,
+            s.spf_all_unknown_domains) == (1, 1, 1, 1)
