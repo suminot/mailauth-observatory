@@ -37,6 +37,35 @@ from typing import Any
 
 from ..normalize import etld_plus_one
 
+#: 公告の掲載を引き受ける事業者（configs/edinet/koukoku_vendors.yaml）
+VENDORS_PATH = "configs/edinet/koukoku_vendors.yaml"
+
+
+def load_vendors(path: str = VENDORS_PATH) -> frozenset[str]:
+    from ..config import load_yaml
+
+    data = load_yaml(path) or {}
+    return frozenset(str(v).strip().lower() for v in data.get("vendors") or [] if str(v).strip())
+
+
+_KNOWN_TLD = None
+
+
+def _known_registrable(host: str) -> str | None:
+    """実在するトップレベルドメインの下の登録ドメイン。
+
+    有報の HTML は URL を途中で折り返すことがあり（`www.nakayama-` / `www.ia`）、
+    そのまま丸めると存在しない名前になる。PSL に無い TLD は捨てる。
+    """
+    global _KNOWN_TLD
+    if _KNOWN_TLD is None:
+        from publicsuffixlist import PublicSuffixList
+
+        _KNOWN_TLD = PublicSuffixList(accept_unknown=False)
+    if _KNOWN_TLD.privatesuffix(host) is None:
+        return None
+    return etld_plus_one(host)
+
 API_BASE = "https://api.edinet-fsa.go.jp/api/v2"
 #: 有価証券報告書（訂正は読まない）
 YUHO = "120"
@@ -82,7 +111,7 @@ def koukoku_domains(text: str) -> list[str]:
         out: list[str] = []
         for url in _URL.findall(window):
             host = re.sub(r"^https?://", "", url).split("/")[0].lower().rstrip(".")
-            domain = etld_plus_one(host) or host
+            domain = _known_registrable(host)
             if domain and domain not in out:
                 out.append(domain)
         if out:
@@ -117,6 +146,11 @@ class KoukokuStats:
     core_too_short: int = 0
     #: 既に他社に付いているドメイン、またはこの中で2社に出たドメイン
     taken_by_other: int = 0
+    #: 公告の掲載を引き受ける事業者のドメインだった（koukoku_vendors.yaml）
+    vendor: int = 0
+    #: ページでは確かめられなかったが、有報に会社が書いた自社ドメインとして採った
+    #: （`found` の内数）。委託先でなく、DNS にあり、この中で1社にしか出ないもの
+    accepted_from_filing: int = 0
     found: int = 0
     #: 書類一覧を引いた日数・有報を読んだ数・キャッシュに当たった数
     list_requests: int = 0
@@ -153,12 +187,18 @@ class EdinetKoukoku:
         *,
         today: dt.date,
         cache_dir: Path | None = None,
+        vendors: Iterable[str] = (),
+        exists: Callable[[str], bool] | None = None,
     ) -> None:
         self.api_get = api_get
         self.confirm = confirm
+        self.vendors = frozenset(vendors)
+        #: ドメインが DNS にあるか。**無ければページで確かめられたものしか採らない**
+        self.exists = exists
         self.today = today
         self.cache_dir = cache_dir
         self.stats = KoukokuStats()
+        self._from_filing: set[str] = set()
 
     # -- 書類一覧 ---------------------------------------------------------------
 
@@ -237,7 +277,9 @@ class EdinetKoukoku:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 if data.get("version") == CACHE_VERSION:
                     self.stats.cache_hit += 1
-                    return list(data["domains"]), bool(data["section"]), bool(data["paper"])
+                    # 古い読み方で残った、存在しない TLD の名前を落とす
+                    domains = [d for d in data["domains"] if _known_registrable(d)]
+                    return domains, bool(data["section"]), bool(data["paper"])
             except (OSError, ValueError, KeyError):
                 pass
         self.stats.documents_read += 1
@@ -299,7 +341,11 @@ class EdinetKoukoku:
                     self.stats.no_url += 1
                 continue
             outcome = "none"
+            fallback: str | None = None
             for domain in domains:
+                if domain in self.vendors:
+                    outcome = "vendor"
+                    continue
                 if domain in taken:
                     outcome = "taken"
                     continue
@@ -309,8 +355,22 @@ class EdinetKoukoku:
                     outcome = "found"
                     break
                 outcome = kind
+                if fallback is None and kind in ("not_on_page", "unreachable", "core_too_short"):
+                    fallback = domain
                 if kind == "not_on_page" and len(self.stats.sample_not_on_page) < 10:
                     self.stats.sample_not_on_page.append(f"{domain} ← {name}")
+            if outcome != "found" and fallback is not None and self.exists is not None:
+                # **ページで確かめられなくても、会社が政府の開示書類に自分で
+                # 書いた自社ドメインとして採る。** probe（2026-11-06）で、公式
+                # サイトの分かっている会社の有報 1,347 件のうち 1,229 件は公式
+                # サイトそのもの、違う 118 件も委託先 1 社（13 件）を除けば
+                # 会社自身の別ドメインだった。委託先は一覧で除く
+                if self.exists(fallback):
+                    found[key] = fallback
+                    self._from_filing.add(key)
+                    outcome = "found"
+            if outcome == "vendor":
+                self.stats.vendor += 1
             if outcome == "taken":
                 self.stats.taken_by_other += 1
             elif outcome == "not_on_page":
@@ -328,6 +388,8 @@ class EdinetKoukoku:
                 continue
             out[key] = domain
             self.stats.found += 1
+            if key in self._from_filing:
+                self.stats.accepted_from_filing += 1
             self.stats.samples.append(domain)
         return out
 

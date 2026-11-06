@@ -277,3 +277,63 @@ def test_確かめは推測と同じ方法で_商号の無いページは採ら�
     g = CoJpGuesser(exists=lambda d: True, fetch=lambda url: pages.get(url))
     assert g.confirm("ko-example.co.jp", "株式会社甲乙丙", None) == ("ko-example.co.jp", "found")
     assert g.confirm("pronexus.co.jp", "東京海上ホールディングス株式会社", None)[0] is None
+
+
+def test_社名の芯が短くても英字社名がタイトルにあれば採る():
+    from mailauth.p1_population.co_jp_guess import CoJpGuesser
+
+    pages = {"https://www.rise-i.co.jp/": "<title>RISE Inc. | Corporate</title>"}
+    g = CoJpGuesser(exists=lambda d: True, fetch=lambda url: pages.get(url))
+    assert g.confirm("rise-i.co.jp", "株式会社ＲＩＳＥ", "RISE Inc.") == ("rise-i.co.jp", "found")
+    # 英字社名が無ければ、今までどおり確かめられない
+    assert g.confirm("rise-i.co.jp", "株式会社ＲＩＳＥ", None)[0] is None
+
+
+def test_折り返しで切れた_URL_の存在しない名前は捨てる():
+    text = "公告掲載方法 電子公告 https://www.nakayama- steel.co.jp/ 及び http://www.ia "
+    assert koukoku_domains(text) == []
+
+
+def test_委託先のドメインは採らない_ページで確かめられない自社ドメインは書いてあれば採る():
+    api = FakeApi(
+        {"2026-06-26": [_doc("S1", "E1"), _doc("S2", "E2"), _doc("S3", "E3")]},
+        {"S1": _zip(_koukoku("https://www.pronexus.co.jp/koukoku/1/")),
+         "S2": _zip(_koukoku("https://www.rutsubo.com/ir/")),
+         "S3": _zip(_koukoku("https://www.gone-nodns.co.jp/"))},
+    )
+    reader = EdinetKoukoku(
+        api, _confirm_only({}), today=TODAY,
+        vendors={"pronexus.co.jp"},
+        exists=lambda d: d != "gone-nodns.co.jp",
+    )
+    got = reader.websites_for(
+        [("jp:1", "E1", "株式会社甲", None), ("jp:2", "E2", "日本坩堝株式会社", None),
+         ("jp:3", "E3", "株式会社丙", None)],
+        taken=set(),
+    )
+    assert got == {"jp:2": "rutsubo.com"}
+    s = reader.stats
+    assert (s.vendor, s.found, s.accepted_from_filing) == (1, 1, 1)
+
+
+def test_書いてあっても他社に付いているドメインや2社に出るドメインは採らない():
+    api = FakeApi(
+        {"2026-06-26": [_doc("S1", "E1"), _doc("S2", "E2"), _doc("S3", "E3")]},
+        {"S1": _zip(_koukoku("https://www.parent.co.jp/")),
+         "S2": _zip(_koukoku("https://www.shared.co.jp/")),
+         "S3": _zip(_koukoku("https://www.shared.co.jp/"))},
+    )
+    reader = EdinetKoukoku(api, _confirm_only({}), today=TODAY, exists=lambda d: True)
+    got = reader.websites_for(
+        [("jp:1", "E1", "株式会社甲", None), ("jp:2", "E2", "株式会社乙", None),
+         ("jp:3", "E3", "株式会社丙", None)],
+        taken={"parent.co.jp"},
+    )
+    assert got == {}
+    assert reader.stats.accepted_from_filing == 0
+
+
+def test_委託先の一覧を設定から読む():
+    from mailauth.p1_population.edinet_koukoku import load_vendors
+
+    assert "pronexus.co.jp" in load_vendors()

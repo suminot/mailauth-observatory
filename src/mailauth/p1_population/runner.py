@@ -462,6 +462,7 @@ def _fill_from_edinet_koukoku(
             )
             return
         from .edinet import USER_AGENT
+        from .edinet_koukoku import load_vendors
 
         guesser = _live_co_jp_guesser(contact)
         reader = EdinetKoukoku(
@@ -469,6 +470,8 @@ def _fill_from_edinet_koukoku(
             guesser.confirm,
             today=dt.date.today(),
             cache_dir=cache_root() / "edinet" / "koukoku",
+            vendors=load_vendors(),
+            exists=guesser.exists,
         )
 
     taken = {e.official_domain for e in entities if e.official_domain}
