@@ -32,7 +32,7 @@ and how many failed.
 
 | Population | Primary register | Filled in from |
 |---|---|---|
-| Listed companies in Japan | FSA EDINET code list | NTA corporate number (name, address), gBizINFO, Wikidata and Japanese Wikipedia (official site) |
+| Listed companies in Japan | FSA EDINET code list | NTA corporate number (name, address), gBizINFO, Wikidata, annual securities reports and Japanese Wikipedia (official site) |
 | Listed companies in the US | SEC EDGAR (public domain) | Wikidata (official site; SEC's website field is almost always empty), annual reports, prospectuses and proxy statements filed with the SEC (official site for companies Wikidata lacks) |
 
 **EDINET is a Japanese register, so it is not used for the US population.**
@@ -68,6 +68,10 @@ government company registry (gBizINFO) and Wikidata.
 
 Japanese companies missing from both are filled in, in this order:
 
+- the URL the company itself gives as its method of public notice in its
+  annual securities report (obtained through the EDINET API). Some companies
+  have a service provider post their notices, so it is used **only when that
+  page carries the Japanese trade name**
 - an address built from the English trade name (`.co.jp`, then `.jp` and
   `.com`), used **only when that page carries the Japanese trade name**
 - the official site in the infobox of the Japanese Wikipedia article. **The

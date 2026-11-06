@@ -114,6 +114,8 @@ OFFICIAL_URL_SOURCES: dict[str, str | None] = {
     # 企業のサイトを読むので連絡先つきの User-Agent を付ける。連絡先が無ければ
     # この経路だけ飛ばす（警告を出す）ので、必須にはしない
     "co_jp_homepage": None,
+    # 有報の公告掲載方法。鍵が無ければこの経路だけ飛ばす
+    "edinet_koukoku": None,
     # 日本語版ウィキペディア。連絡先が無ければこの経路だけ飛ばす
     "jawiki_infobox": None,
 }
