@@ -419,6 +419,63 @@ def _fill_from_jawiki(
     )
 
 
+def _prefer_filing_domains(
+    entities: list[Entity], manifest: RunManifest, *, scan_path: str | None = None
+) -> None:
+    """有報の公告掲載方法に会社が書いた自社ドメインを、公式サイトとして優先する（BACKLOG 47）。
+
+    gBizINFO・Wikidata などから来た公式サイトに、**第三者のページ**が入って
+    いた（デンカ → denka.disclosure.site、三菱ケミカルグループ →
+    pitchbook.com/profiles/...）。そのドメインを「その会社のもの」として測って
+    いた。推測（`.co.jp`）が同名の別会社を当てていたものもある（オーテック →
+    otec.co.jp、有報では o-tec.co.jp）。
+
+    会社が政府の開示書類に自分で書いたドメインが**1つだけ**あり、それが
+    いまの公式サイトと違えば、それに置き換える。**一覧の中で2社以上に出る
+    ドメインは使わない**（親子で同じ公告ページを使う会社がある）。委託先は
+    koukoku-scan が既に落としている。
+    """
+    from collections import Counter
+
+    from .edinet_koukoku import SCAN_CSV, read_scan
+
+    scan = read_scan(config_path(scan_path or SCAN_CSV))
+    if not scan:
+        manifest.set_breakdown(filing_domain={"scan_rows": 0})
+        return
+    single = {code: doms[0] for code, (_doc, doms, _on) in scan.items() if len(doms) == 1}
+    uses = Counter(single.values())
+    replaced: list[str] = []
+    filled = agreed = shared = 0
+    for e in entities:
+        dom = single.get(e.edinet_code or "")
+        if not dom:
+            continue
+        if uses[dom] > 1:
+            shared += 1
+            continue
+        if e.official_domain == dom:
+            agreed += 1
+            continue
+        if e.official_domain:
+            replaced.append(f"{e.official_domain} → {dom}（{e.name}）")
+        else:
+            filled += 1
+        e.official_domain = dom
+        e.official_url = f"https://{dom}/"
+    manifest.set_breakdown(
+        filing_domain={
+            "scan_rows": len(scan),
+            "single_domain": len(single),
+            "agreed": agreed,
+            "replaced": len(replaced),
+            "filled": filled,
+            "shared_skipped": shared,
+            "sample_replaced": replaced[:20],
+        }
+    )
+
+
 def _fill_from_edinet_koukoku(
     entities: list[Entity],
     manifest: RunManifest,
@@ -426,6 +483,7 @@ def _fill_from_edinet_koukoku(
     limit: int | None = None,
     offline: bool = False,
     reader=None,
+    scan_path: str | None = None,
 ) -> None:
     """**まだ空欄の企業だけ**、有報の公告掲載方法の URL から（BACKLOG 43）。
 
@@ -436,6 +494,9 @@ def _fill_from_edinet_koukoku(
 
     from .edinet_koukoku import EdinetKoukoku
     from .edinet_koukoku import live_api as live_edinet
+
+    # **先に、全社の一覧（koukoku-scan、BACKLOG 46）で公式サイトを正す。**
+    _prefer_filing_domains(entities, manifest, scan_path=scan_path)
 
     missing = [e for e in entities if not e.official_domain]
     if limit:

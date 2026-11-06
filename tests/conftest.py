@@ -171,3 +171,16 @@ def access_verified(monkeypatch):
         return report
 
     monkeypatch.setattr(access, "verify", _verified)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_koukoku_scan(monkeypatch, tmp_path):
+    """**検査は本物の有報の一覧（configs/domains/koukoku_domains.csv）を読まない。**
+
+    koukoku-scan が実在の会社の EDINET コードとドメインを書くので、そのまま読むと
+    検査の見本（EDINET コードが実在のものと重なる）に本物のドメインが付く。
+    読ませたい検査は自分で SCAN_CSV を差し替える。
+    """
+    from mailauth.p1_population import edinet_koukoku
+
+    monkeypatch.setattr(edinet_koukoku, "SCAN_CSV", str(tmp_path / "no-koukoku-scan.csv"))

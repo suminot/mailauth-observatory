@@ -375,3 +375,39 @@ def test_読む上限を超えたら次の回に回す():
     data, stats = scan(reader, ["E1", "E2"], {}, max_docs=1)
     assert (stats["read"], stats["deferred"]) == (1, 1)
     assert len(data) == 1
+
+
+def test_有報に書いた自社ドメインを公式サイトとして優先する(tmp_path):
+    """BACKLOG 47。第三者のページ（pitchbook.com など）が公式サイトに入っていた。"""
+    from mailauth.contracts import Entity
+    from mailauth.manifest import RunManifest
+    from mailauth.p1_population.edinet_koukoku import write_scan
+    from mailauth.p1_population.runner import _prefer_filing_domains
+
+    def ent(eid, code, domain):
+        return Entity(entity_id=eid, run_id="2026-11", country="JP",
+                      population_ids=["jp-all-listed"], name=eid, name_normalized=eid,
+                      edinet_code=code, official_domain=domain,
+                      official_url=f"https://{domain}/" if domain else None)
+
+    mcg = ent("jp:1", "E1", "pitchbook.com")
+    same = ent("jp:2", "E2", "murata.co.jp")
+    empty = ent("jp:3", "E3", None)
+    parent = ent("jp:4", "E4", "a.co.jp")
+    child = ent("jp:5", "E5", "b.co.jp")
+    path = tmp_path / "k.csv"
+    write_scan(path, {
+        "E1": ("S1", ["mcgc.com"], "2026-11-06"),
+        "E2": ("S2", ["murata.co.jp"], "2026-11-06"),
+        "E3": ("S3", ["c.co.jp"], "2026-11-06"),
+        "E4": ("S4", ["group.co.jp"], "2026-11-06"),
+        "E5": ("S5", ["group.co.jp"], "2026-11-06"),
+    })
+    manifest = RunManifest(run_id="2026-11", phase="p1_population", out_dir="/tmp/unused")
+    _prefer_filing_domains([mcg, same, empty, parent, child], manifest, scan_path=str(path))
+    assert (mcg.official_domain, mcg.official_url) == ("mcgc.com", "https://mcgc.com/")
+    assert same.official_domain == "murata.co.jp"
+    assert empty.official_domain == "c.co.jp"
+    assert (parent.official_domain, child.official_domain) == ("a.co.jp", "b.co.jp")
+    b = manifest.breakdown["filing_domain"]
+    assert (b["replaced"], b["agreed"], b["filled"], b["shared_skipped"]) == (1, 1, 1, 2)

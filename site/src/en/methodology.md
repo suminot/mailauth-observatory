@@ -64,7 +64,10 @@ in the summary is the size of the population, **not a claim that all of them
 were measured.** Where the two differ, the count is shown next to the figure.
 
 Official websites are looked up by corporate number against the Japanese
-government company registry (gBizINFO) and Wikidata.
+government company registry (gBizINFO) and Wikidata. **For Japanese companies,
+the company's own domain given as its method of public notice in its annual
+securities report takes precedence** where there is one (other sources
+sometimes hold a page that is not the company's own).
 
 Japanese companies missing from both are filled in, in this order:
 
