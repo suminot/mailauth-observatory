@@ -2476,3 +2476,28 @@ def test_push_が落ちたら最新の_main_の上で_gold_を作り直す():
     assert "cp -a" not in loop, "runs/ を丸ごと戻すと、他の母集団の新しい報告を古いもので上書きする"
     # 作りかけの rebase を残さない
     assert "git rebase --abort" in loop
+
+
+def test_個社別明細をサイトに置くなら_サイト全体の_Basic_認証と_401_の確認が揃っている():
+    """publish.yaml の private_drilldown（運営者の判断、2026-11-06）。
+
+    **個社名付きの明細は、認証の内側にしか置かない。** 置くのはデプロイの
+    ときで、リポジトリには入れない（公開リポジトリなので入れた時点で外に出る）。
+    """
+    import yaml as _yaml
+
+    cfg = _yaml.safe_load((repo_root() / "configs" / "publish.yaml").read_text(encoding="utf-8"))
+    drill = cfg.get("private_drilldown") or {}
+    if not drill.get("enabled"):
+        return
+    middleware = (repo_root() / "functions" / "_middleware.js").read_text(encoding="utf-8")
+    assert "BASIC_AUTH_USER" in middleware and "unauthorized()" in middleware, (
+        "サイト全体の Basic 認証（functions/_middleware.js）が無いのに個社別明細を置こうとしている"
+    )
+    deploy = (repo_root() / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+    assert "steps.drill.outputs.placed" in deploy and "認証の外に出ている" in deploy, (
+        "個社別明細を置いたあとに、認証なしで 401 が返ることを確かめていない"
+    )
+    # リポジトリ（公開）の中に明細を置かない
+    site = repo_root() / "site" / "src" / str(drill.get("path") or "companies")
+    assert not site.exists(), f"{site} がリポジトリにある。明細は公開リポジトリに入れない"

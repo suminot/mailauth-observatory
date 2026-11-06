@@ -49,6 +49,8 @@ concurrency:
 permissions:
   contents: read
   deployments: write
+  # 月次の成果物（個社別明細）を取ってくる。publish.yaml の private_drilldown
+  actions: read
 
 # **`shell: bash` を明示する。** 明示しないと Actions は `bash -e {0}` で
 # 走らせ、`pipefail` が付かない ── `cmd | tee` の cmd が失敗しても
@@ -154,6 +156,96 @@ jobs:
           printf '%s' "$BASIC_PASS" | npx --yes wrangler@3 pages secret put \
             BASIC_AUTH_PASS --project-name "$PROJECT"
 
+      # **個社別明細を、サイトの Basic 認証の内側に置く**（運営者の判断、
+      # 2026-11-06。configs/publish.yaml の private_drilldown）。
+      #
+      # 月次の成果物から、国内・米国それぞれ最新のものを取ってくる。リポジトリ
+      # には入れない（公開リポジトリなので、入れた時点で認証の外に出る）。
+      # 設定が false なら置かない。置いたら、下の確認で 401 を確かめる
+      - name: 個社別明細を置く（Basic 認証の内側）
+        id: drill
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          read -r ENABLED DPATH < <(python - <<'PY'
+          import yaml
+          c = (yaml.safe_load(open("configs/publish.yaml", encoding="utf-8")) or {})
+          d = c.get("private_drilldown") or {}
+          print("yes" if d.get("enabled") else "no", d.get("path") or "companies")
+          PY
+          )
+          if [ "$ENABLED" != "yes" ]; then
+            echo "placed=no" >> "$GITHUB_OUTPUT"
+            echo "個社別明細は置かない（private_drilldown.enabled が false）" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          python - "$DPATH" <<'PY'
+          import datetime as dt, json, os, subprocess, sys, tempfile, pathlib, html
+
+          dpath = sys.argv[1]
+          repo = os.environ["GITHUB_REPOSITORY"]
+
+          def api(path):
+              out = subprocess.run(["gh", "api", path], check=True, capture_output=True, text=True)
+              return json.loads(out.stdout)
+
+          today = dt.date.today().replace(day=1)
+          months = [today.strftime("%Y-%m"), (today - dt.timedelta(days=1)).strftime("%Y-%m")]
+          placed = []
+          for pop, short in (("jp-all-listed", "jp"), ("us-all-listed", "us")):
+              best = None
+              for month in months:
+                  for name in (f"tier2-drilldown-{pop}-{month}", f"tier2-drilldown-{month}"):
+                      arts = api(f"repos/{repo}/actions/artifacts?name={name}&per_page=50")
+                      for a in arts.get("artifacts", []):
+                          if a.get("expired"):
+                              continue
+                          run_id = a["workflow_run"]["id"]
+                          if name.endswith(f"-{month}") and pop not in name:
+                              # 古い名前は母集団を持たない。実行の題名で見分ける
+                              title = api(f"repos/{repo}/actions/runs/{run_id}").get("display_title", "")
+                              if pop not in title:
+                                  continue
+                          if best is None or a["created_at"] > best[0]:
+                              best = (a["created_at"], run_id, a["name"], month)
+                  if best:
+                      break
+              if not best:
+                  print(f"{pop}: 個社別明細の成果物が無い")
+                  continue
+              tmp = tempfile.mkdtemp()
+              subprocess.run(["gh", "run", "download", str(best[1]), "--repo", repo,
+                              "-n", best[2], "-D", tmp], check=True)
+              src = pathlib.Path(tmp) / "tier2-drilldown.html"
+              dest = pathlib.Path("site/dist") / dpath / short / "index.html"
+              dest.parent.mkdir(parents=True, exist_ok=True)
+              dest.write_bytes(src.read_bytes())
+              placed.append((short, pop, best[3], best[1]))
+              print(f"{pop}: {best[2]}（run {best[1]}）を /{dpath}/{short}/ に置いた")
+
+          items = "".join(
+              f'<li><a href="./{s}/">{html.escape(p)}（{m}）</a></li>' for s, p, m, _ in placed
+          ) or "<li>この時点で置ける明細が無い</li>"
+          index = pathlib.Path("site/dist") / dpath / "index.html"
+          index.parent.mkdir(parents=True, exist_ok=True)
+          index.write_text(
+              '<!doctype html><html lang="ja"><head><meta charset="utf-8">'
+              '<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">'
+              '<meta name="viewport" content="width=device-width, initial-scale=1">'
+              "<title>個社別明細</title></head><body style=\"font-family:sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem\">"
+              "<h1>個社別明細</h1><p>DNS など誰でも引ける公開情報から作った計測結果です。"
+              "観測できなかったことは「対策していない」ではありません。各表の注記を読んでください。</p>"
+              f"<ul>{items}</ul><p><a href=\"../\">サイトに戻る</a></p></body></html>",
+              encoding="utf-8",
+          )
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              for s, p, m, r in placed:
+                  f.write(f"- 個社別明細 {p} {m}（run {r}）→ /{dpath}/{s}/\n")
+          PY
+          echo "placed=yes" >> "$GITHUB_OUTPUT"
+          echo "path=$DPATH" >> "$GITHUB_OUTPUT"
+
       - name: Cloudflare Pages にデプロイ
         id: deploy
         if: steps.gate.outputs.ready == 'true'
@@ -236,4 +328,25 @@ jobs:
               exit 1
             fi
             echo "正しい資格情報: 200 ✓"
+          fi
+
+          # **個社別明細を置いたなら、そこも認証の内側か確かめる。**
+          # 認証なしで 401 以外が返ったら落とす（個社名が認証の外に出ている）
+          if [ "${{ steps.drill.outputs.placed }}" = "yes" ]; then
+            P="${{ steps.drill.outputs.path }}"
+            for sub in "" "jp/" "us/"; do
+              c=""
+              for _ in $(seq 1 20); do
+                c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$URL/$P/$sub" || echo 000)
+                case "$c" in
+                  404|000) sleep 6 ;;
+                  *) break ;;
+                esac
+              done
+              if [ "$c" != "401" ] && [ "$c" != "404" ]; then
+                echo "::error::/$P/$sub が認証なしで $c を返した。個社別明細が認証の外に出ている"
+                exit 1
+              fi
+              echo "/$P/$sub 認証なし: $c ✓"
+            done
           fi
