@@ -661,8 +661,19 @@ def run(
                             country=str(_text(r.get("country")) or ""),
                         )
                     )
-                site_found = site_source.discover(companies)
-                site_stats = site_source.stats.to_dict()
+                try:
+                    site_found = site_source.discover(companies)
+                    site_stats = site_source.stats.to_dict()
+                except Exception as exc:  # noqa: BLE001 - 補助の経路で P2 を止めない
+                    site_found = {}
+                    site_stats = {"error": f"{type(exc).__name__}: {exc}"[:300]}
+                    manifest.add_warning(
+                        "SITE_LINK_FAILED",
+                        message=(
+                            "公式サイトのリンク先を読む途中で失敗した。この経路の候補は"
+                            f"足していない（{type(exc).__name__}）。**「無い」ではない**"
+                        ),
+                    )
 
         collectors: dict[str, _Collector] = {}
         method_counts: dict[str, int] = {}
@@ -1414,7 +1425,7 @@ def _live_site_source(contact: str, resolver: Resolver) -> SiteLinkSource:
                     if len(body) >= MAX_BYTES or time.monotonic() > deadline:
                         break
                 return decode_page(body, resp.charset_encoding)
-        except httpx.HTTPError:
+        except (httpx.HTTPError, httpx.InvalidURL, ValueError, UnicodeError):
             return None
 
     def has_mx(domain: str) -> bool:

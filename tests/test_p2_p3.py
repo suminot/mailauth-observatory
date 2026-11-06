@@ -1899,3 +1899,13 @@ def test_p2_有報の公告ドメインを候補にする(seeded_run, tmp_path, 
     df = candidates()
     hit = df[(df["domain"] == "sample-info-hd.com") & (df["entity_id"] == "jp:1234567890123")]
     assert set(hit["discovery_method"]) == {"edinet_koukoku"}
+
+
+def test_p2_リンク先の経路が落ちても_P2_は止まらない(seeded_run):
+    class Broken:
+        def discover(self, companies):
+            raise RuntimeError("boom")
+
+    result = _run_p2(site_source=Broken())
+    assert result["breakdown"]["site_link"]["error"].startswith("RuntimeError")
+    assert "SITE_LINK_FAILED" in {w["code"] for w in result["warnings"]}
