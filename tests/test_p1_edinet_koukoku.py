@@ -337,3 +337,41 @@ def test_委託先の一覧を設定から読む():
     from mailauth.p1_population.edinet_koukoku import load_vendors
 
     assert "pronexus.co.jp" in load_vendors()
+
+
+# -- 全社を読む（BACKLOG 46） -------------------------------------------------------
+
+
+def test_全社を読み_委託先を落とし_新しい有報が出た会社だけ読み直す(tmp_path):
+    from mailauth.p1_population.edinet_koukoku import read_scan, scan, write_scan
+
+    api = FakeApi(
+        {"2026-06-26": [_doc("S1", "E1"), _doc("S2", "E2"), _doc("S3", "E3")]},
+        {"S1": _zip(_koukoku("https://www.mhi.com/notice/")),
+         "S2": _zip(_koukoku("https://www.pronexus.co.jp/koukoku/1/")),
+         "S3": _zip("<td>公告掲載方法</td><td>日本経済新聞</td>")},
+    )
+    reader = EdinetKoukoku(api, _confirm_only({}), today=TODAY, vendors={"pronexus.co.jp"})
+    existing = {"E3": ("S3", [], "2026-10-01")}  # 既に読んだもの
+    data, stats = scan(reader, ["E1", "E2", "E3", "E9"], existing, max_docs=10)
+    assert data["E1"] == ("S1", ["mhi.com"], "2026-11-06")
+    assert data["E2"] == ("S2", [], "2026-11-06")
+    assert (stats["already"], stats["read"], stats["with_domain"]) == (1, 2, 1)
+    assert "/documents/S3?1" not in api.calls
+
+    path = tmp_path / "k.csv"
+    write_scan(path, data)
+    assert read_scan(path) == data
+
+
+def test_読む上限を超えたら次の回に回す():
+    from mailauth.p1_population.edinet_koukoku import scan
+
+    api = FakeApi(
+        {"2026-06-26": [_doc("S1", "E1"), _doc("S2", "E2")]},
+        {"S1": _zip(_koukoku("https://www.a.co.jp/")), "S2": _zip(_koukoku("https://www.b.co.jp/"))},
+    )
+    reader = EdinetKoukoku(api, _confirm_only({}), today=TODAY)
+    data, stats = scan(reader, ["E1", "E2"], {}, max_docs=1)
+    assert (stats["read"], stats["deferred"]) == (1, 1)
+    assert len(data) == 1

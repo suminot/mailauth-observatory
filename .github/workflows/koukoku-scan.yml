@@ -1,0 +1,101 @@
+name: 有報の公告ドメインを読む
+
+# BACKLOG 46。全社の最新の有価証券報告書の「公告掲載方法」から、会社が自分で
+# 書いた自社ドメインを読み、configs/domains/koukoku_domains.csv に置く。P2 が
+# この一覧を候補に使う（公式サイトと違う自社ドメイン：mhi.com・murata.com など）。
+#
+# **月次の中では読まない。** 全社（約 3,800 社）を読むと数時間かかり、月次の
+# 持ち時間に入らない。ここで少しずつ読み、**新しい有報が出た会社だけ**読み直す。
+#
+# EDINET は API だけ、1秒に1本。中身は政府の開示書類に会社が書いた自社ドメインで、
+# 公開情報（政府標準利用規約2.0）。
+
+on:
+  schedule:
+    # 毎週日曜（UTC）。有報の提出が集中する6月下旬は手で起こして追いつかせる
+    - cron: "17 3 * * 0"
+  workflow_dispatch:
+    inputs:
+      max_docs:
+        description: 1回に読む有報の上限
+        required: false
+        default: "1200"
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: koukoku-scan
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      MAILAUTH_EDINET_SUBSCRIPTION_KEY: ${{ secrets.MAILAUTH_EDINET_SUBSCRIPTION_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: 入れる
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: 国内の企業一覧（最新の silver）を取ってくる
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for M in $(date -u +%Y-%m) $(date -u -d "$(date -u +%Y-%m-01) -1 day" +%Y-%m); do
+            NAME="silver-jp-all-listed-$M"
+            RUN=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$NAME&per_page=20" \
+                    --jq '[.artifacts[] | select(.expired | not) | .workflow_run.id] | .[0] // empty')
+            if [ -n "$RUN" ]; then
+              gh run download "$RUN" --repo "$GITHUB_REPOSITORY" -n "$NAME" -D silver && break
+            fi
+          done
+          test -f silver/p1_population/entities.parquet
+
+      - name: 読んだ有報のキャッシュを戻す
+        uses: actions/cache/restore@v4
+        with:
+          path: data/cache/edinet/koukoku
+          key: koukoku-scan-${{ github.run_id }}
+          restore-keys: koukoku-scan-
+
+      - name: 有報を読む
+        run: |
+          mailauth koukoku-scan --entities silver/p1_population/entities.parquet \
+            --max-docs "${{ inputs.max_docs || '1200' }}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: 読んだ有報のキャッシュを残す
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/cache/edinet/koukoku
+          key: koukoku-scan-${{ github.run_id }}
+
+      - name: 一覧をコミットする
+        run: |
+          if git diff --quiet -- configs/domains/koukoku_domains.csv \
+             && git ls-files --error-unmatch configs/domains/koukoku_domains.csv >/dev/null 2>&1; then
+            echo "変化なし" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add configs/domains/koukoku_domains.csv
+          git commit -m "有報の公告ドメインを更新"
+          for i in 1 2 3 4; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            sleep $((i * 5))
+          done
+          exit 1
