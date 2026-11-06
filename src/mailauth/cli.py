@@ -1169,6 +1169,53 @@ if __name__ == "__main__":
     main()
 
 
+@app.command("koukoku-scan")
+def koukoku_scan_cmd(
+    entities: Annotated[Path, typer.Option("--entities", help="P1 の entities.parquet")],
+    out: Annotated[Path, typer.Option("--out")] = Path("configs/domains/koukoku_domains.csv"),
+    max_docs: Annotated[int, typer.Option("--max-docs", help="1回に読む有報の上限")] = 1200,
+) -> None:
+    """全社の最新の有報から、公告掲載方法の自社ドメインを読んで一覧にする（BACKLOG 46）。
+
+    P2 がこの一覧を候補に使う。新しい有報が出た会社だけ読み直す。EDINET は API
+    だけ、1秒に1本。鍵（MAILAUTH_EDINET_SUBSCRIPTION_KEY）が要る。
+    """
+    import datetime as _dt
+    import json as _json
+
+    import pandas as pd
+
+    from .config import credential
+    from .p1_population.edinet import USER_AGENT
+    from .p1_population.edinet_koukoku import (
+        EdinetKoukoku,
+        live_api,
+        load_vendors,
+        read_scan,
+        scan,
+        write_scan,
+    )
+    from .paths import cache_root
+
+    key = credential("MAILAUTH_EDINET_SUBSCRIPTION_KEY")
+    if not key:
+        typer.echo("MAILAUTH_EDINET_SUBSCRIPTION_KEY が無い", err=True)
+        raise typer.Exit(2)
+    frame = pd.read_parquet(entities)
+    codes = [str(c) for c in frame.get("edinet_code", []) if isinstance(c, str) and c]
+    reader = EdinetKoukoku(
+        live_api(key, user_agent=USER_AGENT),
+        lambda d, n, e: (None, "unused"),
+        today=_dt.date.today(),
+        cache_dir=cache_root() / "edinet" / "koukoku",
+        vendors=load_vendors(),
+    )
+    data, stats = scan(reader, codes, read_scan(out), max_docs=max_docs)
+    write_scan(out, data)
+    stats["list_failed_days"] = reader.stats.list_failed_days
+    typer.echo(_json.dumps(stats, ensure_ascii=False))
+
+
 @app.command("drilldown")
 def drilldown_cmd(
     run: RunOption = "",

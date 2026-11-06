@@ -44,6 +44,8 @@ class DiscoveryMethod(StrEnum):
     #: 公式サイトのトップページのリンク先で、そのページに商号があったもの
     #: （site_links.py。多くの会社が張るドメイン・MX の無いものは除く）
     SITE_LINK = "site_link"
+    #: 有報の公告掲載方法に会社が書いた自社ドメイン（configs/domains/koukoku_domains.csv）
+    EDINET_KOUKOKU = "edinet_koukoku"
     SPF_REDIRECT = "spf_redirect"
     #: `include:` が自社サブドメインを指している場合のみ。
     #: 他社を指す include は「その基盤を使っている」であって所有ではない

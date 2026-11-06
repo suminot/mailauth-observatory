@@ -413,3 +413,83 @@ def live_api(key: str, *, user_agent: str) -> ApiGet:
         return resp.content
 
     return get
+
+
+# -- 全社を読む（P2 の候補、BACKLOG 46） ----------------------------------------
+
+#: 全社の公告ドメインの一覧（リポジトリに置く。中身は政府の開示書類に会社が
+#: 書いた自社ドメインで、公開情報）
+SCAN_CSV = "configs/domains/koukoku_domains.csv"
+SCAN_FIELDS = ("edinet_code", "doc_id", "domain", "scanned_on")
+
+
+def read_scan(path: str | Path) -> dict[str, tuple[str, list[str], str]]:
+    """EDINET コード → (docID, ドメイン, 読んだ日)。無ければ空。"""
+    import csv
+
+    p = Path(path)
+    if not p.exists():
+        return {}
+    out: dict[str, tuple[str, list[str], str]] = {}
+    with p.open(encoding="utf-8", newline="") as f:
+        for row in csv.DictReader(f):
+            code = (row.get("edinet_code") or "").strip()
+            if not code:
+                continue
+            doc, domains, on = out.get(code, (row.get("doc_id") or "", [], ""))
+            dom = (row.get("domain") or "").strip().lower()
+            if dom and dom not in domains:
+                domains.append(dom)
+            out[code] = (doc or row.get("doc_id") or "", domains, row.get("scanned_on") or on)
+    return out
+
+
+def write_scan(path: str | Path, data: dict[str, tuple[str, list[str], str]]) -> None:
+    """**ドメインの無い会社も1行残す**（読んだが URL が無かった、を覚えておく）。"""
+    import csv
+
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with p.open("w", encoding="utf-8", newline="") as f:
+        w = csv.writer(f, lineterminator="\n")
+        w.writerow(SCAN_FIELDS)
+        for code in sorted(data):
+            doc, domains, on = data[code]
+            for dom in domains or [""]:
+                w.writerow([code, doc, dom, on])
+
+
+def scan(
+    reader: EdinetKoukoku,
+    codes: Iterable[str],
+    existing: dict[str, tuple[str, list[str], str]],
+    *,
+    max_docs: int,
+) -> tuple[dict[str, tuple[str, list[str], str]], dict[str, int]]:
+    """全社の最新の有報から公告のドメインを読む。**新しい有報が出た会社だけ読み直す。**
+
+    委託先（`reader.vendors`）は落とす。`max_docs` を超えたら残りは次の回に回す。
+    """
+    wanted = {c for c in codes if c}
+    latest = reader.latest_yuho(wanted)
+    out = dict(existing)
+    stats = {"companies": len(wanted), "with_yuho": len(latest), "already": 0,
+             "read": 0, "with_domain": 0, "deferred": 0, "failed": 0}
+    for code in sorted(latest):
+        doc_id = latest[code]
+        if code in existing and existing[code][0] == doc_id:
+            stats["already"] += 1
+            continue
+        if stats["read"] >= max_docs:
+            stats["deferred"] += 1
+            continue
+        got = reader._read(doc_id)
+        stats["read"] += 1
+        if got is None:
+            stats["failed"] += 1
+            continue
+        domains = [d for d in got[0] if d not in reader.vendors]
+        if domains:
+            stats["with_domain"] += 1
+        out[code] = (doc_id, domains, reader.today.isoformat())
+    return out, stats

@@ -1883,3 +1883,19 @@ def test_p2_公式サイトのリンク先で確かめられたドメインを�
     hit = df[(df["domain"] == "brand-site.jp") & (df["entity_id"] == entity)]
     assert set(hit["discovery_method"]) == {"site_link"}
     assert result["breakdown"]["site_link"]["found"] == 1
+
+
+def test_p2_有報の公告ドメインを候補にする(seeded_run, tmp_path, monkeypatch):
+    """BACKLOG 46。koukoku-scan の一覧（EDINET コード → ドメイン）を P2 が使う。"""
+    from mailauth.p1_population import edinet_koukoku as ek
+
+    entities = pd.read_parquet(seeded_run)
+    row = entities[entities["entity_id"] == "jp:1234567890123"].iloc[0]
+    code = str(row["edinet_code"])
+    csv_path = tmp_path / "koukoku.csv"
+    ek.write_scan(csv_path, {code: ("S1", ["sample-info-hd.com"], "2026-11-06")})
+    monkeypatch.setattr(ek, "SCAN_CSV", str(csv_path))
+    _run_p2()
+    df = candidates()
+    hit = df[(df["domain"] == "sample-info-hd.com") & (df["entity_id"] == "jp:1234567890123")]
+    assert set(hit["discovery_method"]) == {"edinet_koukoku"}

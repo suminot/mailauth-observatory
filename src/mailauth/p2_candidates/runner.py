@@ -548,6 +548,16 @@ def run(
         manual = (
             load_manual_domains(cfg.get("manual_domains", "")) if discovery.get("manual") else {}
         )
+        # 有報の公告掲載方法の自社ドメイン（EDINET コード → ドメイン）。BACKLOG 46
+        koukoku: dict[str, list[str]] = {}
+        if discovery.get("edinet_koukoku"):
+            from ..p1_population.edinet_koukoku import SCAN_CSV, read_scan
+
+            koukoku = {
+                code: domains
+                for code, (_doc, domains, _on) in read_scan(config_path(SCAN_CSV)).items()
+                if domains
+            }
 
         vendor_patterns = load_report_vendor_patterns()
         vendor_hits: dict[str, int] = {}
@@ -837,6 +847,11 @@ def run(
             if discovery.get("manual"):
                 for domain, note in manual.get(entity_id, []):
                     collector.add(domain, DiscoveryMethod.MANUAL, note or "manual dictionary")
+
+            edinet_code = row.get("edinet_code")
+            if koukoku and isinstance(edinet_code, str):
+                for domain in koukoku.get(edinet_code, []):
+                    collector.add(domain, DiscoveryMethod.EDINET_KOUKOKU, "有報の公告掲載方法")
 
             if official:
                 if ct_enabled:

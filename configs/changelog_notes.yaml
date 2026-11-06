@@ -22,6 +22,7 @@ months:
       - DMARC を出しているが集計レポートの宛先（rua）が無いドメインと、そのうち p=none のもの、BIMI のうち証明書の場所を書いているものの数を足した。
       - 国内企業の公式サイトの経路に、有価証券報告書の「公告掲載方法」に会社が書いている URL を足した（ページに商号が載っているものだけ）。国内で測れた会社数の増加はこれによる。
       - ドメインの候補に、公式サイトのトップページがリンクしている別ドメインのうち、そのページのタイトルに商号があり MX があるものを足した。測るドメイン数の増加はこれによる。
+      - ドメインの候補に、国内企業が有価証券報告書の公告掲載方法に書いている自社ドメインを足した（公告の掲載を引き受ける事業者のドメインは除く）。
     en:
       - The outbound front-end check now includes the names that Proofpoint, Mimecast, Barracuda, Cisco, Trend Micro and others ask customers to publish in SPF for sending (only names found in each vendor's documentation). The number of US companies with an outbound front-end rose largely because of this.
       - Rules were added for DKIM CNAME targets (SendGrid, HubSpot, Constant Contact, Salesforce and others) and SPF includes (KnowBe4, Mailgun, Oracle and Japanese delivery services). The rise in sending-service counts comes from this.
@@ -35,3 +36,4 @@ months:
       - Counts were added for domains that publish DMARC without an aggregate report destination (rua), those among them with p=none, and BIMI records that give a certificate location.
       - For Japanese companies, the URL given as the method of public notice in the annual securities report was added as a source of the official site (used only when the page carries the trade name). The rise in Japanese companies measured comes from this.
       - Other domains linked from the official site's top page, where that page's title carries the trade name and the domain has MX, were added as candidate domains. The rise in the number of domains measured comes from this.
+      - The company's own domain that Japanese companies give as their method of public notice in the annual securities report was added as a candidate domain (domains of providers that post notices for others are excluded).
