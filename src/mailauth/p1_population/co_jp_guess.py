@@ -621,12 +621,31 @@ class CoJpGuesser:
         """
         self._bump("attempted")
         core = name_core(name_ja)
-        if len(core) < MIN_CORE_CHARS:
+        if len(core) < MIN_CORE_CHARS and not name_en:
             self._bump("core_too_short")
             return None, "core_too_short"
+        # **芯が短くても、英字社名があればそれで確かめる**（タイトルに英字社名、
+        # 読めなければ証明書の組織名）。「RISE」「FIG」のような社名が、書いて
+        # あった自社サイトを確かめられずに落ちていた（2026-11-06、20 社）
         outcome = self._attempt([domain], core, name_en, by_kana=False, strict=False)
         if isinstance(outcome, str):
             return outcome, "found"
+        if outcome[0] == "not_on_page" and name_en:
+            # **書いてあったドメインなので、英字社名は法人格込みでタイトルに
+            # あれば足りる**（推測では短い英字で決めないが、ここは推測ではない）
+            full = _alnum_upper(name_en)
+            for url in (f"https://www.{domain}/", f"https://{domain}/"):
+                page = self.fetch(url)
+                if page is None:
+                    continue
+                title = _alnum_upper(html.unescape(page_title(page)))
+                if len(full) >= 6 and full in title:
+                    self._bump("found")
+                    return domain, "found"
+                break
+        if len(core) < MIN_CORE_CHARS and outcome[0] == "not_on_page":
+            self._bump("core_too_short")
+            return None, "core_too_short"
         return None, outcome[0]
 
     def _attempt(

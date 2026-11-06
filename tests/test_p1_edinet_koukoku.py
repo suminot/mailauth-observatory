@@ -277,3 +277,13 @@ def test_確かめは推測と同じ方法で_商号の無いページは採ら�
     g = CoJpGuesser(exists=lambda d: True, fetch=lambda url: pages.get(url))
     assert g.confirm("ko-example.co.jp", "株式会社甲乙丙", None) == ("ko-example.co.jp", "found")
     assert g.confirm("pronexus.co.jp", "東京海上ホールディングス株式会社", None)[0] is None
+
+
+def test_社名の芯が短くても英字社名がタイトルにあれば採る():
+    from mailauth.p1_population.co_jp_guess import CoJpGuesser
+
+    pages = {"https://www.rise-i.co.jp/": "<title>RISE Inc. | Corporate</title>"}
+    g = CoJpGuesser(exists=lambda d: True, fetch=lambda url: pages.get(url))
+    assert g.confirm("rise-i.co.jp", "株式会社ＲＩＳＥ", "RISE Inc.") == ("rise-i.co.jp", "found")
+    # 英字社名が無ければ、今までどおり確かめられない
+    assert g.confirm("rise-i.co.jp", "株式会社ＲＩＳＥ", None)[0] is None
