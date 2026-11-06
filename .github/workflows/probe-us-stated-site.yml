@@ -1,0 +1,97 @@
+name: 米国：年次報告書の自社サイトといまの公式サイトを比べる
+
+# BACKLOG 48。国内では公式サイトに第三者のページ（pitchbook.com など）が
+# 入っていた（BACKLOG 47）。米国の公式サイトは多くが Wikidata 由来で、同じ
+# ことが起きていないかを、会社が年次報告書（10-K / 20-F / 40-F）に自分で書いた
+# 「Our website is …」と比べて測る。
+#
+# SEC は連絡先つきの User-Agent、10 req/s 未満（SecEdgarClient が守る）。
+# 手で起こすときだけ動く。結果（社名・ドメイン）は成果物に置く（7日）。
+
+on:
+  workflow_dispatch:
+    inputs:
+      month:
+        description: 公式サイトを取る月（その月の silver の entities を使う）
+        required: false
+        default: "2026-11"
+      sample:
+        description: 比べる会社の数
+        required: false
+        default: "300"
+
+permissions:
+  contents: read
+  actions: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      MAILAUTH_CONTACT_EMAIL: ${{ secrets.MAILAUTH_CONTACT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 入れる
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: その月の silver を取ってくる
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NAME: silver-us-all-listed-${{ inputs.month }}
+        run: |
+          RUN=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$NAME&per_page=20" \
+                  --jq '[.artifacts[] | select(.expired | not) | .workflow_run.id] | .[0]')
+          gh run download "$RUN" --repo "$GITHUB_REPOSITORY" -n "$NAME" -D silver
+      - name: 比べる
+        env:
+          SAMPLE: ${{ inputs.sample }}
+        run: |
+          mkdir -p out
+          python - <<'PY'
+          import json, os, random
+          import pandas as pd
+          from mailauth.normalize import etld_plus_one
+          from mailauth.p1_population.annual_report import AnnualReportWebsites
+          from mailauth.p1_population.sec_edgar import SecEdgarClient
+
+          ents = pd.read_parquet("silver/p1_population/entities.parquet")
+          ents = ents[ents.official_domain.notna() & ents.cik.notna()]
+          rows = ents.sample(min(int(os.environ["SAMPLE"]), len(ents)), random_state=11)
+          client = SecEdgarClient()
+          reader = AnnualReportWebsites(client)
+          same = differ = none = 0
+          diffs = []
+          for r in rows.itertuples():
+              facts = client.facts_for_cik(r.cik)
+              url = reader.website_for(facts.annual_report, r.name)
+              dom = etld_plus_one(url.split("//")[-1].split("/")[0]) if url else None
+              if not dom:
+                  none += 1
+              elif dom == r.official_domain:
+                  same += 1
+              else:
+                  differ += 1
+                  diffs.append({"name": r.name, "official": r.official_domain,
+                                "official_url": r.official_url, "stated": dom})
+          counts = {"sample": len(rows), "same": same, "differ": differ, "none": none}
+          json.dump({"counts": counts, "diffs": diffs}, open("out/us_stated.json", "w"),
+                    ensure_ascii=False, indent=1)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write("```\n" + json.dumps(counts) + "\n```\n")
+          print(json.dumps(counts))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-us-stated-site
+          path: out/
+          retention-days: 7
