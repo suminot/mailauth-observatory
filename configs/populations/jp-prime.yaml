@@ -57,6 +57,8 @@ source:
     # 上書きしない。2026-09 の実測で official_url の欠損が 47.7% あり、
     # 起点ドメインが無い企業は P2 で候補ゼロになって分母から消えていた
     - wikidata_identity
+    # 有報の公告掲載方法の URL（edinet_koukoku.py）。推測より先に見る
+    - edinet_koukoku
     # **最後に置く。まだ空欄の企業だけ。** 英字社名から .co.jp を推測し、
     # そのサイトに日本語の商号が載っているかで確かめる（co_jp_guess.py）
     - co_jp_homepage

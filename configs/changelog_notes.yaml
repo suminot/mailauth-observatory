@@ -20,6 +20,7 @@ months:
       - DMARC を公開しているが、レコードが無効（2つある・p= が無いか不正）なドメインの数を、公開しているの内数として足した。
       - DKIM を検出したドメインを、見つかった RSA 鍵のうち最も短いものの長さ（2048 以上・1024・1024 未満）で分けて数えるようにした。Ed25519 の鍵は長さを見積もらないようにした。
       - DMARC を出しているが集計レポートの宛先（rua）が無いドメインと、そのうち p=none のもの、BIMI のうち証明書の場所を書いているものの数を足した。
+      - 国内企業の公式サイトの経路に、有価証券報告書の「公告掲載方法」に会社が書いている URL を足した（ページに商号が載っているものだけ）。国内で測れた会社数の増加はこれによる。
     en:
       - The outbound front-end check now includes the names that Proofpoint, Mimecast, Barracuda, Cisco, Trend Micro and others ask customers to publish in SPF for sending (only names found in each vendor's documentation). The number of US companies with an outbound front-end rose largely because of this.
       - Rules were added for DKIM CNAME targets (SendGrid, HubSpot, Constant Contact, Salesforce and others) and SPF includes (KnowBe4, Mailgun, Oracle and Japanese delivery services). The rise in sending-service counts comes from this.
@@ -31,3 +32,4 @@ months:
       - Domains that publish DMARC with an invalid record (two records, or p= missing or invalid) are now counted, as part of those publishing DMARC.
       - Domains where DKIM was found are now counted by the shortest RSA key found (2048 bits or more, 1024, under 1024). Ed25519 keys are no longer given an estimated length.
       - Counts were added for domains that publish DMARC without an aggregate report destination (rua), those among them with p=none, and BIMI records that give a certificate location.
+      - For Japanese companies, the URL given as the method of public notice in the annual securities report was added as a source of the official site (used only when the page carries the trade name). The rise in Japanese companies measured comes from this.

@@ -325,6 +325,9 @@ def _apply_enrichment(
                     continue
                 _fill_missing_urls_from_wikidata(entities, cfg, manifest)
 
+            elif name == "edinet_koukoku":
+                _fill_from_edinet_koukoku(entities, manifest, limit=limit, offline=offline)
+
             elif name == "co_jp_homepage":
                 _fill_from_co_jp_homepage(
                     entities, manifest, limit=limit, offline=offline, kana=kana
@@ -410,6 +413,86 @@ def _fill_from_jawiki(
     manifest.set_breakdown(
         jawiki_infobox={
             **reader.stats.to_dict(),
+            "missing_before": len(missing),
+            "still_missing": sum(1 for e in entities if not e.official_domain),
+        }
+    )
+
+
+def _fill_from_edinet_koukoku(
+    entities: list[Entity],
+    manifest: RunManifest,
+    *,
+    limit: int | None = None,
+    offline: bool = False,
+    reader=None,
+) -> None:
+    """**まだ空欄の企業だけ**、有報の公告掲載方法の URL から（BACKLOG 43）。
+
+    会社自身が政府の開示書類に書いた URL を、そのページに商号が載っている
+    ことで確かめて採る（`edinet_koukoku.py`）。`reader` を渡せるのは検査のため。
+    """
+    import datetime as dt
+
+    from .edinet_koukoku import EdinetKoukoku
+    from .edinet_koukoku import live_api as live_edinet
+
+    missing = [e for e in entities if not e.official_domain]
+    if limit:
+        missing = missing[:limit]
+    if not missing:
+        manifest.set_breakdown(edinet_koukoku={"attempted": 0})
+        return
+    if reader is None:
+        if offline:
+            manifest.add_warning(
+                "ENRICH_SKIPPED_EDINET_KOUKOKU",
+                message="offline のため有報を読んでいない。**「無い」のではなく「引いていない」**",
+            )
+            return
+        key = credential("MAILAUTH_EDINET_SUBSCRIPTION_KEY")
+        contact = credential("MAILAUTH_CONTACT_EMAIL")
+        if not key or not contact:
+            manifest.add_warning(
+                "ENRICH_SKIPPED_EDINET_KOUKOKU",
+                message=(
+                    "MAILAUTH_EDINET_SUBSCRIPTION_KEY か MAILAUTH_CONTACT_EMAIL が無いため"
+                    "有報を読んでいない（URL の確かめに企業のサイトを読むので連絡先も要る）"
+                ),
+            )
+            return
+        from .edinet import USER_AGENT
+
+        guesser = _live_co_jp_guesser(contact)
+        reader = EdinetKoukoku(
+            live_edinet(key, user_agent=USER_AGENT),
+            guesser.confirm,
+            today=dt.date.today(),
+            cache_dir=cache_root() / "edinet" / "koukoku",
+        )
+
+    taken = {e.official_domain for e in entities if e.official_domain}
+    domains = reader.websites_for(
+        ((e.entity_id, e.edinet_code, e.name, e.name_en) for e in missing), taken
+    )
+    by_id = {e.entity_id: e for e in missing}
+    for entity_id, domain in domains.items():
+        entity = by_id[entity_id]
+        entity.official_url = f"https://{domain}/"
+        entity.official_domain = domain
+    stats = reader.stats
+    if stats.fetch_failed or stats.list_failed_days:
+        manifest.add_warning(
+            "ENRICH_FAILED_EDINET_KOUKOKU",
+            count=stats.fetch_failed + stats.list_failed_days,
+            message=(
+                "EDINET を引けなかった日・有報がある。**「書いていない」ではなく"
+                "「引けなかった」**（原則5）"
+            ),
+        )
+    manifest.set_breakdown(
+        edinet_koukoku={
+            **stats.to_dict(),
             "missing_before": len(missing),
             "still_missing": sum(1 for e in entities if not e.official_domain),
         }

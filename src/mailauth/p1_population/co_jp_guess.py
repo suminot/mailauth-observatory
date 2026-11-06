@@ -610,6 +610,25 @@ class CoJpGuesser:
             self._bump("no_guess_exists")
         return None, kind
 
+    def confirm(
+        self, domain: str, name_ja: str | None, name_en: str | None
+    ) -> tuple[str | None, str]:
+        """推測ではなく、**どこかに書いてあったドメイン**を同じ方法で確かめる。
+
+        有報の公告掲載方法（`edinet_koukoku.py`）のように、会社自身が書いた
+        URL でも、公告の掲載を任せた外部の事業者のドメインのことがある。
+        そのドメインのページに商号が載っていれば (domain, "found")。
+        """
+        self._bump("attempted")
+        core = name_core(name_ja)
+        if len(core) < MIN_CORE_CHARS:
+            self._bump("core_too_short")
+            return None, "core_too_short"
+        outcome = self._attempt([domain], core, name_en, by_kana=False, strict=False)
+        if isinstance(outcome, str):
+            return outcome, "found"
+        return None, outcome[0]
+
     def _attempt(
         self,
         candidates: list[str],
