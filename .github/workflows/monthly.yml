@@ -591,7 +591,9 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: tier2-drilldown-${{ steps.run.outputs.id }}
+          # 母集団を名前に入れる。デプロイが国内・米国を取り分ける（publish.yaml の
+          # private_drilldown）。古い名前（母集団なし）はデプロイ側が実行の題名で見分ける
+          name: tier2-drilldown-${{ steps.run.outputs.pop }}-${{ steps.run.outputs.id }}
           path: data/runs/${{ steps.run.outputs.id }}/tier2-drilldown.html
           if-no-files-found: warn
           retention-days: 30

@@ -29,6 +29,22 @@ tier2:
   # 訂正申告の受付窓口。第2層を出すなら必須
   correction_contact: null
 
+# **サイト全体が Basic 認証の内側にある間の、個社別明細の置き場所。**
+#
+# 上の tier2（**認証を外した**公開サイトに個社名付きで出す）とは別の話で、
+# こちらは運営者の判断（2026-11-06「今 Basic 認証かけてるから、結果見せて
+# いいよ」）。月次の成果物の個社別明細（drilldown.py）を、デプロイのときに
+# `/<path>/jp/`・`/<path>/us/` に置く。中身は DNS など誰でも引ける公開情報
+# から作ったもので、成果物としては既に GitHub にログインした人が取れる。
+#
+# **サイトの Basic 認証（functions/_middleware.js）を外すときは、先に
+# ここを false にすること。** デプロイは置いたあとに認証なしで 401 が
+# 返ることを確かめ、返らなければ落ちる
+private_drilldown:
+  enabled: true
+  decided_on: 2026-11-06
+  path: companies
+
 access:
   # アクセス制御（Cloudflare Access ＋ Entra ID）。
   #
