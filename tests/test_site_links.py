@@ -149,3 +149,22 @@ def test_1社あたり確かめに行く数に上限がある():
     src = _src(web, max_candidates=5)
     src.discover([SiteCompany("own.co.jp", "株式会社甲乙丙", None, "JP")])
     assert src.stats.no_mx == 5
+
+
+def test_全角の混じったリンクは半角にし_壊れた名前は捨てる():
+    page = (
+        '<a href="https://www.murata.coｍ/ja-jp">a</a>'
+        '<a href="https://www.broken-/x">b</a>'
+        '<a href="https://www.nakayama-">c</a>'
+        '<a href="https://例え.テスト/">d</a>'
+    )
+    assert link_domains(page, "murata.co.jp") == ["murata.com"]
+
+
+def test_読む途中の例外で止まらない():
+    def fetch(url):
+        raise ValueError("Invalid IDNA hostname")
+
+    src = SiteLinkSource(fetch, lambda d: True, concurrency=1)
+    assert src.discover([SiteCompany("own.co.jp", "株式会社甲乙丙", None, "JP")]) == {}
+    assert src.stats.unreadable == 1

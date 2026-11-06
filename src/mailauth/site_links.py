@@ -24,6 +24,7 @@ nifco-fastener.com・nifcodamper.com、都築電気 tsuzuki.co.jp から tsuzuki
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -59,13 +60,31 @@ def is_private_hosting(host: str) -> bool:
     return (_ICANN.privatesuffix(h) or None) != etld_plus_one(h)
 
 
+_KNOWN = None
+
+
+def _known_tld(host: str) -> bool:
+    """PSL に載っている TLD の下の名前か（途中で切れた URL や誤記を捨てる）。"""
+    global _KNOWN
+    if _KNOWN is None:
+        from publicsuffixlist import PublicSuffixList
+
+        _KNOWN = PublicSuffixList(accept_unknown=False)
+    return _KNOWN.privatesuffix(host) is not None
+
+
 def link_domains(page: str, own: str) -> list[str]:
     """ページの絶対リンクの登録ドメイン（出てきた順、重複なし、自分と共用ホスティングは除く）。"""
     out: list[str] = []
     for url in _HREF.findall(page or ""):
         host = re.sub(r"^https?://", "", url, flags=re.IGNORECASE).split("/")[0]
+        # **全角を半角に揃える。** HTML に `www.murata.coｍ` のような全角の
+        # 混じったリンクがあり、そのまま引いて P2 ごと落ちた（2026-11-06）
+        host = unicodedata.normalize("NFKC", host)
         host = host.split("?")[0].split("#")[0].split(":")[0].lower().rstrip(".")
-        if "@" in host or not host:
+        if "@" in host or not host or not host.isascii():
+            continue
+        if not _known_tld(host):
             continue
         domain = etld_plus_one(host)
         if not domain or domain == own or domain in out or is_private_hosting(host):
@@ -147,7 +166,10 @@ class SiteLinkSource:
 
     def _top(self, domain: str) -> str | None:
         for url in (f"https://www.{domain}/", f"https://{domain}/"):
-            page = self.fetch(url)
+            try:
+                page = self.fetch(url)
+            except Exception:  # noqa: BLE001 - 1つの壊れた名前で全体を止めない
+                page = None
             if page:
                 return page
         return None
