@@ -417,6 +417,8 @@ display(
           { Category: "an SPF include or redirect target's domain is not registered", Domains: current?.spf_dangling_domains },
           { Category: "the apex TXT response exceeds 1,232 bytes (estimate)", Domains: current?.txt_apex_oversize_domains },
           { Category: "SPF lets through more than 65,536 IPv4 addresses", Domains: current?.spf_ip4_broad_domains },
+          { Category: "SPF uses ptr (RFC 7208 asks that it not be used)", Domains: current?.spf_ptr_domains },
+          { Category: "DMARC gives a failure report destination (ruf)", Domains: current?.dmarc_ruf_domains },
           { Category: "the DKIM keys found are Ed25519 only", Domains: current?.dkim_ed25519_only_domains },
           { Category: "DMARC carries tags removed in RFC 9989 (pct, rf, ri)", Domains: current?.dmarc_historic_tags_domains },
         ],

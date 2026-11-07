@@ -284,6 +284,10 @@ class DomainRow:
     dmarc_historic_tags: bool | None = None
     spf_ip4_addresses: int | None = None
     dkim_domainkey_exists: bool | None = None
+    #: SPF に ptr がある（P5 1.7.0）。列の無い過去の run は None
+    spf_has_ptr: bool | None = None
+    #: DMARC に ruf（失敗レポートの宛先）がある
+    dmarc_has_ruf: bool = False
     #: メールを受け取れる（MX があり、Null MX でなく、どれかの MX に宛先がある）
     mx_reachable: bool = False
     #: SPF に送信元を書いている（include・ip4/ip6・a・mx など。-all だけではない）
@@ -370,6 +374,8 @@ class DomainRow:
             dmarc_multiple_records=_truthy(fact.get("dmarc_multiple_records")),
             dkim_min_key_bits=_min_int(fact.get("dkim_key_bits")),
             dmarc_has_rua=_nonempty(fact.get("dmarc_rua")),
+            dmarc_has_ruf=_nonempty(fact.get("dmarc_ruf")),
+            spf_has_ptr=_tristate(fact.get("spf_has_ptr")),
             rua_placeholder=_nonempty(fact.get("dmarc_rua"))
             and any(is_placeholder_domain(str(d)) for d in fact.get("dmarc_rua")),
         )
@@ -674,6 +680,8 @@ def aggregate(
             if any(r.spf_ip4_addresses is not None for r in observed)
             else None
         ),
+        spf_ptr_domains=_count_true(observed, lambda r: r.spf_present, lambda r: r.spf_has_ptr),
+        dmarc_ruf_domains=sum(1 for r in observed if r.dmarc_present and r.dmarc_has_ruf),
         spf_all_fail_domains=all_q.get("-", 0),
         spf_all_softfail_domains=all_q.get("~", 0),
         spf_all_neutral_domains=all_q.get("?", 0),

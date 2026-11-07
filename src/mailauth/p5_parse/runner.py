@@ -46,7 +46,8 @@ OUTPUT_FILENAME = "facts.parquet"
 #: 1.4.0（2026-11）：SPF の先の未登録・TXT の大きさ・Ed25519 だけ・DMARC の廃止タグ
 #: 1.5.0（2026-11）：SPF が通すと書いた IP アドレスの広さ
 #: 1.6.0（2026-11）：`_domainkey.<ドメイン>` の配下に名前があるか
-PARSER_VERSION = "1.6.0"
+#: 1.7.0（2026-11）：SPF の ptr
+PARSER_VERSION = "1.7.0"
 
 #: 返していないドメインを何件まで抱えるか（`ordered.in_input_order`）。
 #: 同時本数より十分大きくしないと、先頭の1件が遅いたびに手が止まる
@@ -176,6 +177,7 @@ def parse_domain(
         spf_ip4_addresses=space.ip4_addresses if space else None,
         spf_ip4_widest_prefix=space.ip4_widest_prefix if space else None,
         spf_ip6_widest_prefix=space.ip6_widest_prefix if space else None,
+        spf_has_ptr=spf.has_ptr if space is not None else None,
     )
 
     # include と redirect の先まで数える（BACKLOG 41）。先の TXT は resolver が

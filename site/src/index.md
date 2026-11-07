@@ -404,6 +404,8 @@ display(
           { 区分: "SPF の include・redirect の先のドメインが登録されていない", ドメイン: current?.spf_dangling_domains },
           { 区分: "主ドメインの TXT の応答が 1,232 バイトを超える（見積り）", ドメイン: current?.txt_apex_oversize_domains },
           { 区分: "SPF が通すと書いた IPv4 アドレスが 65,536 を超える", ドメイン: current?.spf_ip4_broad_domains },
+          { 区分: "SPF に ptr がある（RFC 7208 が使わないよう求めている）", ドメイン: current?.spf_ptr_domains },
+          { 区分: "DMARC に失敗レポートの宛先（ruf）がある", ドメイン: current?.dmarc_ruf_domains },
           { 区分: "見つかった DKIM の鍵が Ed25519 だけ", ドメイン: current?.dkim_ed25519_only_domains },
           { 区分: "DMARC に RFC 9989 で無くなったタグ（pct・rf・ri）がある", ドメイン: current?.dmarc_historic_tags_domains },
         ],

@@ -283,3 +283,35 @@ def test_集計は見つからなかったもののうち配下に名前があ�
     old = aggregate([_row(1, dkim_status=nf)], measured_month=dt.date(2026, 12, 1),
                     population_id="jp-all-listed", total_entities=1)
     assert old.dkim_other_selector_domains is None
+
+
+# -- SPF の ptr・DMARC の ruf（P5 1.7.0） ------------------------------------------
+
+
+def test_SPF_の_ptr_を_fact_と集計に出す():
+    from mailauth.p7_aggregate.metrics import aggregate
+
+    fact = parse_domain(DOMAIN, {"spf": [_spf_rec(["v=spf1 ptr:example.jp -all"])]})
+    assert fact["spf_has_ptr"] is True
+    fact = parse_domain(DOMAIN, {"spf": [_spf_rec(["v=spf1 ip4:192.0.2.1 -all"])]})
+    assert fact["spf_has_ptr"] is False
+    assert parse_domain(DOMAIN, {})["spf_has_ptr"] is None
+
+    rows = [_row(1, spf_has_ptr=True), _row(2, spf_has_ptr=False),
+            _row(3, spf_has_ptr=True, spf_present=False)]
+    s = aggregate(rows, measured_month=dt.date(2026, 12, 1), population_id="jp-all-listed",
+                  total_entities=3)
+    assert s.spf_ptr_domains == 1
+    old = aggregate([_row(1)], measured_month=dt.date(2026, 12, 1),
+                    population_id="jp-all-listed", total_entities=1)
+    assert old.spf_ptr_domains is None
+
+
+def test_DMARC_の_ruf_は数だけ出す():
+    from mailauth.p7_aggregate.metrics import aggregate
+
+    rows = [_row(1, dmarc_ruf=["ruf@example.jp"]), _row(2, dmarc_ruf=[]),
+            _row(3, dmarc_ruf=["x@example.jp"], dmarc_present=False)]
+    s = aggregate(rows, measured_month=dt.date(2026, 12, 1), population_id="jp-all-listed",
+                  total_entities=3)
+    assert s.dmarc_ruf_domains == 1
