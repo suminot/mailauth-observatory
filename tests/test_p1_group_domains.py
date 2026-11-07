@@ -56,3 +56,13 @@ def test_一覧を順に引き_引き終えた名前は引き直さない(tmp_pa
     write_csv(path, data)
     again, stats2 = scan(s, subs, read_csv(path), max_lookups=10)
     assert stats2["already"] == 2 and stats2["looked_up"] == 0
+
+
+def test_子会社名の一覧から消えた名前は残さない(tmp_path):
+    s = _search(tmp_path, {})
+    old = {("E1", "及び株式会社"): ("", "", "not_found"),
+           ("E1", "A株式会社"): ("9", "a.jp", "found")}
+    subs = {"E1": ("S1", ["A株式会社"], "2026-11-08")}
+    data, stats = scan(s, subs, old, max_lookups=10)
+    assert list(data) == [("E1", "A株式会社")]
+    assert stats["already"] == 1

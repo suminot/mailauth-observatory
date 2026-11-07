@@ -1302,7 +1302,8 @@ def koukoku_scan_cmd(
             if isinstance(r.get("edinet_code"), str) and r.get("edinet_code")
         ]
         sub_data, sub_stats = subs.scan(
-            reader, pairs, subs.read_csv(subs.SUBS_CSV), max_docs=subsidiaries_max
+            reader, pairs, subs.read_csv(subs.SUBS_CSV), max_docs=subsidiaries_max,
+            parsed_with=subs.csv_parser_version(subs.SUBS_CSV),
         )
         subs.write_csv(subs.SUBS_CSV, sub_data)
         stats["subsidiaries"] = sub_stats
