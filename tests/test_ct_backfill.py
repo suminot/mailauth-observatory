@@ -890,6 +890,8 @@ def test_月次計測はその月の積み残し全部を見て補充を頼む()
     run = steps["CT の補充を頼む"]["run"]
     assert "_pending/*.json" in run
     assert "steps.run.outputs.pop }}.json" not in run
+    # 組織名の積み残しも数える（2026-11-07 の国内は組織名だけが 3,402 社残った）
+    assert "_org_pending/*.json" in run
 
 
 def test_組織名の積み残しを_crtsh_で引いてキャッシュに入れる(tmp_path):

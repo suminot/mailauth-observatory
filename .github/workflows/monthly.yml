@@ -908,7 +908,11 @@ jobs:
           # 実行が終わっても米国の補充は再開しなかった（2026-11-02、補充の
           # 毎時の schedule は 30 時間で4回しか起動していない）
           n=0
-          for P in data/cache/crtsh/month=${{ steps.run.outputs.id }}/_pending/*.json; do
+          # **組織名の積み残し（_org_pending）も数える。** 数えないと、ドメインの
+          # 積み残しが無い月は組織名の逆引きが毎時の schedule 頼みになる
+          # （2026-11-07 の国内は組織名だけ 3,402 社が残った）
+          for P in data/cache/crtsh/month=${{ steps.run.outputs.id }}/_pending/*.json \
+                   data/cache/crtsh/month=${{ steps.run.outputs.id }}/_org_pending/*.json; do
             [ -f "$P" ] || continue
             n=$((n + $(jq '.pending | length' "$P")))
           done
