@@ -906,7 +906,8 @@ def write_org_pending(cache_dir: Path, month: str, population: str, names: Itera
     path = org_pending_path(cache_dir, month, population)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {"month": month, "population": population,
-               "pending": sorted({n for n in names if n})}
+               # **並びを保つ。** 補充は前から引く（先に引きたい会社を P2 が前に置く）
+               "pending": list(dict.fromkeys(n for n in names if n))}
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
     return path
 
