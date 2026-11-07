@@ -15,22 +15,22 @@
 | `amazonses.com` | 62 | 1 | `feedback-smtp.ap-northeast-1.amazonses.com`, `feedback-smtp.us-east-1.amazonses.com`, `feedback-smtp.us-west-2.amazonses.com` |
 | `aams4.jp` | 16 | 1 | `mx-1.aams4.jp`, `mx-0.aams4.jp`, `mx.aams4.jp` |
 | `antispameurope.de` | 16 | 1 | `mx11d.antispameurope.de`, `mx11c.antispameurope.de`, `mx11b.antispameurope.de` |
-| `recop.jp` | 15 | 1 | `mail2.recop.jp` |
+| `recop.jp` | 16 | 1 | `mail2.recop.jp` |
 | `registrar-servers.com` | 15 | 1 | `eforward5.registrar-servers.com`, `eforward3.registrar-servers.com`, `eforward2.registrar-servers.com` |
 | `exacttarget.com` | 10 | 1 | `inbound-reply.s1.exacttarget.com`, `reply.s10.exacttarget.com`, `reply.s12.exacttarget.com` |
 | `jm-s.co.jp` | 10 | 1 | `mx03.jm-s.co.jp`, `mx01.jm-s.co.jp`, `mx02.jm-s.co.jp` |
+| `hetemail.jp` | 9 | 1 | `mx.hetemail.jp` |
 | `antispameurope.com` | 8 | 1 | `mx16b.antispameurope.com`, `mx16a.antispameurope.com`, `mx16d.antispameurope.com` |
 | `dnsv.jp` | 8 | 1 | `mailforward.dnsv.jp` |
 | `fsi.ne.jp` | 8 | 1 | `sagw.fsi.ne.jp` |
-| `hetemail.jp` | 8 | 1 | `mx.hetemail.jp` |
 | `ktk-sol.co.jp` | 7 | 1 | `mx.ktk-sol.co.jp` |
 | `aams6.jp` | 6 | 1 | `mx.aams6.jp`, `mx-0.aams6.jp`, `mx-1.aams6.jp` |
+| `ddreams.jp` | 6 | 1 | `mail-swp1.ddreams.jp`, `mail-swp2.ddreams.jp` |
 | `daiwahouse.co.jp` | 5 | 1 | `tokyogw5.daiwahouse.co.jp`, `osakagw5.daiwahouse.co.jp`, `osakagw.daiwahouse.co.jp` |
 | `google.com` | 5 | 1 | `alt3.gmr-smtp-in.l.google.com`, `alt2.gmr-smtp-in.l.google.com`, `alt1.gmr-smtp-in.l.google.com` |
 | `0101.co.jp` | 4 | 1 | `mwbmry11.0101.co.jp`, `mwbmta11.0101.co.jp`, `mwbmta21.0101.co.jp` |
 | `acrodea.co.jp` | 4 | 1 | `mr2.acrodea.co.jp`, `mr1.acrodea.co.jp` |
 | `bit-drive.ne.jp` | 4 | 1 | `vcgws40.bit-drive.ne.jp`, `vcgwp30.bit-drive.ne.jp`, `vcgwp6.bit-drive.ne.jp` |
-| `ddreams.jp` | 4 | 1 | `mail-swp1.ddreams.jp`, `mail-swp2.ddreams.jp` |
 | `denso.co.jp` | 4 | 1 | `ma-dnext03.denso.co.jp`, `ma-dnext02.denso.co.jp`, `ma-dnext00.denso.co.jp` |
 | `enets.ne.jp` | 4 | 1 | `spamcs1.enets.ne.jp` |
 | `index.or.jp` | 4 | 1 | `mskigw22.index.or.jp`, `mskigw21.index.or.jp`, `mskigw23.index.or.jp` |
@@ -90,6 +90,7 @@
 | `sendmail.ne.jp` | 2 | 1 | `acmf03.sendmail.ne.jp`, `acmf04.sendmail.ne.jp` |
 | `smtps.jp` | 2 | 1 | `kitagasdelivery.smtps.jp`, `asanuma.smtps.jp` |
 | `sony.com` | 2 | 1 | `mail2.fw-sd.sony.com`, `mail1.fw-bc.sony.com` |
+| `ssol-ix.jp` | 2 | 1 | `mail2.ssol-ix.jp`, `mail.ssol-ix.jp` |
 | `synapse.ne.jp` | 2 | 1 | `mx.synapse.ne.jp` |
 | `tdk.com` | 2 | 1 | `tdksf1.jp.tdk.com`, `tdksf2.jp.tdk.com` |
 | `tecraft.sakura.ne.jp` | 2 | 1 | `tecraft.sakura.ne.jp` |
@@ -101,9 +102,8 @@
 | `aics.ne.jp` | 1 | 1 | `amxi.aics.ne.jp` |
 | `ambisys.net` | 1 | 1 | `mx.ambisys.net` |
 | `asahi-intecc.com` | 1 | 1 | `mail.asahi-intecc.com` |
-| `atworks.com.cn` | 1 | 1 | `mx1.atworks.com.cn` |
-| `axis-corp.com` | 1 | 1 | `copro-t.sv.axis-corp.com` |
-| `b2b-mail.net` | 1 | 1 | `est-mta.b2b-mail.net` |
+| `asmo-foodservice.sakura.ne.jp` | 1 | 1 | `asmo-foodservice.sakura.ne.jp` |
+| `asmo-trd.sakura.ne.jp` | 1 | 1 | `asmo-trd.sakura.ne.jp` |
 
 ## 調査済み・同定できなかったもの（8 件）
 
