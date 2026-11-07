@@ -965,3 +965,27 @@ def test_CT_の応答からメール用らしい名前のサブドメインを�
     assert r.mail_names == ["m.shop.example.co.jp", "mail2.example.co.jp", "news.example.co.jp"]
     assert mail_name("example.co.jp", "example.co.jp") is None
     assert mail_name("e.example.com", "example.com") == "e.example.com"
+
+
+def test_crtshを使わない母集団は補充を待たない():
+    """グループ会社（per_population で CT を切っている）は P2 の前で 24 分待っていた。"""
+    import subprocess
+    import sys
+
+    import yaml
+
+    from mailauth.paths import repo_root
+
+    wf = yaml.safe_load(
+        (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(encoding="utf-8")
+    )
+    steps = {s.get("name"): s for s in wf["jobs"]["measure"]["steps"]}
+    head = steps["CT の補充が終わるのを待つ"]["run"].split("busy() {")[0]
+    for pop, waits in (("jp-all-listed-group", False), ("jp-all-listed", True)):
+        script = (head.replace("${{ steps.run.outputs.pop }}", pop)
+                  .replace('>> "$GITHUB_STEP_SUMMARY"', "")
+                  .replace("python -", f"{sys.executable} -"))
+        out = subprocess.run(["bash", "-c", script + "\necho WAITS"],
+                             capture_output=True, text=True, cwd=repo_root())
+        assert ("WAITS" in out.stdout) is waits, (pop, out.stdout, out.stderr)
+        assert ("待たない" in out.stdout) is not waits
