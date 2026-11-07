@@ -1450,3 +1450,19 @@ def test_根拠_x_証拠の段階をドメインで数える():
     assert got["web_link"]["receiving"] == 1
     assert sum(sum(v.values()) for v in got.values()) == 2
     assert ownership_evidence([_row(domain_id="d:9")]) is None
+
+
+def test_見つけたサブドメインと_DMARC_で守られる数():
+    from mailauth.p7_aggregate.runner import subdomain_coverage
+
+    p3 = [
+        {"domain_id": "a1", "entity_id": "jp:1", "domain": "example.co.jp", "is_apex": True},
+        {"domain_id": "s1", "entity_id": "jp:1", "domain": "www.example.co.jp", "is_apex": False},
+        {"domain_id": "s2", "entity_id": "jp:1", "domain": "mail.example.co.jp", "is_apex": False},
+        {"domain_id": "a2", "entity_id": "jp:1", "domain": "brand.jp", "is_apex": True},
+        {"domain_id": "s3", "entity_id": "jp:1", "domain": "shop.brand.jp", "is_apex": False},
+        # 母集団の外
+        {"domain_id": "s9", "entity_id": "us:9", "domain": "www.other.com", "is_apex": False},
+    ]
+    facts = [{"domain_id": "a1", "dmarc_present": True}, {"domain_id": "a2", "dmarc_present": False}]
+    assert subdomain_coverage(p3, facts, {"jp:1"}) == (3, 2)

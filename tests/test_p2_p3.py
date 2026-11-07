@@ -11,7 +11,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from mailauth.contracts import ENTITY_ARROW_SCHEMA, Confidence, DomainRole, MeasureTier
-from mailauth.ctlog import StaticCtSource, _extract
+from mailauth.ctlog import CtResult, StaticCtSource, _extract
 from mailauth.io import read_parquet
 from mailauth.p1_population import run as run_p1
 from mailauth.p2_candidates import MissingInputError as P2MissingInput
@@ -1925,3 +1925,31 @@ def test_p2_前の公式サイトも候補にする(seeded_run):
     c = candidates()
     hit = c[(c["domain"] == "old-brand.com") & (c["entity_id"] == "jp:1234567890123")]
     assert set(hit["discovery_method"]) == {"official_alt"}
+
+
+def test_p2_は起点のある会社にも組織名検索のキャッシュを使う(seeded_run):
+    """公式サイトの配下を引くドメイン検索では、別の登録ドメインは出てこない。
+    起点のある会社にも、補充が埋めた組織名検索のキャッシュだけを使う（2026-11-07）。
+    """
+    import pandas as pd
+
+    entities = pd.read_parquet(phase_output(RUN, "p1_population", "entities.parquet"))
+    seeded = [r for _, r in entities.iterrows() if str(r["entity_id"]) in SEED_DOMAINS]
+    target = seeded[0]
+    name = str(target["name_en"] or target["name"])
+
+    class Cached(StaticCtSource):
+        def cached_org(self, n):
+            if n == name:
+                return CtResult(domain=f"org={n}", found=["group-brand.co.jp"], from_cache=True)
+            return None
+
+    ct = Cached(dict(CT.mapping))
+    out = run_p2(run_id=RUN, resolver=StaticResolver(ANSWERS), ct_source=ct)
+    df = candidates()
+    rows = df[(df["entity_id"] == str(target["entity_id"]))
+              & (df["discovery_method"] == "ct_org")]
+    assert list(rows["domain"]) == ["group-brand.co.jp"]
+    # 起点のある会社は**取りにいっていない**（キャッシュだけ）
+    assert name not in ct.org_calls
+    assert out["breakdown"]["ct_org"]["seeded_cached"] == 1

@@ -224,6 +224,8 @@ Parquet は月ごとに保管しています。同じ数字を二重に持つと
 | `evidence_none_entities` | どの主ドメインにも受け取れる MX が無い |
 | `mail_off_site_entities` | 公式サイトのドメインには受け取れる MX が無いが、同じ会社の別の主ドメインにはある |
 | `ownership_evidence_dist` | 主ドメインごとの、会社と対応づけた根拠（`company_stated` `certificate` `own_dns` `web_link` `other`）× メールに使っている証拠の段階（`signed` `sending` `receiving` `none`）のドメイン数（JSON） |
+| `subdomains_found` | 見つけたサブドメインの数（証明書の記録・よく使われる名前など。測ったかによらない。ウェブ用の名前を含む） |
+| `subdomains_found_dmarc` | そのうち、登録ドメインに DMARC があるもの（継承で守られる）。サブドメインまで数える公開調査と比べるための数 |
 | `bulk_spf_ok_domains` | 送信しているドメイン（`sending_domains`）のうち、SPF があり評価がエラーにならない（`v=spf1` が1つ、`include` の先まで数えて上限 10 以内） |
 | `bulk_dkim_domains` | 同じく、DKIM の鍵が見つかった（試したセレクタの範囲） |
 | `bulk_dmarc_ok_domains` | 同じく、DMARC があり、レコードが有効（`p=none` を含む） |

@@ -39,6 +39,7 @@ from ..ctlog import (
     CtResult,
     CtSource,
     DisabledCtSource,
+    write_org_pending,
     write_pending,
 )
 from ..exclusions import ExclusionRegistry, require_available
@@ -744,6 +745,9 @@ def run(
                 ),
             )
         org_max = int(org_cfg.get("max_per_entity", 20))
+        #: 起点のある会社にも組織名検索の結果（キャッシュだけ）を使う
+        org_all = bool(org_cfg.get("all_entities", False))
+        org_pending_names: list[str] = []
         org_dns_seeds = int(org_cfg.get("dns_seeds_per_entity", 3))
         ct_org_stats: dict[str, int] = {
             "searched": 0,
@@ -753,6 +757,9 @@ def run(
             "domains": 0,
             "nothing_found": 0,
             "no_name": 0,
+            # 起点のある会社のうち、組織名検索のキャッシュがあった会社と、足したドメイン
+            "seeded_cached": 0,
+            "seeded_domains": 0,
         }
 
         def _seed(i: int) -> str | None:
@@ -857,6 +864,23 @@ def run(
                         ct_org_stats["domains"] += len(found.found[:org_max])
                     else:
                         ct_org_stats["nothing_found"] += 1
+
+            # **起点のある会社も、組織名で別の登録ドメインを探す。** 公式サイトの
+            # 配下を引くドメイン検索では、`hitachi-hightech.com` のような別の
+            # 登録ドメインは出てこない（2026-11-07：日経225 の大企業でも主ドメインが
+            # 1〜4 しか無かった）。P2 では取りにいかず、補充が埋めたキャッシュだけ使う
+            if official and org_enabled and org_all and hasattr(ct_source, "cached_org"):
+                name = _org_name(idx)
+                if name:
+                    cached = ct_source.cached_org(name)
+                    if cached is None:
+                        org_pending_names.append(name)
+                    else:
+                        ct_org_stats["seeded_cached"] += 1
+                        added = [d for d in cached.found[:org_max] if d != official]
+                        for domain in added:
+                            collector.add(domain, DiscoveryMethod.CT_ORG, f"crt.sh O={name}")
+                        ct_org_stats["seeded_domains"] += len(added)
 
             if discovery.get("official_url") and official:
                 collector.add(official, DiscoveryMethod.OFFICIAL_URL, "P1 official_url")
@@ -1272,6 +1296,12 @@ def run(
             all_seeds = list(dict.fromkeys(d for d in (_seed(i) for i in order) if d))
             pending = [d for d in all_seeds if d not in ct_ready or ct_ready[d].error]
             population = _population_of(active)
+            if org_all and org_pending_names:
+                org_path = write_org_pending(
+                    Path(ct_cache_dir), run_id, population, org_pending_names
+                )
+                ct_org_stats["seeded_pending"] = len(set(org_pending_names))
+                ct_org_stats["org_pending_path"] = str(org_path)
             path = write_pending(
                 Path(ct_cache_dir),
                 run_id,

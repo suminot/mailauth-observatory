@@ -33,7 +33,7 @@ from ..contracts import (
 )
 from ..io import read_parquet, write_parquet
 from ..manifest import RunManifest
-from ..normalize import normalize_securities_code
+from ..normalize import etld_plus_one, normalize_securities_code
 from ..p1_population.index_members import load_derived
 from ..p3_domains.runner import domain_id as p3_domain_id
 from ..paths import gold_dir, gold_root, month_date, phase_dir, phase_output, previous_run_id
@@ -264,6 +264,33 @@ def _text(value: Any) -> str | None:
     return str(value)
 
 
+def subdomain_coverage(
+    p3_rows: list[dict], facts: list[dict], members: set[str]
+) -> tuple[int, int]:
+    """見つけたサブドメインの数と、そのうち登録ドメインに DMARC があるものの数。
+
+    **公開調査（TwoFive など）と比べるための数。** あちらはサブドメインまで
+    数え、組織ドメインの DMARC を継承するので適用済みとみなしている。こちらの
+    率の分母は主ドメインで閉じている（BACKLOG 14）ので、別に出す。
+    """
+    by_id = {str(f.get("domain_id")): f for f in facts}
+    apex_dmarc: dict[tuple[str, str], bool] = {}
+    for r in p3_rows:
+        if r.get("is_apex") is False or str(r.get("entity_id")) not in members:
+            continue
+        f = by_id.get(str(r.get("domain_id"))) or {}
+        apex_dmarc[(str(r.get("entity_id")), str(r.get("domain")))] = bool(f.get("dmarc_present"))
+    found = covered = 0
+    for r in p3_rows:
+        if r.get("is_apex") is not False or str(r.get("entity_id")) not in members:
+            continue
+        found += 1
+        apex = etld_plus_one(str(r.get("domain") or ""))
+        if apex and apex_dmarc.get((str(r.get("entity_id")), apex)):
+            covered += 1
+    return found, covered
+
+
 def ownership_by_domain(domains: list[dict]) -> dict[str, str]:
     """P3 の domains から domain_id -> 対応づけの根拠の区分。
 
@@ -396,9 +423,8 @@ def run(
             )
 
         parks = park_classes(inferences)
-        owners = ownership_by_domain(
-            _rows(read_parquet(phase_output(run_id, "p3_domains", "domains.parquet")))
-        )
+        p3_rows = _rows(read_parquet(phase_output(run_id, "p3_domains", "domains.parquet")))
+        owners = ownership_by_domain(p3_rows)
         rows: list[DomainRow] = []
         orphan_entity_ids: set[str] = set()
         for fact in facts:
@@ -487,6 +513,10 @@ def run(
             )
 
             stats.excluded_non_operating = excluded_count.get(population_id, 0)
+            if p3_rows:
+                found, covered = subdomain_coverage(p3_rows, facts, members)
+                stats.subdomains_found = found
+                stats.subdomains_found_dmarc = covered
 
             d = delta_mod.compute(
                 [f for f in facts if str(f.get("entity_id")) in members],

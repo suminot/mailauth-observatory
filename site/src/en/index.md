@@ -557,6 +557,8 @@ const pairRows = PAIR.map((p) => latest.find((d) => d.population_id === p)).filt
 const share = (n, d) => (n == null || !d ? "—" : pct(rate(n, d)));
 const PAIR_ROWS = [
   ["companies measured / population", (d) => `${num(d.entities_with_domains)} / ${num(d.total_entities)}`],
+  ["main domains (observed)", (d) => num(d.observed_domains)],
+  ["subdomains found (share whose registrable domain has DMARC)", (d) => d.subdomains_found == null ? "—" : `${num(d.subdomains_found)} (${share(d.subdomains_found_dmarc, d.subdomains_found)})`],
   ["publishes DMARC (domains)", (d) => share(d.dmarc_adopted_domains, d.observed_domains)],
   ["DMARC enforcing (quarantine, reject; domains)", (d) => share(d.dmarc_enforced_domains, d.observed_domains)],
   ["companies with MX, SPF and DKIM in place", (d) => share(d.evidence_signed_entities, d.entities_with_domains)],
@@ -587,6 +589,10 @@ display(
 - The number of domains per company also differs, so shares counted by domain
   do not match shares counted by company
 - The share with removed DMARC tags uses domains publishing DMARC as the denominator
+- "Subdomains found" counts subdomains found through certificate logs, common
+  names and the like (web host names included). Rates use main domains as the
+  denominator, so subdomains are counted separately. Use this when comparing with
+  published studies that count subdomains
 - The Nikkei 225 column is a subset of Japan-listed (see Methodology for where the
   constituents list comes from). The copyright of the Nikkei Stock Average belongs
   to Nikkei Inc.

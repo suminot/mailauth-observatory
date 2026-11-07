@@ -883,3 +883,34 @@ def test_月次計測はその月の積み残し全部を見て補充を頼む()
     run = steps["CT の補充を頼む"]["run"]
     assert "_pending/*.json" in run
     assert "steps.run.outputs.pop }}.json" not in run
+
+
+def test_組織名の積み残しを_crtsh_で引いてキャッシュに入れる(tmp_path):
+    """起点のある会社の組織名検索は、P2 では取りにいかず補充が埋める（2026-11-07）。"""
+    from mailauth.ctlog import org_pending_path, write_org_pending
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        name = request.url.params["O"]
+        return httpx.Response(200, json=[
+            {"name_value": name, "common_name": "www.brand-x.co.jp"},
+            # あいまい一致で返る別会社は採らない
+            {"name_value": name + " Credit", "common_name": "www.other.example"},
+        ])
+
+    crtsh = CrtShClient(cache_dir=tmp_path, month=MONTH, qps=0, retries=0,
+                        client=httpx.Client(transport=httpx.MockTransport(handler)))
+    write_org_pending(tmp_path, MONTH, "jp-all-listed", ["Hitachi, Ltd.", "Kao Corporation"])
+    report = backfill(tmp_path, MONTH, crtsh=crtsh, certspotter=None)
+    assert report.crtsh_org == {"tried": 2, "got": 2, "pending_after": 0}
+    assert crtsh.cached_org("Hitachi, Ltd.").found == ["brand-x.co.jp"]
+    assert read_pending(org_pending_path(tmp_path, MONTH, "jp-all-listed"))["pending"] == []
+    assert "crtsh_org" in report.to_dict()
+
+
+def test_組織名のキャッシュが無ければ取りにいかない(tmp_path):
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+        raise AssertionError("取りにいった")
+
+    crtsh = CrtShClient(cache_dir=tmp_path, month=MONTH, qps=0, retries=0,
+                        client=httpx.Client(transport=httpx.MockTransport(handler)))
+    assert crtsh.cached_org("Nobody Inc.") is None

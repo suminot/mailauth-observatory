@@ -112,12 +112,14 @@ jobs:
             --certspotter-requests "${{ github.event.inputs.certspotter_requests || '9' }}" \
             > /tmp/backfill.json
           cat /tmp/backfill.json
-          got=$(jq '[.crtsh.got // 0, .certspotter.got // 0] | add' /tmp/backfill.json)
+          # **組織名検索で取れた分も数える。** 数えないと、組織名だけ取れた回で
+          # キャッシュを保存しない（下の「保存」は got が 0 だと動かない）
+          got=$(jq '[.crtsh.got // 0, .certspotter.got // 0, .crtsh_org.got // 0] | add' /tmp/backfill.json)
           echo "got=$got" >> "$GITHUB_OUTPUT"
           echo "ready=$(jq -r '.ready_for_rerun | join(" ")' /tmp/backfill.json)" >> "$GITHUB_OUTPUT"
-          echo "pending=$(jq '[.populations[].pending_after // 0] | add // 0' /tmp/backfill.json)" >> "$GITHUB_OUTPUT"
-          # crt.sh から実際に取れて、落ちているとも判定されなかったか
-          echo "crtsh_ok=$(jq -r '((.crtsh.got // 0) > 0) and (.crtsh.upstream_down == null)' /tmp/backfill.json)" >> "$GITHUB_OUTPUT"
+          echo "pending=$(jq '([.populations[].pending_after // 0] | add // 0) + (.crtsh_org.pending_after // 0)' /tmp/backfill.json)" >> "$GITHUB_OUTPUT"
+          # crt.sh から実際に取れて、落ちているとも判定されなかったか（組織名検索も含む）
+          echo "crtsh_ok=$(jq -r '(((.crtsh.got // 0) + (.crtsh_org.got // 0)) > 0) and (.crtsh.upstream_down == null)' /tmp/backfill.json)" >> "$GITHUB_OUTPUT"
           {
             echo "### CT の補充 ${{ steps.run.outputs.id }}"
             echo
