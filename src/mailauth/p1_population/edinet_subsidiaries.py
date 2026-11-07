@@ -23,7 +23,7 @@ from pathlib import Path
 from .edinet_koukoku import EdinetKoukoku, document_text
 
 SUBS_CSV = "configs/domains/subsidiaries.csv"
-SUBS_FIELDS = ("edinet_code", "doc_id", "subsidiary", "scanned_on", "parser")
+SUBS_FIELDS = ("edinet_code", "doc_id", "subsidiary", "scanned_on", "parser", "prefecture")
 SUBS_CACHE_VERSION = 2
 
 #: 節の終わり（次の節の見出し）
@@ -34,7 +34,7 @@ _WINDOW = 40_000
 MAX_PER_COMPANY = 300
 #: 名前の読み方を変えたら上げる。**上がったら、読んだ有報も読み直す**（節の本文は
 #: キャッシュにあるので、取り直しは要らない）
-SUBS_PARSER_VERSION = 3
+SUBS_PARSER_VERSION = 4
 
 _LEGAL = "株式会社|有限会社|合同会社"
 _NAME = re.compile(
@@ -128,6 +128,65 @@ def names_from_section(section: str, own_name: str | None = None) -> list[str]:
     return out
 
 
+PREFECTURES = (
+    "北海道", "青森県", "岩手県", "宮城県", "秋田県", "山形県", "福島県", "茨城県", "栃木県",
+    "群馬県", "埼玉県", "千葉県", "東京都", "神奈川県", "新潟県", "富山県", "石川県", "福井県",
+    "山梨県", "長野県", "岐阜県", "静岡県", "愛知県", "三重県", "滋賀県", "京都府", "大阪府",
+    "兵庫県", "奈良県", "和歌山県", "鳥取県", "島根県", "岡山県", "広島県", "山口県", "徳島県",
+    "香川県", "愛媛県", "高知県", "福岡県", "佐賀県", "長崎県", "熊本県", "大分県", "宮崎県",
+    "鹿児島県", "沖縄県",
+)
+#: 都道府県を書かずに市から書く表がある（「大阪市」「横浜市」）。政令指定都市だけ
+_CITY_PREFECTURE = {
+    "札幌市": "北海道", "仙台市": "宮城県", "さいたま市": "埼玉県", "千葉市": "千葉県",
+    "横浜市": "神奈川県", "川崎市": "神奈川県", "相模原市": "神奈川県", "新潟市": "新潟県",
+    "静岡市": "静岡県", "浜松市": "静岡県", "名古屋市": "愛知県", "京都市": "京都府",
+    "大阪市": "大阪府", "堺市": "大阪府", "神戸市": "兵庫県", "岡山市": "岡山県",
+    "広島市": "広島県", "北九州市": "福岡県", "福岡市": "福岡県", "熊本市": "熊本県",
+}
+_SHORT_PREF = {p[:-1]: p for p in PREFECTURES if p.endswith(("都", "府", "県"))} | {
+    "北海道": "北海道"}
+
+
+def prefecture_of(token: str) -> str | None:
+    """住所の欄の先頭から都道府県。書いていなければ政令指定都市から。無ければ None。"""
+    t = token.strip()
+    for p in PREFECTURES:
+        if t.startswith(p):
+            return p
+    for city, p in _CITY_PREFECTURE.items():
+        if t.startswith(city):
+            return p
+    # 「東京」「大阪」だけのこともある（都府県を省いた表）
+    for short, p in _SHORT_PREF.items():
+        if len(short) >= 2 and t.startswith(short) and not t.startswith(short + "市"):
+            return p
+    return None
+
+
+def places_from_section(section: str, names: list[str]) -> dict[str, str]:
+    """子会社名ごとに、表の次の欄（住所）の都道府県。同じ商号の法人を見分けるのに使う。"""
+    body = unicodedata.normalize("NFKC", section)
+    out: dict[str, str] = {}
+    for name in names:
+        i = body.find(name)
+        if i < 0:
+            continue
+        rest = body[i + len(name) : i + len(name) + 60]
+        # 注記の記号（※1・(注)2）は飛ばす
+        rest = re.sub(r"^\s*(?:[※*＊]\d*|\(注\)\d*|\d\))?\s*", "", rest)
+        pref = prefecture_of(rest)
+        if pref:
+            out[name] = pref
+    return out
+
+
+def section_places(reader: EdinetKoukoku, doc_id: str, names: list[str]) -> dict[str, str]:
+    """キャッシュにある節の本文から、子会社名ごとの都道府県。"""
+    section = cached_section(reader, doc_id)
+    return places_from_section(section, names) if section else {}
+
+
 def subsidiary_names(text: str, own_name: str | None = None) -> list[str]:
     """「関係会社の状況」の節の子会社の区分に出てくる国内の法人格付きの名前
     （出てきた順、重複なし）。自社の名前は除く。"""
@@ -197,6 +256,19 @@ def read_csv(path: str | Path) -> dict[str, tuple[str, list[str], str]]:
     return out
 
 
+def read_places(path: str | Path) -> dict[tuple[str, str], str]:
+    """(EDINET コード, 子会社名) → 都道府県（表の住所の欄から）。"""
+    p = Path(path)
+    if not p.exists():
+        return {}
+    with p.open(encoding="utf-8", newline="") as f:
+        return {
+            (row["edinet_code"], row["subsidiary"]): row["prefecture"]
+            for row in csv.DictReader(f)
+            if row.get("subsidiary") and row.get("prefecture")
+        }
+
+
 def csv_parser_version(path: str | Path) -> int | None:
     """一覧を書いたときの名前の読み方の版。列が無い（古い一覧）・空なら None。"""
     p = Path(path)
@@ -211,8 +283,13 @@ def csv_parser_version(path: str | Path) -> int | None:
     return SUBS_PARSER_VERSION
 
 
-def write_csv(path: str | Path, data: dict[str, tuple[str, list[str], str]]) -> None:
+def write_csv(
+    path: str | Path,
+    data: dict[str, tuple[str, list[str], str]],
+    places: dict[tuple[str, str], str] | None = None,
+) -> None:
     """**子会社の無い会社も1行残す**（読んだが無かった、を覚えておく）。"""
+    places = places or {}
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     with p.open("w", encoding="utf-8", newline="") as f:
@@ -221,7 +298,8 @@ def write_csv(path: str | Path, data: dict[str, tuple[str, list[str], str]]) -> 
         for code in sorted(data):
             doc, names, on = data[code]
             for name in names or [""]:
-                w.writerow([code, doc, name, on, SUBS_PARSER_VERSION])
+                w.writerow([code, doc, name, on, SUBS_PARSER_VERSION,
+                            places.get((code, name), "")])
 
 
 def scan(
@@ -231,6 +309,7 @@ def scan(
     *,
     max_docs: int,
     parsed_with: int | None = SUBS_PARSER_VERSION,
+    places: dict[tuple[str, str], str] | None = None,
 ) -> tuple[dict[str, tuple[str, list[str], str]], dict[str, int]]:
     """全社の最新の有報から子会社名を読む。**新しい有報が出た会社だけ読み直す。**
 
@@ -266,5 +345,8 @@ def scan(
         if got:
             stats["with_subsidiaries"] += 1
             stats["subsidiaries"] += len(got)
+            if places is not None:
+                for name, pref in section_places(reader, doc_id, got).items():
+                    places[(code, name)] = pref
         out[code] = (doc_id, got, reader.today.isoformat())
     return out, stats

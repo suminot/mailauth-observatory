@@ -1239,6 +1239,7 @@ def group_domains_cmd(
         grp.read_csv(grp.GROUP_CSV),
         max_lookups=max_lookups,
         queried_with=grp.csv_query_version(grp.GROUP_CSV),
+        places=subs.read_places(subs.SUBS_CSV),
     )
     grp.write_csv(grp.GROUP_CSV, data)
     typer.echo(_json.dumps(stats, ensure_ascii=False))
@@ -1302,11 +1303,15 @@ def koukoku_scan_cmd(
             for _, r in frame.iterrows()
             if isinstance(r.get("edinet_code"), str) and r.get("edinet_code")
         ]
+        places = subs.read_places(subs.SUBS_CSV)
         sub_data, sub_stats = subs.scan(
             reader, pairs, subs.read_csv(subs.SUBS_CSV), max_docs=subsidiaries_max,
-            parsed_with=subs.csv_parser_version(subs.SUBS_CSV),
+            parsed_with=subs.csv_parser_version(subs.SUBS_CSV), places=places,
         )
-        subs.write_csv(subs.SUBS_CSV, sub_data)
+        subs.write_csv(subs.SUBS_CSV, sub_data, places)
+        sub_stats["with_prefecture"] = sum(
+            1 for code, (_d, names, _o) in sub_data.items() for n in names if (code, n) in places
+        )
         stats["subsidiaries"] = sub_stats
     typer.echo(_json.dumps(stats, ensure_ascii=False))
 

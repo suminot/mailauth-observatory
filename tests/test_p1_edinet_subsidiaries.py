@@ -107,3 +107,25 @@ def test_住所と助詞と決算日の地の文を切り離す():
     assert subsidiary_names(text) == [
         "三菱UFJ信託銀行株式会社", "株式会社日本カストディ銀行", "株式会社アスコット",
     ]
+
+
+def test_表の住所の欄から都道府県を読む():
+    from mailauth.p1_population.edinet_subsidiaries import places_from_section, prefecture_of
+
+    names = subsidiary_names(TEXT)
+    assert places_from_section(TEXT, names) == {
+        "株式会社甲乙丙ロジスティクス": "東京都", "甲乙丙テクノ株式会社": "大阪府",
+    }
+    assert prefecture_of("横浜市西区") == "神奈川県"
+    assert prefecture_of("東京都港区") == "東京都"
+    assert prefecture_of("米国") is None
+
+
+def test_一覧に都道府県の列を書いて読める(tmp_path):
+    from mailauth.p1_population.edinet_subsidiaries import read_places
+
+    path = tmp_path / "subs.csv"
+    data = {"E1": ("S1", ["株式会社A工業", "B商事株式会社"], "2026-11-08")}
+    write_csv(path, data, {("E1", "株式会社A工業"): "愛知県"})
+    assert read_csv(path) == data
+    assert read_places(path) == {("E1", "株式会社A工業"): "愛知県"}
