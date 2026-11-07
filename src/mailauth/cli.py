@@ -174,6 +174,10 @@ def ct_backfill_cmd(
     config: Annotated[
         str, typer.Option("--config", help="候補生成のパラメータ（crt.sh の qps など）")
     ] = "configs/candidates.yaml",
+    org_only: Annotated[
+        bool,
+        typer.Option("--org-only", help="組織名の積み残しだけを引く（月次計測の最中に使う）"),
+    ] = False,
 ) -> None:
     """P2 の CT の積み残しを、月のあいだに少しずつ取り直す（BACKLOG 12）。
 
@@ -244,8 +248,9 @@ def ct_backfill_cmd(
         cache_dir,
         run_id,
         crtsh=crtsh,
-        certspotter=certspotter,
+        certspotter=None if org_only else certspotter,
         deadline=time.monotonic() + max_minutes * 60,
+        org_only=org_only,
     )
     typer.echo(json.dumps(report.to_dict(), ensure_ascii=False, indent=1))
 

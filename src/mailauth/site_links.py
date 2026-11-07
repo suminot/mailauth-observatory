@@ -77,7 +77,16 @@ def _known_tld(host: str) -> bool:
 #: 公式サイトのドメインに MX が無いとき、同じ名前で引いてみる TLD（国ごと）
 SIBLING_TLDS = {"JP": ("co.jp", "com", "jp"), "US": ("com", "net", "co")}
 #: `global.canon` のようなブランド TLD の前に付く、名前でないラベル
-_GENERIC_LABELS = frozenset({"global", "corp", "group", "www", "jp", "japan", "en"})
+_GENERIC_LABELS = frozenset(
+    {"global", "corp", "corporate", "group", "www", "jp", "japan", "en", "holdings"}
+)
+#: 持株会社・IR 向けのドメインに付く接尾辞。外した名前でメールを受けていることがある
+#: （2026-11-07 の日経225：nitorihd.co.jp → nitori.co.jp、smcworld.com → smc.jp、
+#: daiwa-grp.jp → daiwa.co.jp、nissan-global.com → nissan.co.jp）
+_HOLDING_SUFFIXES = (
+    "-holdings", "holdings", "-hd", "hd", "-grp", "grp", "-group", "group",
+    "-global", "global", "world", "-fg", "fg",
+)
 
 
 def sibling_candidates(official: str, country: str) -> list[str]:
@@ -95,8 +104,19 @@ def sibling_candidates(official: str, country: str) -> list[str]:
     label, suffix = reg.split(".", 1)
     if label in _GENERIC_LABELS and "." not in suffix:
         label = suffix
+    labels = [label] + [
+        label[: -len(s)].rstrip("-")
+        for s in _HOLDING_SUFFIXES
+        if label.endswith(s) and len(label) - len(s) >= 3
+    ]
     tlds = SIBLING_TLDS.get(country, ())
-    return [c for c in (f"{label}.{t}" for t in tlds) if c != reg]
+    out: list[str] = []
+    for name in dict.fromkeys(labels):
+        for t in tlds:
+            cand = f"{name}.{t}"
+            if cand != reg and cand not in out:
+                out.append(cand)
+    return out
 
 
 def link_domains(page: str, own: str) -> list[str]:
@@ -312,9 +332,20 @@ class SiteLinkSource:
             if not self.has_mx(domain):
                 return "no_mx"
             page = self._top(domain)
-            if page is None or not names_company(page, company, domain):
+            if page is None:
                 return "not_same"
-            return "found"
+            if names_company(page, company, domain):
+                return "found"
+            # **同じ名前の別の TLD は、相手のページが公式サイトを指していれば採る**
+            # （リンク・正規 URL・転送先）。名前が同じで公式サイトを指す別会社は
+            # まず無い。2026-11-07：epson.jp・softbank.co.jp・panasonic.jp がこれ。
+            # 名前が似ただけの別会社（daiwa-grp.co.jp＝台和、sharp.com＝病院）は
+            # 公式サイトを指さないので落ちる
+            if (company.official, domain) in sibling_tasks:
+                own = etld_plus_one(company.official)
+                if own and own in link_domains(page, domain):
+                    return "found"
+            return "not_same"
 
         out: dict[str, list[str]] = {}
         for (company, domain), kind in zip(

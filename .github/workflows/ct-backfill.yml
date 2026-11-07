@@ -77,24 +77,44 @@ jobs:
             sleep 30
           done
           echo "monthly_running=$n" >> "$GITHUB_OUTPUT"
+          # **月次計測の最中でも、P2（CT のキャッシュを書く工程）にいなければ、
+          # 組織名の積み残しだけを引く**（2026-11-07）。計測を続けて回すと、
+          # 止まっている間だけでは組織名の逆引きのキャッシュが埋まらない。
+          # ドメインの積み残しと流し直しには触らない
+          in_p2=0
           if [ "$n" != "0" ]; then
-            echo "月次計測が $n 本走っている。今回は補充しない" >> "$GITHUB_STEP_SUMMARY"
+            for id in $(gh run list --repo "$GITHUB_REPOSITORY" --workflow monthly.yml \
+                          --json databaseId,status --jq '.[] | select(.status == "in_progress") | .databaseId'); do
+              step=$(gh run view "$id" --repo "$GITHUB_REPOSITORY" --json jobs \
+                       --jq '[.jobs[].steps[] | select(.status == "in_progress") | .name] | join(",")')
+              case "$step" in *P2*|*CT*) in_p2=1 ;; esac
+            done
+          fi
+          if [ "$n" = "0" ]; then mode=full
+          elif [ "$in_p2" = "0" ]; then mode=org
+          else mode=skip
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          if [ "$mode" = "skip" ]; then
+            echo "月次計測が P2 にいる。今回は補充しない" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$mode" = "org" ]; then
+            echo "月次計測が $n 本走っている。組織名の積み残しだけを引く" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - uses: actions/setup-python@v5
-        if: steps.busy.outputs.monthly_running == '0'
+        if: steps.busy.outputs.mode != 'skip'
         with:
           python-version: "3.11"
           cache: pip
 
       - name: 依存関係のインストール
-        if: steps.busy.outputs.monthly_running == '0'
+        if: steps.busy.outputs.mode != 'skip'
         run: |
           python -m pip install --upgrade pip
           pip install -e .
 
       - name: CT ログのキャッシュを復元
-        if: steps.busy.outputs.monthly_running == '0'
+        if: steps.busy.outputs.mode != 'skip'
         id: ct_cache
         uses: actions/cache/restore@v4
         with:
@@ -104,10 +124,12 @@ jobs:
             crtsh-${{ steps.run.outputs.id }}-
 
       - name: 補充
-        if: steps.busy.outputs.monthly_running == '0'
+        if: steps.busy.outputs.mode != 'skip'
         id: fill
         run: |
-          mailauth ct-backfill --run "${{ steps.run.outputs.id }}" \
+          ORG_ONLY=""
+          if [ "${{ steps.busy.outputs.mode }}" = "org" ]; then ORG_ONLY="--org-only"; fi
+          mailauth ct-backfill --run "${{ steps.run.outputs.id }}" $ORG_ONLY \
             --max-minutes 45 \
             --certspotter-requests "${{ github.event.inputs.certspotter_requests || '9' }}" \
             > /tmp/backfill.json

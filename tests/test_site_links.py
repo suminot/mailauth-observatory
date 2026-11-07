@@ -246,3 +246,32 @@ def test_co_jp_は本文に社名があれば認め_それ以外はタイトル�
     assert names_company(page, company, "example.co.jp")
     assert not names_company(page, company, "example.com")
     assert not names_company(page, company, "example.jp")
+
+
+def test_持株会社の接尾辞を外した名前も候補にする():
+    from mailauth.site_links import sibling_candidates
+
+    assert sibling_candidates("nitorihd.co.jp", "JP") == [
+        "nitorihd.com", "nitorihd.jp", "nitori.co.jp", "nitori.com", "nitori.jp",
+    ]
+    assert "daiwa.co.jp" in sibling_candidates("daiwa-grp.jp", "JP")
+    assert "smc.jp" in sibling_candidates("smcworld.com", "JP")
+    assert "epson.co.jp" in sibling_candidates("corporate.epson", "JP")
+    # 短すぎる名前にはしない
+    assert "ab.co.jp" not in sibling_candidates("abhd.co.jp", "JP")
+
+
+def test_同じ名前の別の_TLD_は公式サイトを指していれば採り_似ただけの別会社は採らない():
+    web = Web(
+        {
+            "https://www.corporate.epson/": _page("セイコーエプソン株式会社"),
+            # 商号は無いが、公式サイトへリンクしている
+            "https://www.epson.jp/": _page("エプソン ホームページ", ["https://corporate.epson/ja/"]),
+            # 名前が似ただけの別会社。公式サイトを指さない
+            "https://www.epson.com/": _page("Epson Outdoor LLC", ["https://www.other.example/"]),
+        },
+        mx={"epson.jp", "epson.com"},
+    )
+    src = _src(web)
+    src.discover([SiteCompany("corporate.epson", "セイコーエプソン株式会社", None, "JP")])
+    assert src.siblings == {"corporate.epson": ["epson.jp"]}
