@@ -275,3 +275,13 @@ def test_同じ名前の別の_TLD_は公式サイトを指していれば採り
     src = _src(web)
     src.discover([SiteCompany("corporate.epson", "セイコーエプソン株式会社", None, "JP")])
     assert src.siblings == {"corporate.epson": ["epson.jp"]}
+
+
+def test_米国の持株会社の接尾辞も外す():
+    from mailauth.site_links import sibling_candidates
+
+    assert "dover.com" in sibling_candidates("dovercorporation.com", "US")
+    assert "carnival.com" in sibling_candidates("carnivalcorp.com", "US")
+    assert "calwater.com" in sibling_candidates("calwatergroup.com", "US")
+    assert "cathaygeneral.com" in sibling_candidates("cathaygeneralbancorp.com", "US")
+    assert "generationessentials.com" in sibling_candidates("thegenerationessentials.com", "US")
