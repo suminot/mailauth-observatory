@@ -45,7 +45,8 @@ OUTPUT_FILENAME = "facts.parquet"
 #: 1.3.0（2026-11）：SPF の最後に効く all を redirect の先まで読む
 #: 1.4.0（2026-11）：SPF の先の未登録・TXT の大きさ・Ed25519 だけ・DMARC の廃止タグ
 #: 1.5.0（2026-11）：SPF が通すと書いた IP アドレスの広さ
-PARSER_VERSION = "1.5.0"
+#: 1.6.0（2026-11）：`_domainkey.<ドメイン>` の配下に名前があるか
+PARSER_VERSION = "1.6.0"
 
 #: 返していないドメインを何件まで抱えるか（`ordered.in_input_order`）。
 #: 同時本数より十分大きくしないと、先頭の1件が遅いたびに手が止まる
@@ -340,6 +341,19 @@ def parse_domain(
 
     control = by_purpose.get(QueryPurpose.DKIM_CONTROL, [])
     control_responded = any(r.get("record_present") for r in control)
+
+    # `_domainkey.<ドメイン>` の配下に名前があるか。三値：
+    #   True  = NOERROR（配下に何かある）  False = NXDOMAIN（配下に何も無い）
+    #   None  = 引いていない・引けなかった・何にでも答える DNS
+    out["dkim_domainkey_exists"] = None
+    for record in by_purpose.get(QueryPurpose.DKIM_PARENT, []):
+        if not record.get("observed") or control_responded:
+            continue
+        rcode = str(record.get("rcode") or "")
+        if rcode == "NXDOMAIN":
+            out["dkim_domainkey_exists"] = False
+        elif rcode in ("NOERROR", "NODATA"):
+            out["dkim_domainkey_exists"] = True
 
     wildcard_txt = None
     for record in by_purpose.get(QueryPurpose.DKIM_WILDCARD, []):

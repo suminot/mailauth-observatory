@@ -200,6 +200,7 @@ The main columns used in the tables above.
 | `entities_with_subdomain_mail` | companies found handling mail on a subdomain |
 | `dkim_detected_domains` | found among known selectors |
 | `dkim_not_found_domains` | not found among known selectors. **This is not the same as unset** |
+| `dkim_other_selector_domains` | of those, `_domainkey.<domain>` is not NXDOMAIN, so names exist under it (likely keys under selectors not tried). Some DNS servers answer this wrongly, so treat it as a guide. Empty in months without the column |
 | `mta_sts_domains` | publishes MTA-STS (has the `_mta-sts` TXT) |
 | `mta_sts_enforce_domains` | the policy fetched over HTTPS says `mode: enforce`. Empty for months where it was not fetched |
 | `mta_sts_testing_domains` | the policy says `mode: testing` (failures are reported, delivery is not stopped) |
