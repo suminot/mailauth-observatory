@@ -1216,6 +1216,10 @@ def koukoku_scan_cmd(
     entities: Annotated[Path, typer.Option("--entities", help="P1 の entities.parquet")],
     out: Annotated[Path, typer.Option("--out")] = Path("configs/domains/koukoku_domains.csv"),
     max_docs: Annotated[int, typer.Option("--max-docs", help="1回に読む有報の上限")] = 1200,
+    subsidiaries_max: Annotated[
+        int,
+        typer.Option("--subsidiaries-max", help="子会社名を読む有報の上限（0 で読まない）"),
+    ] = 0,
 ) -> None:
     """全社の最新の有報から、公告掲載方法の自社ドメインを読んで一覧にする（BACKLOG 46）。
 
@@ -1255,6 +1259,21 @@ def koukoku_scan_cmd(
     data, stats = scan(reader, codes, read_scan(out), max_docs=max_docs)
     write_scan(out, data)
     stats["list_failed_days"] = reader.stats.list_failed_days
+    if subsidiaries_max > 0:
+        # **グループ会社の名前を別の一覧に残す**（BACKLOG 52）。上場会社の数字には
+        # 混ぜない。公告の読み取りとはキャッシュを分け、有報ごとに1回だけ読む
+        from .p1_population import edinet_subsidiaries as subs
+
+        pairs = [
+            (str(r["edinet_code"]), str(r["name"]) if isinstance(r.get("name"), str) else None)
+            for _, r in frame.iterrows()
+            if isinstance(r.get("edinet_code"), str) and r.get("edinet_code")
+        ]
+        sub_data, sub_stats = subs.scan(
+            reader, pairs, subs.read_csv(subs.SUBS_CSV), max_docs=subsidiaries_max
+        )
+        subs.write_csv(subs.SUBS_CSV, sub_data)
+        stats["subsidiaries"] = sub_stats
     typer.echo(_json.dumps(stats, ensure_ascii=False))
 
 

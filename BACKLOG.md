@@ -2851,6 +2851,9 @@ disney.com / thewaltdisneycompany.com）。
   引ける。ただし**上場会社そのもののドメインと混ぜると率の意味が変わる**
   （子会社のメールは親会社が管理していないことがある）。混ぜるか、別の母集団
   （`jp-all-listed-group`）として別に数えるかは運営者が決める
+- **一歩目（2026-11-07）**：`koukoku-scan --subsidiaries-max` が有報の「関係会社の状況」から
+  国内の法人格付きの子会社名を読み、`configs/domains/subsidiaries.csv` に置く。まだ候補には
+  使わない（次は名前 → `.co.jp` の推測と商号の確かめ → 別の母集団）
 
 ## 7. 規模に対する前提
 

@@ -20,6 +20,10 @@ on:
         description: 1回に読む有報の上限
         required: false
         default: "1200"
+      subsidiaries_max:
+        description: 子会社名を読む有報の上限（グループ会社、BACKLOG 52）
+        required: false
+        default: "600"
 
 permissions:
   contents: write
@@ -74,7 +78,8 @@ jobs:
       - name: 有報を読む
         run: |
           mailauth koukoku-scan --entities silver/p1_population/entities.parquet \
-            --max-docs "${{ inputs.max_docs || '1200' }}" | tee -a "$GITHUB_STEP_SUMMARY"
+            --max-docs "${{ inputs.max_docs || '1200' }}" \
+            --subsidiaries-max "${{ inputs.subsidiaries_max || '600' }}" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: 読んだ有報のキャッシュを残す
         if: always()
@@ -85,15 +90,17 @@ jobs:
 
       - name: 一覧をコミットする
         run: |
-          if git diff --quiet -- configs/domains/koukoku_domains.csv \
-             && git ls-files --error-unmatch configs/domains/koukoku_domains.csv >/dev/null 2>&1; then
+          if git diff --quiet -- configs/domains/koukoku_domains.csv configs/domains/subsidiaries.csv \
+             && git ls-files --error-unmatch configs/domains/koukoku_domains.csv >/dev/null 2>&1 \
+             && git ls-files --error-unmatch configs/domains/subsidiaries.csv >/dev/null 2>&1; then
             echo "変化なし" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add configs/domains/koukoku_domains.csv
-          git commit -m "有報の公告ドメインを更新"
+          [ -f configs/domains/subsidiaries.csv ] && git add configs/domains/subsidiaries.csv
+          git commit -m "有報の公告ドメイン・子会社名を更新"
           for i in 1 2 3 4; do
             git pull --rebase origin main && git push origin HEAD:main && exit 0
             sleep $((i * 5))
