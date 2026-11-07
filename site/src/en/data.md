@@ -242,7 +242,7 @@ The main columns used in the tables above.
 | `maturity_stage_dist` | distribution across maturity stages 0–4 (JSON) |
 | `parked_hardened` | Null MX + `-all` + `p=reject` |
 | `parked_neglected` | none of MX, SPF or DMARC |
-| `delta_prev_month` | difference from the previous month (JSON) |
+| `delta_prev_month` | difference from the previous month (JSON). `policy_transitions` counts changes in the effective DMARC policy for the same domains observed in both months (keys like `"none>reject"`); `rua_added` and `rua_removed` count rua being added or removed |
 
 Both company-based and domain-based counts are published. Counted by domain
 alone, companies holding many domains carry more weight.

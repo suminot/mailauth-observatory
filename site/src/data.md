@@ -235,7 +235,7 @@ Parquet は月ごとに保管しています。同じ数字を二重に持つと
 | `maturity_stage_dist` | 成熟度ステージ 0〜4 の分布（JSON） |
 | `parked_hardened` | Null MX + `-all` + `p=reject` |
 | `parked_neglected` | MX / SPF / DMARC のいずれも無い |
-| `delta_prev_month` | 前月との差分（JSON） |
+| `delta_prev_month` | 前月との差分（JSON）。`policy_transitions` は両方の月に観測できた同じドメインの DMARC の実効の方針の移り変わり（`"none>reject"` の形）、`rua_added` `rua_removed` は rua を足した・外した数 |
 
 企業数ベースとドメイン数ベースの両方を出しています。ドメイン数だけで見ると、
 ドメインを多く持つ企業の重みが大きくなります。

@@ -2757,8 +2757,7 @@ disney.com / thewaltdisneycompany.com）。
 
 **同種の公開トラッカー・研究との差（2026-11-07 の調査）**：
 
-- 月ごとの方針の移り変わりの行列（none→quarantine→reject と、その逆。rua を
-  足した・外したも）。Hureau ら（PAM 2024）が年ごとに出している
+- ~~月ごとの方針の移り変わりの行列~~ **入れた**（`delta_prev_month.policy_transitions`、rua の増減も。前の月がある 12 月から出る）
 - SPF が通す IP の広さを **include の先まで展開して** 数える研究がある
   （Czybik ら、IMC 2023「Lazy Gatekeepers」：10 万を超えるドメインが 34.7%）。
   こちらは自分のレコードだけ（大手の送信基盤で全社が同じ大きさになるため）。

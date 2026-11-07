@@ -488,6 +488,36 @@ display(
 );
 ```
 
+### Changes from the previous month
+
+Counted **only for the same domains observed in both months**: how the
+effective DMARC policy changed from the previous month. This removes the effect
+of listings, delistings and changes in the candidate domains.
+
+```js
+const delta = JSON.parse(current?.delta_prev_month ?? "null");
+const STATES = ["no_dmarc", "none", "quarantine", "reject"];
+const STATE_EN = { no_dmarc: "no DMARC", none: "none", quarantine: "quarantine", reject: "reject" };
+display(
+  !delta || delta.skipped || !delta.policy_transitions
+    ? html`<p class="muted">No earlier measurement to compare with yet.</p>`
+    : html`${table(
+        STATES.map((from) => Object.fromEntries([
+          ["previous \\ this month", STATE_EN[from]],
+          ...STATES.map((to) => [STATE_EN[to], delta.policy_transitions[`${from}>${to}`] ?? 0]),
+        ])),
+        { sort: null }
+      )}<p>Among domains with DMARC in both months, rua was added on ${num(delta.rua_added)} and removed on ${num(delta.rua_removed)}.</p>`
+);
+```
+
+<div class="limits">
+
+- Policies are effective values (`quarantine` with `pct=` under 100 is counted as `quarantine`)
+- Domains not observed this month are counted neither as changed nor as unchanged
+
+</div>
+
 ## Maturity stages
 
 MTA-STS, BIMI and DANE all presuppose DMARC, so simply adding them up would
