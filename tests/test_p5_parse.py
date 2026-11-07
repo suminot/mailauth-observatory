@@ -1064,3 +1064,34 @@ def test_Ed25519_の鍵は長さを見積もらず_短い鍵とも言わない()
     assert key.key_type == "ed25519"
     assert key.key_bits is None
     assert not any("短すぎる" in n for n in key.notes)
+
+
+def test_同じドメインを持つ会社それぞれに_fact_を作る():
+    """日本郵政・ゆうちょ銀行・かんぽ生命は japanpost.jp を共有している。1社だけに
+    付けると、残りの会社は計測に1件も現れない（2026-11-07 に見つかった）。"""
+    write_parquet(
+        [
+            {
+                "domain_id": "d:1", "entity_id": "jp:1", "run_id": RUN,
+                "domain": "send.example.jp", "domain_role": "primary",
+                "confidence": "confirmed", "is_measured": True,
+                "measure_tier": MeasureTier.A, "evidence_count": 5,
+            },
+            {
+                "domain_id": "d:9", "entity_id": "jp:9", "run_id": RUN,
+                "domain": "send.example.jp", "domain_role": "primary",
+                "confidence": "confirmed", "is_measured": True,
+                "measure_tier": MeasureTier.A, "evidence_count": 5,
+            },
+        ],
+        phase_output(RUN, "p3_domains", "domains.parquet"),
+        DOMAIN_ARROW_SCHEMA,
+    )
+    backend = FakeBackend()
+    run_p4(run_id=RUN, backend=backend)
+    result = run_p5(run_id=RUN, resolver=StaticResolver(ANSWERS))
+    df = facts()
+    assert set(df.index) == {"d:1", "d:9"}
+    assert df.loc["d:9", "entity_id"] == "jp:9"
+    assert df.loc["d:1", "dmarc_p"] == df.loc["d:9", "dmarc_p"] == "reject"
+    assert result["breakdown"]["domain_shared_by_entities"] == 1

@@ -563,7 +563,9 @@ def _any_registrable_unregistered(names: list[str], resolver: Resolver) -> bool 
 
 
 def apply_inherited_policy(
-    facts: list[Fact], fact_by_domain: dict[str, Fact]
+    facts: list[Fact],
+    fact_by_domain: dict[str, Fact],
+    names: dict[str, str] | None = None,
 ) -> dict[str, int]:
     """継承したポリシーを埋める。**自分のレコードは上書きしない。**
 
@@ -579,7 +581,9 @@ def apply_inherited_policy(
     counts = {"dmarc_inherited": 0, "dmarc_inherit_source_missing": 0}
     # **名前は1回だけ引き直す。** fact ごとに探すと O(n^2) になり、
     # 30,000 ドメインでここだけ数分かかる（BACKLOG 7 の規模の話）
-    name_by_id = {f.fact_id: name for name, f in fact_by_domain.items()}
+    name_by_id = names if names is not None else {
+        f.fact_id: name for name, f in fact_by_domain.items()
+    }
     for fact in facts:
         if fact.dmarc_present:
             fact.applied_7489 = fact.effective_7489
@@ -642,7 +646,7 @@ def run(
         manifest.counts.input = len(records)
 
         domains_frame = read_parquet(phase_output(run_id, "p3_domains", "domains.parquet"))
-        ids: dict[str, tuple[str, str]] = {}
+        ids: dict[str, list[tuple[str, str]]] = defaultdict(list)
         #: domain -> apex か。**分母は apex で閉じている**（BACKLOG 14）。
         #: P3 が決めたものを引き継ぐ。ここで名前から作り直さない
         apex_by_domain: dict[str, bool] = {}
@@ -651,7 +655,13 @@ def run(
         if domains_frame is not None:
             for _, row in domains_frame.iterrows():
                 name = str(row["domain"])
-                ids[name] = (str(row["domain_id"]), str(row["entity_id"]))
+                # **同じドメインを複数の会社が持つことがある**（持株会社と子会社、
+                # 日本郵政・ゆうちょ銀行・かんぽ生命の japanpost.jp）。1社だけに
+                # 付けると、残りの会社はそのドメインが無いことになる ── 2026-11-07、
+                # 日本郵政と日本製鉄が計測に1件も現れていなかった
+                owner = (str(row["domain_id"]), str(row["entity_id"]))
+                if owner not in ids[name]:
+                    ids[name].append(owner)
                 flag = row.get("is_measured")
                 if flag is not None and flag == flag and bool(flag):
                     measured_names.add(name)
@@ -695,6 +705,8 @@ def run(
         facts: list[Fact] = []
         #: domain -> その fact。**継承の解決に使う**（下の第2周）
         fact_by_domain: dict[str, Fact] = {}
+        #: fact_id -> domain（同じドメインを持つ会社ごとの fact も含む）
+        name_of_fact: dict[str, str] = {}
         counters: dict[str, int] = defaultdict(int)
         notes_sample: list[str] = []
         month = month_date(run_id)
@@ -725,23 +737,27 @@ def run(
                 notes_sample.append(f"{domain}: {type(exc).__name__}: {exc}")
                 continue
 
-            domain_id, entity_id = ids.get(domain, (f"d:unknown:{domain}", "unknown"))
+            owners = ids.get(domain) or [(f"d:unknown:{domain}", "unknown")]
             dane_orphan = parsed.get("dane_orphan", False)
             parsed.pop("_null_mx", None)
             notes = parsed.pop("_notes", [])
 
-            fact = Fact(
-                    fact_id=fact_id(domain_id, run_id),
-                    domain_id=domain_id,
-                    entity_id=entity_id,
-                    run_id=run_id,
-                    measured_month=month,
-                    is_apex=apex_by_domain.get(domain, True),
-                    parser_version=PARSER_VERSION,
-                    **parsed,
-            )
-            facts.append(fact)
-            fact_by_domain[domain] = fact
+            for domain_id, entity_id in owners:
+                fact = Fact(
+                        fact_id=fact_id(domain_id, run_id),
+                        domain_id=domain_id,
+                        entity_id=entity_id,
+                        run_id=run_id,
+                        measured_month=month,
+                        is_apex=apex_by_domain.get(domain, True),
+                        parser_version=PARSER_VERSION,
+                        **parsed,
+                )
+                facts.append(fact)
+                fact_by_domain.setdefault(domain, fact)
+                name_of_fact[fact.fact_id] = domain
+            if len(owners) > 1:
+                counters["domain_shared_by_entities"] += 1
 
             if parsed.get("spf_error") == spf_mod.SpfError.PERMERROR:
                 counters["spf_permerror"] += 1
@@ -796,7 +812,7 @@ def run(
         # **新しい問い合わせは要らない。** サブドメインを残す条件が
         # 「所有の裏付けがある apex の配下」なので、その apex は同じ実行で
         # 必ず測っている。
-        inherited = apply_inherited_policy(facts, fact_by_domain)
+        inherited = apply_inherited_policy(facts, fact_by_domain, name_of_fact)
         counters.update(inherited)
 
         manifest.counts.success = len(facts)
