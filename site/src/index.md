@@ -477,6 +477,36 @@ display(
 );
 ```
 
+### 前の月からの移り変わり
+
+**両方の月に観測できた同じドメインだけ**で、DMARC の実効の方針が前の月から
+どう変わったかを数えます。上場・上場廃止や候補のドメインの増減で分母が
+動く影響を除くためです。
+
+```js
+const delta = JSON.parse(current?.delta_prev_month ?? "null");
+const STATES = ["no_dmarc", "none", "quarantine", "reject"];
+const STATE_JA = { no_dmarc: "DMARC 無し", none: "none", quarantine: "quarantine", reject: "reject" };
+display(
+  !delta || delta.skipped || !delta.policy_transitions
+    ? html`<p class="muted">前の月と比べられる計測がまだありません。</p>`
+    : html`${table(
+        STATES.map((from) => Object.fromEntries([
+          ["前の月 ＼ この月", STATE_JA[from]],
+          ...STATES.map((to) => [STATE_JA[to], delta.policy_transitions[`${from}>${to}`] ?? 0]),
+        ])),
+        { sort: null }
+      )}<p>DMARC が両方の月にあったドメインのうち、rua を足した ${num(delta.rua_added)}・外した ${num(delta.rua_removed)}。</p>`
+);
+```
+
+<div class="limits">
+
+- 方針は実効の値です（`pct=` が 100 未満の `quarantine` は `quarantine` に含めています）
+- この月に観測できなかったドメインは、変わったとも変わらなかったとも数えていません
+
+</div>
+
 ## 成熟度ステージ
 
 MTA-STS / BIMI / DANE はいずれも DMARC を前提とするため、単純に足し合わせると

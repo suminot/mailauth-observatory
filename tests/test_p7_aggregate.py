@@ -1332,3 +1332,21 @@ def test_RFC_9989_のタグを数える():
         _row(domain_id="d:3", dmarc_present=False, dmarc_np="reject", dmarc_t="y"),
     ])
     assert (stats.dmarc_np_domains, stats.dmarc_testing_domains) == (1, 1)
+
+
+def test_方針の移り変わりを同じドメインだけで数える():
+    def f(d, policy, rua=None, observed=True):
+        return {"domain_id": d, "observed": observed, "effective_7489": policy,
+                "dmarc_rua": rua or []}
+
+    prev = [f("a", "none"), f("b", "reject", ["mailto:x@r.example"]), f("c", None),
+            f("d", "quarantine_partial"), f("e", "none"), f("g", "none")]
+    cur = [f("a", "reject", ["mailto:x@r.example"]), f("b", "reject"), f("c", "none"),
+           f("d", "none"), f("e", "none", observed=False), f("h", "reject")]
+    result = delta_mod.compute(cur, prev)
+    assert result.policy_transitions == {
+        "none>reject": 1, "reject>reject": 1, "no_dmarc>none": 1, "quarantine>none": 1,
+    }
+    # quarantine_partial → none は後退（以前は DMARC 無しと同じ 0 に落ちて数えなかった）
+    assert (result.policy_upgraded, result.policy_downgraded) == (2, 1)
+    assert (result.rua_added, result.rua_removed) == (1, 1)

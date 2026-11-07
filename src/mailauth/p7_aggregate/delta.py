@@ -18,7 +18,13 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 #: ポリシーの強さ。上下の判定に使う
-POLICY_RANK = {None: 0, "none": 1, "quarantine": 2, "reject": 3}
+#: `quarantine_partial`（pct<100）は quarantine より弱く none より強い。
+#: 以前は表に無く、DMARC が無いのと同じ 0 に落ちていた
+POLICY_RANK = {None: 0, "none": 1, "quarantine_partial": 1.5, "quarantine": 2, "reject": 3}
+
+#: 移り変わりの行列の区分。quarantine_partial は quarantine に寄せる
+_STATE = {None: "no_dmarc", "none": "none", "quarantine_partial": "quarantine",
+          "quarantine": "quarantine", "reject": "reject"}
 
 
 @dataclass
@@ -30,6 +36,13 @@ class Delta:
     domains_disappeared: int = 0
     policy_upgraded: int = 0
     policy_downgraded: int = 0
+    #: **両方の月に観測できた同じドメインだけ**の移り変わり。キーは
+    #: `"none>reject"` の形（no_dmarc / none / quarantine / reject）。
+    #: 変わらなかったものも数える（行列の対角）
+    policy_transitions: dict[str, int] = field(default_factory=dict)
+    #: DMARC の rua を足した・外した（両方の月に DMARC があったドメインのうち）
+    rua_added: int = 0
+    rua_removed: int = 0
     #: 今月観測できず判定を保留したドメイン。**消滅ではない**
     domains_unobserved_this_month: int = 0
     #: 前月の出力が無くて差分を計算していない
@@ -52,6 +65,16 @@ def _policy(fact: dict) -> str | None:
     if value is None or (isinstance(value, float) and value != value):
         return None
     return str(value)
+
+
+def _has_rua(fact: dict) -> bool:
+    value = fact.get("dmarc_rua")
+    if value is None or isinstance(value, (str, bytes, float)):
+        return False
+    try:
+        return len(value) > 0
+    except TypeError:
+        return False
 
 
 def _by_domain(facts: list[dict]) -> dict[str, dict]:
@@ -93,8 +116,15 @@ def compute(
             # 前月が観測できていないので、ポリシーの上下は判定できない
             continue
 
-        old = POLICY_RANK.get(_policy(prev_fact), 0)
-        new = POLICY_RANK.get(_policy(cur_fact), 0)
+        old_p, new_p = _policy(prev_fact), _policy(cur_fact)
+        key = f"{_STATE.get(old_p, 'none')}>{_STATE.get(new_p, 'none')}"
+        result.policy_transitions[key] = result.policy_transitions.get(key, 0) + 1
+        if old_p is not None and new_p is not None:
+            had, has = _has_rua(prev_fact), _has_rua(cur_fact)
+            result.rua_added += int(has and not had)
+            result.rua_removed += int(had and not has)
+        old = POLICY_RANK.get(old_p, 0)
+        new = POLICY_RANK.get(new_p, 0)
         if new > old:
             result.policy_upgraded += 1
         elif new < old:
