@@ -193,6 +193,7 @@ Parquet は月ごとに保管しています。同じ数字を二重に持つと
 | `entities_with_subdomain_mail` | サブドメインでメールを扱っていた企業数 |
 | `dkim_detected_domains` | 既知セレクタで検出できた |
 | `dkim_not_found_domains` | 既知セレクタでは検出できなかった。**未設定ではない** |
+| `dkim_other_selector_domains` | そのうち、`_domainkey.<ドメイン>` が NXDOMAIN でなく、配下に名前がある（試していないセレクタの鍵がありそう）。応答を誤る DNS があるので目安。列の無い月は空 |
 | `mta_sts_domains` | MTA-STS を公開している（`_mta-sts` の TXT がある） |
 | `mta_sts_enforce_domains` | ポリシーを HTTPS で取り、`mode: enforce` だった。取っていない月は空 |
 | `mta_sts_testing_domains` | 同じく `mode: testing` だった（失敗を報告するだけで、配送は止めない） |

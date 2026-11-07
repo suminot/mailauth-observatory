@@ -61,6 +61,7 @@ const L = {
     rSpf: "SPF を公開している",
     rDkim: "DKIM を既知セレクタで検出できた",
     rDkimNote: "未検出は未設定の証明ではない",
+    rDkimOther: (n) => `未検出は未設定の証明ではない（未検出のうち ${n.toLocaleString()} ドメインは _domainkey の配下に名前があり、試していないセレクタの鍵がありそう）`,
     rDkim2048: "うち DKIM の鍵がすべて 2048 ビット以上",
     rDkim2048Note: (n1024, nShort) =>
       `見つかった RSA 鍵のうち最も短いもので分けた。1024 ビットは ${n1024}、1024 ビット未満は ${nShort}`,
@@ -95,6 +96,7 @@ const L = {
     rSpf: "Publishes SPF",
     rDkim: "DKIM found among known selectors",
     rDkimNote: "not finding it is not proof it is unset",
+    rDkimOther: (n) => `not finding it is not proof it is unset (of those not found, ${n.toLocaleString()} domains have names under _domainkey, likely keys under selectors not tried)`,
     rDkim2048: "of which every DKIM key is 2048 bits or longer",
     rDkim2048Note: (n1024, nShort) =>
       `by the shortest RSA key found: ${n1024} at 1024 bits, ${nShort} under 1024 bits`,
@@ -158,7 +160,13 @@ export function indicators(stats, lang = "ja") {
   });
   return [
     row(t.rSpf, stats.spf_adopted_domains),
-    row(t.rDkim, stats.dkim_detected_domains, t.rDkimNote),
+    row(
+      t.rDkim,
+      stats.dkim_detected_domains,
+      Number.isFinite(stats.dkim_other_selector_domains)
+        ? t.rDkimOther(stats.dkim_other_selector_domains)
+        : t.rDkimNote
+    ),
     // 鍵の長さを集計していない月は行ごと出さない（0 と読めてしまう）
     ...(Number.isFinite(stats.dkim_key_2048_domains)
       ? [row(t.rDkim2048, stats.dkim_key_2048_domains,

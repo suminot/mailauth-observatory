@@ -103,7 +103,7 @@ tiers:
     label: フル計測
     applies_to_confidence: [confirmed, likely]
     queries: [mx, spf, dmarc, dmarc_subdomain, dkim, dkim_control,
-              dkim_wildcard, mta_sts, tls_rpt, bimi, dane]
+              dkim_wildcard, dkim_parent, mta_sts, tls_rpt, bimi, dane]
   C:
     label: 簡易計測
     applies_to_confidence: [parked, unknown]

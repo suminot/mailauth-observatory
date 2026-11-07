@@ -2764,8 +2764,7 @@ disney.com / thewaltdisneycompany.com）。
   展開した分布は別の列として足す余地がある
 - ~~rua の雛形の宛先~~ **入れた**（`rua_placeholder_domains`、予約名だけ）。宛先の集中（上位5社で約3割）は未
 - ~~`p=reject` かつ rua がある~~ **入れた**（`reject_with_rua_domains`）
-- セレクタを知らずに DKIM を使っているかの手がかり：`_domainkey.<ドメイン>` が
-  NOERROR（internet.nl）。応答を誤る DNS があるので補助の扱い
+- ~~セレクタを知らずに DKIM の手がかり~~ **入れた**（P4 `dkim_parent`、fact `dkim_domainkey_exists`、gold `dkim_other_selector_domains`。P5 1.6.0）
 - 同じ会社だけで比べる（両方の月に測った会社だけの差）。上場・上場廃止で
   分母が動くのを除く（オランダ Forum Standaardisatie の報告）
 - 業種別・規制のある業種（証券会社など）の切り口（TwoFive、Red Sift）

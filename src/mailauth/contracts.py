@@ -90,6 +90,9 @@ class QueryPurpose(StrEnum):
     DKIM = "dkim"
     DKIM_CONTROL = "dkim_control"
     DKIM_WILDCARD = "dkim_wildcard"
+    #: `_domainkey.<ドメイン>` そのもの。NXDOMAIN なら配下に名前が1つも無い
+    #: （RFC 8020）。NOERROR なら配下に何かある ── 試していないセレクタの鍵
+    DKIM_PARENT = "dkim_parent"
     MTA_STS = "mta_sts"
     TLS_RPT = "tls_rpt"
     BIMI = "bimi"
@@ -539,6 +542,8 @@ class Fact(_Model):
     spf_ip4_addresses: int | None = None
     spf_ip4_widest_prefix: int | None = None
     spf_ip6_widest_prefix: int | None = None
+    #: `_domainkey.<ドメイン>` の配下に名前がある（NOERROR）/ 無い（NXDOMAIN）
+    dkim_domainkey_exists: bool | None = None
     #: 最後に効く all の修飾子（redirect で任せていれば任せた先の all）
     spf_all_effective: str | None = None
     #: redirect の先を引けず、最後に効く all が分からなかった
@@ -682,6 +687,7 @@ FACT_ARROW_SCHEMA = pa.schema(
         ("spf_ip4_addresses", pa.int64()),
         ("spf_ip4_widest_prefix", pa.int32()),
         ("spf_ip6_widest_prefix", pa.int32()),
+        ("dkim_domainkey_exists", pa.bool_()),
         ("spf_all_effective", pa.string()),
         ("spf_all_unknown", pa.bool_()),
         ("spf_includes", pa.list_(pa.string())),
@@ -955,6 +961,8 @@ class StatsOverall(_Model):
     txt_apex_oversize_domains: int | None = None
     #: DKIM の鍵が Ed25519 だけ
     dkim_ed25519_only_domains: int | None = None
+    #: 試したセレクタでは DKIM が見つからないが、`_domainkey` の配下に名前がある
+    dkim_other_selector_domains: int | None = None
     #: DMARC に RFC 9989 で廃止になったタグ（pct・rf・ri）がある
     dmarc_historic_tags_domains: int | None = None
     #: SPF（自分のレコード）が通すと書いた IPv4 アドレスが 65,536（/16 1つ分）を超える
@@ -1070,6 +1078,7 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("spf_dangling_domains", pa.int32()),
     ("txt_apex_oversize_domains", pa.int32()),
     ("dkim_ed25519_only_domains", pa.int32()),
+    ("dkim_other_selector_domains", pa.int32()),
     ("dmarc_historic_tags_domains", pa.int32()),
     ("spf_ip4_broad_domains", pa.int32()),
     ("rua_placeholder_domains", pa.int32()),

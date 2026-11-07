@@ -56,6 +56,7 @@ def build_plan(
     extras: dict[str, bool] | None = None,
     dkim_control: bool = True,
     dkim_wildcard: bool = True,
+    dkim_parent: bool = True,
 ) -> list[Query]:
     """1ドメインぶんのクエリ計画。
 
@@ -100,6 +101,10 @@ def build_plan(
         queries.append(
             Query(f"{label}._domainkey.{domain}", "TXT", QueryPurpose.DKIM_CONTROL, selector=label)
         )
+    if dkim_parent:
+        # **セレクタを知らなくても、配下に名前があるかは分かる**（internet.nl と同じ
+        # 見方）。試した 50 個に無い鍵を使っている会社を「見つからない」から分ける
+        queries.append(Query(f"_domainkey.{domain}", "TXT", QueryPurpose.DKIM_PARENT))
 
     if ex.get("mta_sts", True):
         queries.append(Query(f"_mta-sts.{domain}", "TXT", QueryPurpose.MTA_STS))

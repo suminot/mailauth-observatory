@@ -184,6 +184,7 @@ class DomainRow:
     dkim_ed25519_only: bool | None = None
     dmarc_historic_tags: bool | None = None
     spf_ip4_addresses: int | None = None
+    dkim_domainkey_exists: bool | None = None
     #: DMARC の np=（存在しないサブドメイン）と t=（試行中）。RFC 9989 で入ったタグ
     dmarc_np: str | None = None
     dmarc_t: str | None = None
@@ -237,6 +238,7 @@ class DomainRow:
             dkim_ed25519_only=_tristate(fact.get("dkim_ed25519_only")),
             dmarc_historic_tags=_tristate(fact.get("dmarc_historic_tags")),
             spf_ip4_addresses=_opt_int(fact.get("spf_ip4_addresses")),
+            dkim_domainkey_exists=_tristate(fact.get("dkim_domainkey_exists")),
             dmarc_np=_text(fact.get("dmarc_np")),
             dmarc_t=_text(fact.get("dmarc_t")),
             # **最後に効く all を優先する**（redirect の先の all）。列が無い過去の
@@ -538,6 +540,13 @@ def aggregate(
         ),
         dkim_ed25519_only_domains=_count_true(
             observed, lambda r: True, lambda r: r.dkim_ed25519_only
+        ),
+        # 試したセレクタでは見つからないが、_domainkey の配下に名前がある。
+        # **「DKIM が無い」と読まれがちな数のうち、鍵がありそうなもの**
+        dkim_other_selector_domains=_count_true(
+            observed,
+            lambda r: r.dkim_status == DkimStatus.NOT_FOUND_IN_KNOWN_SELECTORS,
+            lambda r: r.dkim_domainkey_exists,
         ),
         dmarc_historic_tags_domains=_count_true(
             observed, lambda r: r.dmarc_present, lambda r: r.dmarc_historic_tags

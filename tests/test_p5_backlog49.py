@@ -235,3 +235,51 @@ def test_fact_と集計に広すぎる範囲を出す():
     old = aggregate([_row(1)], measured_month=dt.date(2026, 12, 1),
                     population_id="jp-all-listed", total_entities=1)
     assert old.spf_ip4_broad_domains is None
+
+
+# -- _domainkey の配下に名前があるか -----------------------------------------------
+
+
+def test_計画に_domainkey_そのものを引く():
+    from mailauth.p4_measure.plan import build_plan
+
+    plan = build_plan(DOMAIN, "A", selectors=["s1"])
+    assert any(q.name == f"_domainkey.{DOMAIN}" and q.purpose == "dkim_parent" for q in plan)
+    assert not any(q.purpose == "dkim_parent" for q in build_plan(DOMAIN, "C", selectors=[]))
+
+
+def _parent(rcode: str, observed: bool = True) -> dict:
+    return {"dkim_parent": [{
+        "domain": DOMAIN, "purpose": "dkim_parent", "query_name": f"_domainkey.{DOMAIN}",
+        "observed": observed, "record_present": False, "rcode": rcode, "answers": [],
+    }]}
+
+
+def test_domainkey_の配下の有無を三値で出す():
+    assert parse_domain(DOMAIN, _parent("NODATA"))["dkim_domainkey_exists"] is True
+    assert parse_domain(DOMAIN, _parent("NOERROR"))["dkim_domainkey_exists"] is True
+    assert parse_domain(DOMAIN, _parent("NXDOMAIN"))["dkim_domainkey_exists"] is False
+    down = _parent("SERVFAIL", observed=False)
+    assert parse_domain(DOMAIN, down)["dkim_domainkey_exists"] is None
+    assert parse_domain(DOMAIN, {})["dkim_domainkey_exists"] is None
+    # 何にでも答える DNS では当てにならない
+    both = {**_parent("NOERROR"), **_dkim({}, control=True)}
+    assert parse_domain(DOMAIN, both)["dkim_domainkey_exists"] is None
+
+
+def test_集計は見つからなかったもののうち配下に名前があるものを数える():
+    from mailauth.contracts import DkimStatus
+    from mailauth.p7_aggregate.metrics import aggregate
+
+    nf = DkimStatus.NOT_FOUND_IN_KNOWN_SELECTORS
+    rows = [
+        _row(1, dkim_status=nf, dkim_domainkey_exists=True),
+        _row(2, dkim_status=nf, dkim_domainkey_exists=False),
+        _row(3, dkim_status=DkimStatus.DETECTED, dkim_domainkey_exists=True),
+    ]
+    s = aggregate(rows, measured_month=dt.date(2026, 12, 1), population_id="jp-all-listed",
+                  total_entities=3)
+    assert s.dkim_other_selector_domains == 1
+    old = aggregate([_row(1, dkim_status=nf)], measured_month=dt.date(2026, 12, 1),
+                    population_id="jp-all-listed", total_entities=1)
+    assert old.dkim_other_selector_domains is None
