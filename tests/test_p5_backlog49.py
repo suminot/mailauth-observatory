@@ -203,3 +203,35 @@ def test_列の無い過去の_run_は_0_ではなく_null():
             s.dkim_ed25519_only_domains, s.dmarc_historic_tags_domains) == (
         None, None, None, None,
     )
+
+
+# -- SPF が通す IP アドレスの広さ -------------------------------------------------
+
+
+def test_通すと書いた_IPv4_を重なりを除いて数える():
+    from mailauth.p5_parse.spf import address_space
+    from mailauth.records import spf_terms
+
+    space = address_space(spf_terms(
+        "v=spf1 ip4:192.0.2.0/24 ip4:192.0.2.128/25 +ip4:198.51.100.7 "
+        "-ip4:10.0.0.0/8 ~ip4:172.16.0.0/12 ip4:bad/99 ip6:2001:db8::/32 include:x.example -all"
+    ))
+    assert space.ip4_addresses == 256 + 1
+    assert space.ip4_widest_prefix == 24
+    assert space.ip6_widest_prefix == 32
+
+
+def test_fact_と集計に広すぎる範囲を出す():
+    from mailauth.p7_aggregate.metrics import aggregate
+
+    fact = parse_domain(DOMAIN, {"spf": [_spf_rec(["v=spf1 ip4:10.0.0.0/8 -all"])]})
+    assert (fact["spf_ip4_addresses"], fact["spf_ip4_widest_prefix"]) == (2**24, 8)
+    assert parse_domain(DOMAIN, {})["spf_ip4_addresses"] is None
+    rows = [_row(1, spf_ip4_addresses=2**24), _row(2, spf_ip4_addresses=0),
+            _row(3, spf_ip4_addresses=65536)]
+    s = aggregate(rows, measured_month=dt.date(2026, 12, 1), population_id="jp-all-listed",
+                  total_entities=3)
+    assert s.spf_ip4_broad_domains == 1
+    old = aggregate([_row(1)], measured_month=dt.date(2026, 12, 1),
+                    population_id="jp-all-listed", total_entities=1)
+    assert old.spf_ip4_broad_domains is None

@@ -100,6 +100,8 @@ def _tristate(value: object) -> bool | None:
 
 #: UDP で切れずに返る目安（DNS Flag Day 2020 の EDNS バッファ 1,232 バイト）
 TXT_UDP_SAFE_BYTES = 1232
+#: SPF が通す IPv4 がこれを超えると「広い」と数える（/16 1つ分）
+SPF_IP4_BROAD = 65536
 
 
 def _count_true(rows, base, value) -> int | None:
@@ -152,6 +154,7 @@ class DomainRow:
     txt_apex_bytes: int | None = None
     dkim_ed25519_only: bool | None = None
     dmarc_historic_tags: bool | None = None
+    spf_ip4_addresses: int | None = None
     #: 最後の `all` の修飾子（- ~ ? +）。無ければ None
     spf_all_qualifier: str | None = None
     spf_error: str | None = None
@@ -199,6 +202,7 @@ class DomainRow:
             txt_apex_bytes=_opt_int(fact.get("txt_apex_bytes")),
             dkim_ed25519_only=_tristate(fact.get("dkim_ed25519_only")),
             dmarc_historic_tags=_tristate(fact.get("dmarc_historic_tags")),
+            spf_ip4_addresses=_opt_int(fact.get("spf_ip4_addresses")),
             # **最後に効く all を優先する**（redirect の先の all）。列が無い過去の
             # run では自分のレコードの all
             spf_all_qualifier=(
@@ -478,6 +482,11 @@ def aggregate(
         ),
         dmarc_historic_tags_domains=_count_true(
             observed, lambda r: r.dmarc_present, lambda r: r.dmarc_historic_tags
+        ),
+        spf_ip4_broad_domains=(
+            sum(1 for r in observed if r.spf_present and (r.spf_ip4_addresses or 0) > SPF_IP4_BROAD)
+            if any(r.spf_ip4_addresses is not None for r in observed)
+            else None
         ),
         spf_all_fail_domains=all_q.get("-", 0),
         spf_all_softfail_domains=all_q.get("~", 0),

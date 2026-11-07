@@ -534,6 +534,11 @@ class Fact(_Model):
     dkim_ed25519_only: bool | None = None
     #: DMARC に RFC 9989 で廃止になったタグ（pct・rf・ri）がある
     dmarc_historic_tags: bool | None = None
+    #: SPF（自分のレコード）が通すと書いた IPv4 アドレスの数（重なりは1つ）と、
+    #: いちばん広い範囲のプレフィックス長。include の先は数えない
+    spf_ip4_addresses: int | None = None
+    spf_ip4_widest_prefix: int | None = None
+    spf_ip6_widest_prefix: int | None = None
     #: 最後に効く all の修飾子（redirect で任せていれば任せた先の all）
     spf_all_effective: str | None = None
     #: redirect の先を引けず、最後に効く all が分からなかった
@@ -674,6 +679,9 @@ FACT_ARROW_SCHEMA = pa.schema(
         ("txt_apex_tcp", pa.bool_()),
         ("dkim_ed25519_only", pa.bool_()),
         ("dmarc_historic_tags", pa.bool_()),
+        ("spf_ip4_addresses", pa.int64()),
+        ("spf_ip4_widest_prefix", pa.int32()),
+        ("spf_ip6_widest_prefix", pa.int32()),
         ("spf_all_effective", pa.string()),
         ("spf_all_unknown", pa.bool_()),
         ("spf_includes", pa.list_(pa.string())),
@@ -949,6 +957,8 @@ class StatsOverall(_Model):
     dkim_ed25519_only_domains: int | None = None
     #: DMARC に RFC 9989 で廃止になったタグ（pct・rf・ri）がある
     dmarc_historic_tags_domains: int | None = None
+    #: SPF（自分のレコード）が通すと書いた IPv4 アドレスが 65,536（/16 1つ分）を超える
+    spf_ip4_broad_domains: int | None = None
     bimi_domains: int = 0
     #: BIMI のうち、証明書（VMC/CMC）の場所（a=）を書いている。証明書が有効かは見ていない
     bimi_vmc_domains: int = 0
@@ -1047,6 +1057,7 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("txt_apex_oversize_domains", pa.int32()),
     ("dkim_ed25519_only_domains", pa.int32()),
     ("dmarc_historic_tags_domains", pa.int32()),
+    ("spf_ip4_broad_domains", pa.int32()),
     ("bimi_domains", pa.int32()),
     ("bimi_vmc_domains", pa.int32()),
     ("dnssec_domains", pa.int32()),

@@ -43,7 +43,9 @@ OUTPUT_FILENAME = "facts.parquet"
 #: 1.1.0（2026-11）：SPF を include と redirect の先まで数える（BACKLOG 41）
 #: 1.2.0（2026-11）：DKIM の鍵の長さを RSA だけ見積もる（Ed25519 を短い鍵と誤らない）
 #: 1.3.0（2026-11）：SPF の最後に効く all を redirect の先まで読む
-PARSER_VERSION = "1.4.0"
+#: 1.4.0（2026-11）：SPF の先の未登録・TXT の大きさ・Ed25519 だけ・DMARC の廃止タグ
+#: 1.5.0（2026-11）：SPF が通すと書いた IP アドレスの広さ
+PARSER_VERSION = "1.5.0"
 
 #: 返していないドメインを何件まで抱えるか（`ordered.in_input_order`）。
 #: 同時本数より十分大きくしないと、先頭の1件が遅いたびに手が止まる
@@ -161,6 +163,18 @@ def parse_domain(
         spf_mechanisms=spf.mechanisms,
         spf_is_flattened=spf.is_flattened,
         spf_is_dynamic=spf.is_dynamic,
+    )
+    # **通すと書いた IP アドレスの広さ**（BACKLOG 49）。自分のレコードの ip4 / ip6
+    # だけを見る。広い範囲を通すと、その範囲の他人もこのドメインとして SPF を通る
+    space = (
+        spf_mod.address_space(spf.terms)
+        if spf.present and spf.error != spf_mod.SpfError.MULTIPLE_RECORDS
+        else None
+    )
+    out.update(
+        spf_ip4_addresses=space.ip4_addresses if space else None,
+        spf_ip4_widest_prefix=space.ip4_widest_prefix if space else None,
+        spf_ip6_widest_prefix=space.ip6_widest_prefix if space else None,
     )
 
     # include と redirect の先まで数える（BACKLOG 41）。先の TXT は resolver が

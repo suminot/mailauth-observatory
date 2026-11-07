@@ -212,6 +212,7 @@ Parquet は月ごとに保管しています。同じ数字を二重に持つと
 | `spf_all_unknown_domains` | `redirect=` の先を引けず、最後に効く `all` が分からない（上の5列のどれにも入れていない） |
 | `spf_dangling_domains` | SPF の `include` か `redirect` の先のうち SPF の無いものについて、登録ドメインが登録されていないと確かめられた（第三者が登録すれば SPF を通るメールを送れる）。引けなかった先があるものは数えていない。列の無い月は空 |
 | `txt_apex_oversize_domains` | 主ドメインの TXT の応答の大きさの見積りが 1,232 バイトを超える。実際の応答の大きさではない。列の無い月は空 |
+| `spf_ip4_broad_domains` | 主ドメインの SPF が通すと書いた IPv4 アドレス（`ip4:`、重なりは1つに数える、`include` の先は数えない）が 65,536（/16 1つ分）を超える。列の無い月は空 |
 | `dkim_ed25519_only_domains` | 見つかった DKIM の鍵（取り消されたものとワイルドカードを除く）が Ed25519 だけ。列の無い月は空 |
 | `dmarc_historic_tags_domains` | DMARC に RFC 9989 で無くなったタグ（`pct=` `rf=` `ri=`）がある。誤りではない。列の無い月は空 |
 | `dmarc_invalid_domains` | DMARC を公開しているが、レコードが無効（`v=DMARC1` が2つある、`p=` が無いか不正）。`dmarc_adopted_domains` の内数 |

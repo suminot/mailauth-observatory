@@ -315,7 +315,7 @@ display(
 
 ### Settings that are easy to miss
 
-None of the four below necessarily shows up right away as lost mail or
+None of the settings below necessarily shows up right away as lost mail or
 spoofing, so they tend to go unnoticed.
 
 ```js
@@ -326,6 +326,7 @@ display(
         [
           { Category: "an SPF include or redirect target's domain is not registered", Domains: current?.spf_dangling_domains },
           { Category: "the apex TXT response exceeds 1,232 bytes (estimate)", Domains: current?.txt_apex_oversize_domains },
+          { Category: "SPF lets through more than 65,536 IPv4 addresses", Domains: current?.spf_ip4_broad_domains },
           { Category: "the DKIM keys found are Ed25519 only", Domains: current?.dkim_ed25519_only_domains },
           { Category: "DMARC carries tags removed in RFC 9989 (pct, rf, ri)", Domains: current?.dmarc_historic_tags_domains },
         ],
@@ -344,6 +345,11 @@ display(
   the size usually returned over UDP (1,232 bytes, from DNS Flag Day 2020) and
   needs a retry over TCP. Some receivers then return a temporary SPF error.
   The figure is estimated from the record contents, not the actual response size
+- **Wide IP ranges**: when SPF lists a wide range in `ip4:` (such as a cloud or
+  hosting range), others who can use that range also pass SPF as this domain.
+  Only `ip4:` terms in the domain's own record are counted (not `include`
+  targets); 65,536 is one IPv4 /16. Some companies hold large ranges of their
+  own, so a large figure is not an error in itself
 - **Ed25519-only DKIM**: some receivers do not verify Ed25519 (RFC 8463)
   signatures. Publishing an RSA key alongside is the recommended form. Only the
   selectors this project tried are covered
