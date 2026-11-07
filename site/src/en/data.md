@@ -220,6 +220,10 @@ The main columns used in the tables above.
 | `spf_dangling_domains` | among SPF `include` or `redirect` targets with no SPF record, one whose registrable domain was confirmed unregistered (anyone registering it could send mail that passes SPF). Domains with targets that could not be looked up are not counted. Empty in months without the column |
 | `txt_apex_oversize_domains` | the estimated size of the apex TXT response exceeds 1,232 bytes. Not the actual response size. Empty in months without the column |
 | `spf_ip4_broad_domains` | the IPv4 addresses the apex SPF record lets through (`ip4:`, overlaps counted once, `include` targets not counted) exceed 65,536 (one /16). Empty in months without the column |
+| `bulk_spf_ok_domains` | among sending domains (`sending_domains`), SPF is present and evaluates without error (one `v=spf1`, within 10 lookups counted through `include` targets) |
+| `bulk_dkim_domains` | likewise, a DKIM key was found (within the selectors tried) |
+| `bulk_dmarc_ok_domains` | likewise, DMARC is present with a valid record (including `p=none`) |
+| `bulk_ready_domains` | likewise, all three of the above (the DNS-visible part of bulk-sender requirements; alignment and the rest are not checked) |
 | `dkim_ed25519_only_domains` | the DKIM keys found (excluding revoked keys and the wildcard) are Ed25519 only. Empty in months without the column |
 | `dmarc_historic_tags_domains` | DMARC carries tags removed in RFC 9989 (`pct=`, `rf=`, `ri=`). Not an error. Empty in months without the column |
 | `dmarc_invalid_domains` | publishes DMARC, but the record is invalid (two `v=DMARC1` records, or `p=` missing or invalid). Included in `dmarc_adopted_domains` |

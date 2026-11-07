@@ -959,6 +959,12 @@ class StatsOverall(_Model):
     dmarc_historic_tags_domains: int | None = None
     #: SPF（自分のレコード）が通すと書いた IPv4 アドレスが 65,536（/16 1つ分）を超える
     spf_ip4_broad_domains: int | None = None
+    #: 送信しているドメイン（sending_domains）のうち、大口送信者の要件のうち
+    #: DNS で見られる部分：SPF が評価できる / DKIM を検出 / DMARC が有効 / 3つとも
+    bulk_spf_ok_domains: int = 0
+    bulk_dkim_domains: int = 0
+    bulk_dmarc_ok_domains: int = 0
+    bulk_ready_domains: int = 0
     bimi_domains: int = 0
     #: BIMI のうち、証明書（VMC/CMC）の場所（a=）を書いている。証明書が有効かは見ていない
     bimi_vmc_domains: int = 0
@@ -1058,6 +1064,10 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("dkim_ed25519_only_domains", pa.int32()),
     ("dmarc_historic_tags_domains", pa.int32()),
     ("spf_ip4_broad_domains", pa.int32()),
+    ("bulk_spf_ok_domains", pa.int32()),
+    ("bulk_dkim_domains", pa.int32()),
+    ("bulk_dmarc_ok_domains", pa.int32()),
+    ("bulk_ready_domains", pa.int32()),
     ("bimi_domains", pa.int32()),
     ("bimi_vmc_domains", pa.int32()),
     ("dnssec_domains", pa.int32()),

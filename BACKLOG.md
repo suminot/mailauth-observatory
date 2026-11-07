@@ -2745,8 +2745,7 @@ disney.com / thewaltdisneycompany.com）。
 
 **次に入れる候補**（大きさの小さい順ではなく、読み手にとっての意味の順）：
 
-- 大口送信者の要件（Gmail・Yahoo・Microsoft）に照らした「整っているか」の
-  一覧。順位や点数にはせず、項目ごとの数を並べる
+- ~~大口送信者の要件に照らした一覧~~ **入れた**（gold `bulk_*_domains`。DNS で見られる SPF・DKIM・DMARC だけ）
 - ~~SPF が許している IP アドレスの広さ~~ **入れた**（`spf_ip4_addresses` など、gold `spf_ip4_broad_domains`。P5 1.5.0）
 - サブドメインまで含めた実効の被覆（自分・`sp=`・`np=`・実際に送っている
   サブドメインの4つの分母）
