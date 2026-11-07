@@ -16,6 +16,9 @@
 - **3社以上の親会社の下に出る法人は外す。** 子会社ではなく、注記に出てくる
   借入先・信託口の銀行（日本カストディ銀行が 27 社、三菱UFJ の銀行が 29 社の
   下に出ていた。2026-11-07）。合弁でも親は2社まで
+- **同じ親の子会社が3社以上で同じドメインを企業サイトにしているものは外す。**
+  親会社のグループ共通サイト（nissan-global.com・aeon.info・japanpost.jp など）で、
+  子会社自身のドメインではない。測ると同じドメインを子会社の数だけ数える
 """
 
 from __future__ import annotations
@@ -33,6 +36,8 @@ from ..normalize import (
 
 #: これ以上の親会社の下に出る法人は子会社として扱わない
 MANY_PARENTS = 3
+#: 同じ親の子会社がこれ以上同じドメインを使っていれば、グループ共通サイト
+SHARED_GROUP_SITE = 3
 
 
 def build_group_entities(
@@ -57,7 +62,8 @@ def build_group_entities(
     }
     stats = {
         "rows": 0, "found": 0, "from_wikidata": 0, "parent_not_listed": 0, "listed_company": 0,
-        "listed_domain": 0, "duplicate_number": 0, "many_parents": 0, "entities": 0,
+        "listed_domain": 0, "duplicate_number": 0, "many_parents": 0, "group_site": 0,
+        "entities": 0,
     }
     #: 法人番号ごとの親の数。3社以上なら子会社ではない（借入先・信託口の銀行）
     parents_of: dict[str, set[str]] = {}
@@ -117,5 +123,14 @@ def build_group_entities(
             parent_entity_id=f"jp:{parent_hb}" if parent_hb else f"edinet:{code}",
             parent_securities_code=normalize_securities_code(parent.securities_code),
         )
+    # 同じ親の子会社が3社以上で同じドメインを使っていれば、グループ共通サイト
+    by_site: dict[tuple[str | None, str | None], list[str]] = {}
+    for eid, e in entities.items():
+        by_site.setdefault((e.parent_entity_id, e.official_domain), []).append(eid)
+    for eids in by_site.values():
+        if len(eids) >= SHARED_GROUP_SITE:
+            for eid in eids:
+                entities.pop(eid)
+            stats["group_site"] += len(eids)
     stats["entities"] = len(entities)
     return [entities[k] for k in sorted(entities)], stats
