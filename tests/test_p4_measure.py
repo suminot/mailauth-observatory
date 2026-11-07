@@ -849,3 +849,31 @@ def test_l2_documented_provider_selectors(mx, provider, expected):
     assert expected in selectors
     assert d.provider_hits[provider] == 1
     assert expected not in SelectorDictionary.load().selectors_for([], [])
+
+
+def test_resume_は測り終えたドメインに後から足した種類だけを引く(monkeypatch):
+    """2026-11-07、dkim_parent を足したが、同じ月の bronze を引き継いだ
+    6,481 ドメインは測り直されず、新しい列が 2 ドメインにしか付かなかった。
+    """
+    import mailauth.p4_measure.runner as runner_mod
+
+    write_domains([{"domain_id": "d:1", "entity_id": "jp:1", "domain": "send.example.jp"}])
+    original = runner_mod.build_plan
+
+    def without_parent(*args, **kwargs):
+        return [q for q in original(*args, **kwargs) if q.purpose != QueryPurpose.DKIM_PARENT]
+
+    monkeypatch.setattr(runner_mod, "build_plan", without_parent)
+    run_p4(run_id=RUN, backend=FakeBackend())
+    monkeypatch.setattr(runner_mod, "build_plan", original)
+
+    backend = FakeBackend()
+    result = run_p4(run_id=RUN, backend=backend, resume=True)
+    assert backend.seen == [("_domainkey.send.example.jp", QueryPurpose.DKIM_PARENT)]
+    codes = [w["code"] for w in result["warnings"]]
+    assert "TOPPED_UP_NEW_QUERY_TYPES" in codes
+
+    # もう一度回しても、足すものが無ければ何も引かない
+    again = FakeBackend()
+    run_p4(run_id=RUN, backend=again, resume=True)
+    assert again.seen == []
