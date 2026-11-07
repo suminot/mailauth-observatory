@@ -3,7 +3,7 @@
 計測方法や集計定義の変更を記録する。数字が前月と比べて動いたとき、
 **実態が変わったのか計測が変わったのか**を区別できるようにするためである。
 
-この一覧は `mailauth changelog` が生成している（2026-11-07T17:50:43+00:00）。
+この一覧は `mailauth changelog` が生成している（2026-11-07T20:32:13+00:00）。
 版の変化は機械が検出するが、**それが数字にどう影響したかは人が書く。**
 「解釈」の欄が空いている月は、まだ書かれていないということである。
 
@@ -41,6 +41,7 @@
 - 証明書の組織名でドメインを探す経路を、公式サイトのある会社にも広げた（月のあいだに補充で引いたものを使う）。見つけたサブドメインの数と、そのうち登録ドメインに DMARC があるものの数を足した。
 - 国内上場の会社の国内子会社（有価証券報告書の関係会社のうち、gBizINFO に企業サイトの登録があるもの）を、上場会社とは別の母集団として測るようにした。上場会社の数字には混ぜていない。
 - SPF に ptr があるドメインと、DMARC に失敗レポートの宛先（ruf）があるドメインの数を足した（宛先は出さない）。
+- 公式サイトの証明書の記録（CT）に載っているメール用らしい名前のサブドメイン（news.・mail2. など）を、サブドメインの候補に足した（自分の MX か _dmarc があるものだけ測る）。効くのは次に CT を引く月からで、サブドメインの数はそれより前の月と比べられない。
 
 ### 計測側の変更
 
@@ -53,16 +54,16 @@
 | 母集団 | 指標 | 前月 | 当月 | 差 |
 |---|---|---|---|---|
 | us-all-listed | total_entities | 5267 | 5254 | -13 |
-| us-all-listed | total_domains | 4877 | 9442 | +4565 |
-| us-all-listed | observed_domains | 4877 | 9442 | +4565 |
-| us-all-listed | entities_with_domains | 4869 | 5171 | +302 |
-| us-all-listed | spf_adopted_domains | 4616 | 7221 | +2605 |
-| us-all-listed | dmarc_adopted_domains | 4156 | 6536 | +2380 |
-| us-all-listed | dmarc_enforced_domains | 3087 | 5025 | +1938 |
-| us-all-listed | enforced_reject_domains | 1690 | 3078 | +1388 |
-| us-all-listed | dkim_detected_domains | 3748 | 4825 | +1077 |
+| us-all-listed | total_domains | 4877 | 9739 | +4862 |
+| us-all-listed | observed_domains | 4877 | 9739 | +4862 |
+| us-all-listed | entities_with_domains | 4869 | 5200 | +331 |
+| us-all-listed | spf_adopted_domains | 4616 | 7404 | +2788 |
+| us-all-listed | dmarc_adopted_domains | 4156 | 6694 | +2538 |
+| us-all-listed | dmarc_enforced_domains | 3087 | 5113 | +2026 |
+| us-all-listed | enforced_reject_domains | 1690 | 3105 | +1415 |
+| us-all-listed | dkim_detected_domains | 3748 | 4938 | +1190 |
 | us-all-listed | parked_hardened | 4 | 114 | +110 |
-| us-all-listed | parked_neglected | 140 | 1620 | +1480 |
+| us-all-listed | parked_neglected | 140 | 1708 | +1568 |
 
 - 前月 2026-10 の manifest が無いため、計測側の変更を検出していない。初回の月か、実行記録が失われている
 - 業種の分類集合が変わっている。**写像の版が変わると前月との比較が成立しない。** 同一版で再集計するか、比較しない旨を明記すること

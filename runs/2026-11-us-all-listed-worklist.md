@@ -13,10 +13,12 @@
 | 登録ドメイン | 件数 | 連続月 | 例 |
 |---|---|---|---|
 | `exacttarget.com` | 168 | 1 | `inbound-reply.s7.exacttarget.com`, `reply.s11.exacttarget.com`, `reply.s10.exacttarget.com` |
-| `cscdns.net` | 80 | 1 | `custmx.cscdns.net` |
-| `amazonses.com` | 75 | 1 | `feedback-smtp.us-east-1.amazonses.com`, `feedback-smtp.ap-south-1.amazonses.com`, `feedback-smtp.us-west-2.amazonses.com` |
+| `cscdns.net` | 82 | 1 | `custmx.cscdns.net` |
+| `amazonses.com` | 76 | 1 | `feedback-smtp.us-east-1.amazonses.com`, `feedback-smtp.ap-south-1.amazonses.com`, `feedback-smtp.us-west-2.amazonses.com` |
 | `arsmtp.com` | 66 | 1 | `alpinereit-com.mx1.arsmtp.com`, `alpinereit-com.mx2.arsmtp.com`, `koss.com.1.arsmtp.com` |
-| `gpphosted.com` | 36 | 1 | `mxa-00336402.gslb.gpphosted.com`, `mxb-00336402.gslb.gpphosted.com`, `mxa-00588301.gslb.gpphosted.com` |
+| `open.ch` | 62 | 1 | `mx13.ubs.open.ch`, `mx14.ubs.open.ch`, `mx12.ubs.open.ch` |
+| `thalesgroup.com` | 54 | 1 | `mx02.thalesgroup.com`, `mx01.thalesgroup.com` |
+| `gpphosted.com` | 38 | 1 | `mxa-00336402.gslb.gpphosted.com`, `mxb-00336402.gslb.gpphosted.com`, `mxa-00588301.gslb.gpphosted.com` |
 | `sherwin.com` | 36 | 1 | `emhost64.sherwin.com`, `emhost62.sherwin.com`, `emhost63.sherwin.com` |
 | `registrar-servers.com` | 35 | 1 | `eforward5.registrar-servers.com`, `eforward3.registrar-servers.com`, `eforward1.registrar-servers.com` |
 | `netnames.net` | 32 | 1 | `relay2.netnames.net`, `relay1.netnames.net` |
@@ -24,16 +26,16 @@
 | `sendgrid.net` | 20 | 1 | `mx2.sendgrid.net` |
 | `sparkpostmail.com` | 18 | 1 | `smtp.sparkpostmail.com`, `smtp.eu.sparkpostmail.com`, `rx1.sparkpostmail.com` |
 | `fresenius.de` | 15 | 1 | `mgw5.fresenius.de`, `mgw6.fresenius.de`, `mgw4.fresenius.de` |
-| `open.ch` | 14 | 1 | `mx13.ubs.open.ch`, `mx14.ubs.open.ch`, `mx12.ubs.open.ch` |
+| `h-email.net` | 15 | 1 | `mail.h-email.net` |
 | `en25.com` | 13 | 1 | `mail.en25.com`, `s378.m.en25.com`, `s154878491.m.en25.com` |
 | `amazon.com` | 12 | 1 | `amazon-smtp.amazon.com`, `smtp-0102.amazon.com`, `smtp-2102.amazon.com` |
 | `hertz.com` | 12 | 1 | `htcppmx01.hertz.com`, `htcppmx02.hertz.com`, `hccppmx02.hertz.com` |
 | `metlife.com` | 12 | 1 | `mx2.metlife.com`, `mx1.metlife.com` |
 | `paypalcorp.com` | 12 | 1 | `mx1.paypalcorp.com`, `mx2.paypalcorp.com` |
+| `spaceship.net` | 12 | 1 | `mx2.efwd.spaceship.net`, `mx1.efwd.spaceship.net` |
 | `chinaemail.cn` | 10 | 1 | `mxabjm.chinaemail.cn`, `mxbjm.chinaemail.cn`, `mx102y.chinaemail.cn` |
 | `adobe.com` | 9 | 1 | `inbound.campaign.adobe.com` |
 | `google.com` | 9 | 1 | `gmr-smtp-in.l.google.com`, `alt2.gmr-smtp-in.l.google.com`, `alt1.gmr-smtp-in.l.google.com` |
-| `h-email.net` | 9 | 1 | `mail.h-email.net` |
 | `westernunion.com` | 9 | 1 | `mail.westernunion.com`, `mail.intl.westernunion.com`, `mail5.intl.westernunion.com` |
 | `adobe.net` | 8 | 1 | `va.mx.mseme.adobe.net`, `va7.feedback.adobe.net`, `va6.feedback.adobe.net` |
 | `alliancebernstein.com` | 8 | 1 | `njdmta20a.alliancebernstein.com`, `nydmta10a.alliancebernstein.com`, `njdmta10a.alliancebernstein.com` |
@@ -49,7 +51,6 @@
 | `morganstanley.com` | 8 | 1 | `mx2.morganstanley.com`, `mx1.morganstanley.com`, `mx3.morganstanley.com` |
 | `n-able.com` | 8 | 1 | `mx1-us.n-able.com`, `mx4-eu.n-able.com`, `mx3-eu.n-able.com` |
 | `netease.com` | 8 | 1 | `qiye163mx01.mxmail.netease.com`, `qiye163mx02.mxmail.netease.com`, `163mx01.mxmail.netease.com` |
-| `spaceship.net` | 8 | 1 | `mx2.efwd.spaceship.net`, `mx1.efwd.spaceship.net` |
 | `yahoodns.net` | 8 | 1 | `mx-biz.mail.am0.yahoodns.net`, `mx-rogers.mail.am0.yahoodns.net`, `mx-att.mail.am0.yahoodns.net` |
 | `icoremail.net` | 7 | 1 | `mx.c5.icoremail.net`, `mx2.c5.icoremail.net`, `mx3.c5.icoremail.net` |
 | `caci.com` | 6 | 1 | `mailserver02a.caci.com`, `mailserver1b.caci.com`, `mailserver03a.caci.com` |
@@ -81,6 +82,7 @@
 | `dotdigital.com` | 4 | 1 | `r2-smtp-in-1.dotdigital.com`, `r2-smtp-in-2.dotdigital.com` |
 | `driftmail.net` | 4 | 1 | `smtp.driftmail.net`, `smtp2.driftmail.net` |
 | `earthlink-vadesecure.net` | 4 | 1 | `mx04.earthlink-vadesecure.net`, `mx03.earthlink-vadesecure.net`, `mx02.earthlink-vadesecure.net` |
+| `envoyxpress.com` | 4 | 1 | `se.envoyxpress.com`, `de.envoyxpress.com` |
 | `everycloudtech.us` | 4 | 1 | `mx104.everycloudtech.us`, `mx103.everycloudtech.us`, `mx102.everycloudtech.us` |
 | `greenradar.com` | 4 | 1 | `amtdigital-net.mail.dr.greenradar.com`, `amtdigital-net.mail.hk.greenradar.com`, `amtdinc-com.mail.hk.greenradar.com` |
 | `huntington-bank.com` | 4 | 1 | `gw1net.huntington-bank.com`, `gw4net.huntington-bank.com`, `gw2net.huntington-bank.com` |
@@ -110,8 +112,6 @@
 | `disney.com` | 3 | 1 | `generalsmtp.disney.com` |
 | `dnsmadeeasy.com` | 3 | 1 | `mx2.dnsmadeeasy.com`, `mx1.dnsmadeeasy.com`, `mx3.dnsmadeeasy.com` |
 | `eemms.net` | 3 | 1 | `mx.eemms.net` |
-| `exfy.io` | 3 | 1 | `mail1.prod.sjc.exfy.io`, `mail1.prod.rno.exfy.io`, `mail1.prod.lax.exfy.io` |
-| `flonetwork.com` | 3 | 1 | `uubak3smtp1.flonetwork.com`, `uubak2smtp1.flonetwork.com`, `uubak1smtp2.flonetwork.com` |
 
 - P6 の未知ホスト一覧が上限 100 件に達している。**一覧に無いホストが残っている**（頻度の低いものが切れている）
 
