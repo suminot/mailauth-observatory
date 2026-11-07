@@ -225,6 +225,11 @@ The main columns used in the tables above.
 | `reject_with_rua_domains` | `p=reject` with a rua destination (names reserved for examples excluded) |
 | `dmarc_np_domains` | DMARC carries a valid `np=` (policy for non-existent subdomains, RFC 9989) |
 | `dmarc_testing_domains` | DMARC carries `t=y` (testing, RFC 9989) |
+| `evidence_signed_entities` | per company, a reachable MX, SPF senders and a DKIM key all present on one of its main domains (the four columns are mutually exclusive) |
+| `evidence_sending_entities` | MX and SPF senders, but no DKIM key found under the selectors tried |
+| `evidence_receiving_entities` | MX, but no senders listed in SPF |
+| `evidence_none_entities` | no reachable MX on any main domain |
+| `mail_off_site_entities` | no reachable MX on the website's domain, but another main domain of the same company has one |
 | `bulk_spf_ok_domains` | among sending domains (`sending_domains`), SPF is present and evaluates without error (one `v=spf1`, within 10 lookups counted through `include` targets) |
 | `bulk_dkim_domains` | likewise, a DKIM key was found (within the selectors tried) |
 | `bulk_dmarc_ok_domains` | likewise, DMARC is present with a valid record (including `p=none`) |

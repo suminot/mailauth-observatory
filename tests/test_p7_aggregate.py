@@ -1372,3 +1372,40 @@ def test_rua_の雛形の宛先と_reject_かつ_rua_を数える():
         row(4, "none", ["example.net"]),
     ])
     assert (stats.rua_placeholder_domains, stats.reject_with_rua_domains) == (2, 1)
+
+
+def test_会社ごとのメールに使っている証拠の段階():
+    from mailauth.contracts import DkimStatus
+    from mailauth.p7_aggregate.metrics import mail_evidence
+
+    def r(e, d, **kw):
+        base = dict(domain_id=d, entity_id=e)
+        base.update(kw)
+        return _row(**base)
+
+    det = DkimStatus.DETECTED
+    rows = [
+        # 1社目：公式サイトには MX が無く、別のドメインで送受信・署名している
+        r("jp:1", "d:1a", is_official=True),
+        r("jp:1", "d:1b", mx_reachable=True, spf_sends=True, dkim_status=det),
+        # 2社目：MX と SPF の送信元はあるが DKIM は見つからない
+        r("jp:2", "d:2", is_official=True, mx_reachable=True, spf_sends=True),
+        # 3社目：MX だけ
+        r("jp:3", "d:3", is_official=True, mx_reachable=True),
+        # 4社目：何も無い（SPF の送信元だけあっても MX が無ければ none）
+        r("jp:4", "d:4", is_official=True, spf_sends=True),
+    ]
+    assert mail_evidence(rows) == {
+        "signed": 1, "sending": 1, "receiving": 1, "none": 1, "off_site": 1,
+    }
+
+
+def test_MX_に宛先が無ければ受け取れるとしない():
+    row = DomainRow.from_fact({"domain_id": "d:1", "entity_id": "jp:1", "is_apex": True,
+                               "observed": True, "mx_present": True, "mx_unreachable": True,
+                               "spf_present": True, "raw_spf": "v=spf1 ip4:192.0.2.1 -all"})
+    assert row.mx_reachable is False
+    assert row.spf_sends is True
+    deny = DomainRow.from_fact({"domain_id": "d:2", "entity_id": "jp:2", "is_apex": True,
+                                "observed": True, "spf_present": True, "raw_spf": "v=spf1 -all"})
+    assert deny.spf_sends is False

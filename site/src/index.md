@@ -156,6 +156,51 @@ display(
 
 </div>
 
+### そのドメインは、会社のメールに使われているか
+
+測っているドメインが、本当にその会社のメールアドレスに使われているかは、
+外からは確かめきれません。そこで、**会社ごとに、どれかのドメインで次の
+設定がそろっているか**を段階に分けて数えます。
+
+```js
+display(
+  current?.evidence_signed_entities == null
+    ? html`<p class="muted">この月はまだ集計していません。<strong>0 ではありません。</strong></p>`
+    : table(
+        [
+          { 段階: "受け取れる MX・SPF の送信元・DKIM の鍵がそろう", 企業: current.evidence_signed_entities, 割合: pct(rate(current.evidence_signed_entities, current.entities_with_domains)) },
+          { 段階: "MX と SPF の送信元はあるが、DKIM の鍵は見つからない", 企業: current.evidence_sending_entities, 割合: pct(rate(current.evidence_sending_entities, current.entities_with_domains)) },
+          { 段階: "MX はあるが、SPF に送信元を書いていない", 企業: current.evidence_receiving_entities, 割合: pct(rate(current.evidence_receiving_entities, current.entities_with_domains)) },
+          { 段階: "どのドメインにも受け取れる MX が無い", 企業: current.evidence_none_entities, 割合: pct(rate(current.evidence_none_entities, current.entities_with_domains)) },
+        ],
+        { sort: null }
+      )
+);
+```
+
+```js
+display(
+  current?.mail_off_site_entities == null
+    ? html``
+    : html`<p>公式サイトのドメインには受け取れる MX が無く、<strong>同じ会社の別のドメインでメールを受けている会社が ${num(current.mail_off_site_entities)} 社</strong>あります。公式サイトのドメインだけを測る方法では、これらの会社のメールの設定は測れません。</p>`
+);
+```
+
+<div class="limits">
+
+- **DNS に設定があることは、実際に送っている証明ではありません。** ただ、
+  受け取り（MX）と送信（SPF）と署名（DKIM）の設定がそろうドメインを、
+  使っていないと見る理由は薄いと考えています
+- 「受け取れる MX」は、MX があり、Null MX でなく、どれかの MX ホストに
+  宛先（アドレス）があるものです
+- 「SPF の送信元」は、`include` `ip4` `ip6` `a` `mx` などを書いているもので、
+  `v=spf1 -all` だけ（送らない宣言）は含みません
+- DKIM は試したセレクタで見つかったものだけです。2段目には、試していない
+  セレクタで署名している会社も入っています
+- 割合の分母は、計測に現れた会社（`entities_with_domains`）です
+
+</div>
+
 ## 名目と実効
 
 `p=reject` と書いてあることと、それが実際に効いていることは別の事実です。
