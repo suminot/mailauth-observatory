@@ -95,3 +95,15 @@ def test_一覧の版は列から読む(tmp_path):
     assert subs.csv_parser_version(path) is None
     write_csv(path, read_csv(path))
     assert subs.csv_parser_version(path) == subs.SUBS_PARSER_VERSION
+
+
+def test_住所と助詞と決算日の地の文を切り離す():
+    text = (
+        "4【関係会社の状況】 （連結子会社） "
+        "東京都千代田区丸の内一丁目4番5号三菱UFJ信託銀行株式会社 "
+        "株式会社日本カストディ銀行は、株式会社アスコットの決算日を9月30日から変更 "
+        "5【従業員の状況】"
+    )
+    assert subsidiary_names(text) == [
+        "三菱UFJ信託銀行株式会社", "株式会社日本カストディ銀行", "株式会社アスコット",
+    ]

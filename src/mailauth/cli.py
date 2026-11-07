@@ -1238,6 +1238,7 @@ def group_domains_cmd(
         subs.read_csv(subs.SUBS_CSV),
         grp.read_csv(grp.GROUP_CSV),
         max_lookups=max_lookups,
+        queried_with=grp.csv_query_version(grp.GROUP_CSV),
     )
     grp.write_csv(grp.GROUP_CSV, data)
     typer.echo(_json.dumps(stats, ensure_ascii=False))
