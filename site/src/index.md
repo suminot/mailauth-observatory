@@ -543,6 +543,8 @@ display(
 ```js
 const PAIR = ["jp-all-listed", "us-all-listed"];
 const n225 = latest.find((d) => d.population_id === "jp-nikkei225");
+const grp = latest.find((d) => d.population_id === "jp-all-listed-group");
+const n225g = latest.find((d) => d.population_id === "jp-nikkei225-group");
 const pairRows = PAIR.map((p) => latest.find((d) => d.population_id === p)).filter(Boolean);
 const share = (n, d) => (n == null || !d ? "—" : pct(rate(n, d)));
 const PAIR_ROWS = [
@@ -568,6 +570,8 @@ display(
           国内上場: f(pairRows[0]),
           米国上場: f(pairRows[1]),
           ...(n225 ? { "日経225（国内上場の内数）": f(n225) } : {}),
+          ...(grp ? { "グループ会社（別の母集団）": f(grp) } : {}),
+          ...(n225g ? { "日経225 のグループ会社": f(n225g) } : {}),
         })),
         { sort: null }
       )
@@ -589,6 +593,9 @@ display(
   調査と比べるときに使ってください
 - 日経225 の列は国内上場の内数です（構成銘柄の一覧の出どころは「方法」のページ）。
   日経平均株価の著作権は日本経済新聞社に帰属します
+- グループ会社の列は、上場会社の国内子会社の一部（有価証券報告書に名前が出て、
+  gBizINFO に企業サイトの登録があるもの）を**上場会社とは別に**測ったものです。
+  上場会社の列には含みません。子会社の全部ではありません
 
 </div>
 

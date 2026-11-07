@@ -556,6 +556,8 @@ or score them.**
 ```js
 const PAIR = ["jp-all-listed", "us-all-listed"];
 const n225 = latest.find((d) => d.population_id === "jp-nikkei225");
+const grp = latest.find((d) => d.population_id === "jp-all-listed-group");
+const n225g = latest.find((d) => d.population_id === "jp-nikkei225-group");
 const pairRows = PAIR.map((p) => latest.find((d) => d.population_id === p)).filter(Boolean);
 const share = (n, d) => (n == null || !d ? "—" : pct(rate(n, d)));
 const PAIR_ROWS = [
@@ -581,6 +583,8 @@ display(
           "Japan-listed": f(pairRows[0]),
           "US-listed": f(pairRows[1]),
           ...(n225 ? { "Nikkei 225 (within Japan-listed)": f(n225) } : {}),
+          ...(grp ? { "Group companies (separate population)": f(grp) } : {}),
+          ...(n225g ? { "Nikkei 225 group companies": f(n225g) } : {}),
         })),
         { sort: null }
       )
@@ -604,6 +608,10 @@ display(
 - The Nikkei 225 column is a subset of Japan-listed (see Methodology for where the
   constituents list comes from). The copyright of the Nikkei Stock Average belongs
   to Nikkei Inc.
+- The group company columns measure some domestic subsidiaries of listed companies
+  (those named in the annual securities report with a website registered in
+  gBizINFO) **separately from the listed companies**. They are not included in the
+  listed-company columns, and they are not every subsidiary
 
 </div>
 
