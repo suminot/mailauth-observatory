@@ -34,6 +34,7 @@ months:
       - _domainkey.<ドメイン> を引くようにし、試したセレクタでは DKIM が見つからないドメインのうち、その配下に名前があるもの（試していないセレクタの鍵がありそう）の数を足した。
       - 会社ごとに、受け取れる MX・SPF の送信元・DKIM の鍵がどこまでそろうかの段階と、公式サイトのドメインではなく別のドメインでメールを受けている会社の数を足した。
       - ドメインごとに、会社と対応づけた根拠（会社が自分で書いた・証明書・会社の DNS・公式サイトのリンク先）と、メールに使っている証拠の段階を掛け合わせた数を足した。
+      - ドメインの候補に、公式サイトのドメインに MX が無い会社の、同じ名前の別の TLD のドメイン（MX があり、トップページのタイトルに商号があるもの）を足した。
     en:
       - The outbound front-end check now includes the names that Proofpoint, Mimecast, Barracuda, Cisco, Trend Micro and others ask customers to publish in SPF for sending (only names found in each vendor's documentation). The number of US companies with an outbound front-end rose largely because of this.
       - Rules were added for DKIM CNAME targets (SendGrid, HubSpot, Constant Contact, Salesforce and others) and SPF includes (KnowBe4, Mailgun, Oracle and Japanese delivery services). The rise in sending-service counts comes from this.
@@ -59,3 +60,4 @@ months:
       - _domainkey.<domain> is now queried; among domains where DKIM was not found under the selectors tried, those with names under it (likely keys under other selectors) are now counted.
       - Per company, stages of how far a reachable MX, SPF senders and a DKIM key line up were added, along with the number of companies receiving mail on a domain other than their website's.
       - Per domain, counts crossing the grounds for tying it to the company (stated by the company, certificate, the company's DNS, linked from the website) with the stage of mail-use evidence were added.
+      - For companies whose website domain has no MX, the same name under another TLD was added to the candidate domains (only where it has MX and its top page title carries the trade name).
