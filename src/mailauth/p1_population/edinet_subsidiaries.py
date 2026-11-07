@@ -34,7 +34,7 @@ _WINDOW = 40_000
 MAX_PER_COMPANY = 300
 #: 名前の読み方を変えたら上げる。**上がったら、読んだ有報も読み直す**（節の本文は
 #: キャッシュにあるので、取り直しは要らない）
-SUBS_PARSER_VERSION = 4
+SUBS_PARSER_VERSION = 5
 
 _LEGAL = "株式会社|有限会社|合同会社"
 _NAME = re.compile(
@@ -50,8 +50,23 @@ _CONNECTORS = sorted((
     "おります", "した", "して", "する", "を連結", "を除外", "を設立", "を新たに", "新たに",
     "の全株式", "を保有", "が保有", "が所有", "を所有", "を取得", "当該", "前連結会計年度",
     "当連結会計年度", "連結の範囲", "出資により", "を100%", "の決算日", "決算日",
+    # 注記の文（2026-11-07 の not_found 2,037 件から）
+    "に行われた", "行われた", "時点で", "付で", "名称:", "の株式", "の売上高", "の匿名組合",
+    "代表取締役", "常務取締役", "専務取締役", "取締役", "監査役", "執行役員", "支店長", "支店",
+    "会長", "社長",
+    "を吸収合併", "吸収合併", "を割当先", "があります", "と協業", "と特殊", "に係る",
 ), key=len, reverse=True)
-_CONNECTOR_RE = re.compile("|".join(re.escape(c) for c in _CONNECTORS))
+_CONNECTOR_RE = re.compile(
+    "|".join(re.escape(c) for c in _CONNECTORS)
+    # 日付（「2026年4月1日付で」）・番号（「4.」「2)」「(3)」）・株数（「に25株」）
+    + r"|\d{4}年\d{1,2}月(?:\d{1,2}日)?|(?:^|(?<=[\s、。]))(?:\d{1,2}[.)．）]|\(\d{1,2}\))"
+    + r"|に\d+株"
+)
+#: 切り詰めで残った一般名詞だけのもの（「銀行株式会社」）は名前ではない
+_GENERIC_CORES = frozenset({
+    "銀行", "工業", "商事", "産業", "食品", "生命保険", "損害保険", "信託銀行", "証券", "建設",
+    "電気", "電機", "化学", "製作所", "ホールディングス", "ジャパン", "サービス",
+})
 #: 表の見出し。子会社の区分だけ読む（持分法の関連会社・親会社・その他の関係会社は
 #: グループ会社ではない）
 _GROUP_HEADING = re.compile(
@@ -118,6 +133,9 @@ def names_from_section(section: str, own_name: str | None = None) -> list[str]:
         if len(re.sub(r"[\W\d_]", "", core)) < 2 or not re.match(r"[\w]", name):
             continue
         if any(w in core for w in _NOT_A_NAME):
+            continue
+        # 助詞で始まる（「のは株式会社」）・一般名詞だけ（「銀行株式会社」）は名前ではない
+        if core[:1] in "のはがをにでとへも" or core in _GENERIC_CORES:
             continue
         if own and name == own:
             continue
