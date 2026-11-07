@@ -2854,6 +2854,10 @@ disney.com / thewaltdisneycompany.com）。
 - **一歩目（2026-11-07）**：`koukoku-scan --subsidiaries-max` が有報の「関係会社の状況」から
   国内の法人格付きの子会社名を読み、`configs/domains/subsidiaries.csv` に置く。まだ候補には
   使わない（次は名前 → `.co.jp` の推測と商号の確かめ → 別の母集団）
+- **二歩目（2026-11-07）**：`mailauth group-domains` が子会社名を gBizINFO の法人検索
+  （部分一致）で引き、商号が完全に一致する法人が1つだけのとき、法人番号の企業ホームページ
+  （`company_url`）のドメインを `configs/domains/subsidiary_domains.csv` に置く。同じ商号が
+  複数あれば採らない。次は P2 の経路（グループ会社）と別の母集団
 
 ## 7. 規模に対する前提
 

@@ -24,6 +24,10 @@ on:
         description: 子会社名を読む有報の上限（グループ会社、BACKLOG 52）
         required: false
         default: "600"
+      group_max:
+        description: gBizINFO で引く子会社名の上限
+        required: false
+        default: "2000"
 
 permissions:
   contents: write
@@ -43,6 +47,7 @@ jobs:
     timeout-minutes: 120
     env:
       MAILAUTH_EDINET_SUBSCRIPTION_KEY: ${{ secrets.MAILAUTH_EDINET_SUBSCRIPTION_KEY }}
+      MAILAUTH_GBIZINFO_TOKEN: ${{ secrets.MAILAUTH_GBIZINFO_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -81,6 +86,13 @@ jobs:
             --max-docs "${{ inputs.max_docs || '1200' }}" \
             --subsidiaries-max "${{ inputs.subsidiaries_max || '600' }}" | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # **子会社名 → gBizINFO → 企業サイトのドメイン**（グループ会社、BACKLOG 52）。
+      # 上場会社の数字には混ぜず、一覧に置くだけ
+      - name: 子会社のドメインを引く
+        if: hashFiles('configs/domains/subsidiaries.csv') != ''
+        run: |
+          mailauth group-domains --max-lookups "${{ inputs.group_max || '2000' }}" | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: 読んだ有報のキャッシュを残す
         if: always()
         uses: actions/cache/save@v4
@@ -90,7 +102,7 @@ jobs:
 
       - name: 一覧をコミットする
         run: |
-          if git diff --quiet -- configs/domains/koukoku_domains.csv configs/domains/subsidiaries.csv \
+          if git diff --quiet -- configs/domains/koukoku_domains.csv configs/domains/subsidiaries.csv configs/domains/subsidiary_domains.csv \
              && git ls-files --error-unmatch configs/domains/koukoku_domains.csv >/dev/null 2>&1 \
              && git ls-files --error-unmatch configs/domains/subsidiaries.csv >/dev/null 2>&1; then
             echo "変化なし" >> "$GITHUB_STEP_SUMMARY"
@@ -100,6 +112,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add configs/domains/koukoku_domains.csv
           [ -f configs/domains/subsidiaries.csv ] && git add configs/domains/subsidiaries.csv
+          [ -f configs/domains/subsidiary_domains.csv ] && git add configs/domains/subsidiary_domains.csv
           git commit -m "有報の公告ドメイン・子会社名を更新"
           for i in 1 2 3 4; do
             git pull --rebase origin main && git push origin HEAD:main && exit 0
