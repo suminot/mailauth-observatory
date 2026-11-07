@@ -166,12 +166,28 @@ def build_rows(run_id: str) -> list[dict]:
             return "不明"
         return "あり" if bool(v) else "無し"
 
+    from .p7_aggregate.metrics import DomainRow, domain_stage, ownership_tier
+
+    def methods_of(evidence) -> list[str]:
+        try:
+            items = json.loads(evidence or "[]")
+        except (TypeError, ValueError):
+            return []
+        return [str(x.get("value")) for x in items
+                if isinstance(x, dict) and x.get("type") == "discovery"]
+
     rows: list[dict] = []
     for _, r in df.iterrows():
         eid = str(r.get("entity_id"))
         e = ent.loc[eid] if eid in ent.index else None
         inf = by_domain.get(str(r.get("domain_id")), {})
         observed = r.get("observed")
+        methods = methods_of(r.get("evidence"))
+        official = s(e.get("official_domain")) if e is not None else "—"
+        if observed is True or observed == 1:
+            stage = STAGE_LABELS[domain_stage(DomainRow.from_fact(r.to_dict()))]
+        else:
+            stage = "不明（引けなかった）"
         rows.append(
             {
                 "企業名": s(e["name"]) if e is not None else "—",
@@ -180,6 +196,12 @@ def build_rows(run_id: str) -> list[dict]:
                 "ドメイン": s(r.get("domain")),
                 "役割": s(r.get("domain_role")),
                 "確度": s(r.get("confidence")),
+                # **このドメインがその会社のものだと言える根拠と、メールに
+                # 使っていると言える証拠。** 読む人が1社ずつ確かめられるように
+                "公式サイト": "はい" if s(r.get("domain")) == official else "—",
+                "対応づけの根拠": OWNERSHIP_LABELS.get(ownership_tier(methods) or "", "—"),
+                "見つけた経路": ", ".join(sorted(set(methods))) or "—",
+                "メールに使っている証拠": stage,
                 # **観測できたかどうかを先頭近くに置く。** ここが「不明」の
                 # 行を「対策していない」と読ませないため
                 "観測": tri(observed),
@@ -219,6 +241,23 @@ def build_rows(run_id: str) -> list[dict]:
     return rows
 
 
+#: 対応づけの根拠の区分（P7 の `OWNERSHIP_TIERS`）
+OWNERSHIP_LABELS = {
+    "company_stated": "会社が自分で書いた",
+    "certificate": "証明書",
+    "own_dns": "会社の DNS が指している",
+    "web_link": "公式サイトのリンク先・同じ名前（商号を確認）",
+    "other": "その他",
+}
+
+#: メールに使っている証拠の段階（P7 の `domain_stage`）
+STAGE_LABELS = {
+    "signed": "MX・SPF・DKIM がそろう",
+    "sending": "MX・SPF（DKIM は未検出）",
+    "receiving": "MX だけ",
+    "none": "受け取れる MX が無い",
+}
+
 #: 画面の上に必ず出す断り。**消せない形で埋め込む。**
 BANNER = (
     "第2層（個社名付き明細）／社外秘。**公開してはならない。** "
@@ -234,6 +273,8 @@ CAVEATS = [
     "何にでも応答する DNS では DKIM が偽陽性になる。"
     "「DKIM 偽陽性の疑い」が立っている行は確かめること。",
     "これは標準への準拠状況の観測であって、**総合的なセキュリティ評価ではない**。",
+    "「メールに使っている証拠」は DNS の設定がどこまでそろうかで、**実際に送っている"
+    "証明ではない**。DKIM は試したセレクタで見つかったものだけ。",
 ]
 
 

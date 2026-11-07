@@ -183,3 +183,41 @@ def test_知らない理由は捨てずにそのまま出す(tmp_path, monkeypat
     run = _fixture(tmp_path, monkeypatch, reason="まだ名前の無い理由")
     rows = drilldown.build_rows(run)
     assert rows[0]["検出できない理由"] == "まだ名前の無い理由"
+
+
+def test_対応づけの根拠とメールに使っている証拠を出す(tmp_path, monkeypatch):
+    import json
+
+    monkeypatch.setenv("MAILAUTH_DATA_ROOT", str(tmp_path / "data"))
+    base = tmp_path / "data" / "runs" / "2026-11"
+
+    def put(phase, name, df):
+        d = base / phase
+        d.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(d / name)
+
+    put("p1_population", "entities.parquet", pd.DataFrame([{
+        "entity_id": "jp:1", "name": "試験株式会社", "securities_code": "0000",
+        "industry_label": "素材・化学", "official_domain": "global.example",
+    }]))
+    put("p3_domains", "domains.parquet", pd.DataFrame([
+        {"domain_id": "d1", "entity_id": "jp:1", "domain": "global.example",
+         "domain_role": "primary", "confidence": "unknown",
+         "evidence": json.dumps([{"type": "discovery", "value": "official_url"}])},
+        {"domain_id": "d2", "entity_id": "jp:1", "domain": "example.co.jp",
+         "domain_role": "primary", "confidence": "confirmed",
+         "evidence": json.dumps([{"type": "discovery", "value": "sibling_tld"}])},
+    ]))
+    put("p5_parse", "facts.parquet", pd.DataFrame([
+        {"domain_id": "d1", "entity_id": "jp:1", "is_apex": True, "observed": True,
+         "mx_present": False, "spf_present": False, "dkim_status": None},
+        {"domain_id": "d2", "entity_id": "jp:1", "is_apex": True, "observed": True,
+         "mx_present": True, "spf_present": True, "raw_spf": "v=spf1 ip4:192.0.2.1 -all",
+         "dkim_status": "detected"},
+    ]))
+    rows = {r["ドメイン"]: r for r in drilldown.build_rows("2026-11")}
+    assert rows["global.example"]["公式サイト"] == "はい"
+    assert rows["global.example"]["対応づけの根拠"] == "会社が自分で書いた"
+    assert rows["global.example"]["メールに使っている証拠"] == "受け取れる MX が無い"
+    assert rows["example.co.jp"]["見つけた経路"] == "sibling_tld"
+    assert rows["example.co.jp"]["メールに使っている証拠"] == "MX・SPF・DKIM がそろう"
