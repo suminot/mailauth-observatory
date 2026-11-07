@@ -2,21 +2,21 @@
 
 - 母集団: `jp-all-listed-group`
 - 状態: **partial**
-- 集計時刻: 2026-11-07T22:14:05+00:00
-- 警告: 21 件
+- 集計時刻: 2026-11-07T22:47:08+00:00
+- 警告: 20 件
 
 ## 工程
 
 | 工程 | 状態 | 入力 | 成功 | 失敗 | スキップ | 秒 |
 |---|---|---|---|---|---|---|
-| p1_population 母集団確定 | success | 1687 | 1180 | 0 | 0 | 8.605 |
-| p2_candidates ドメイン候補生成 | success | 1180 | 1180 | 0 | 0 | 385.4 |
-| p3_domains メールドメイン確定 | partial | 3738 | 1440 | 24 | 2298 | 564.029 |
-| p4_measure DNS計測 | success | 1405 | 53 | 0 | 1356 | 40.88 |
-| p5_parse パース | success | 82016 | 1440 | 0 | 0 | 45.616 |
-| p6_infer 推察 | success | 1440 | 3717 | 0 | 0 | 1.129 |
-| p7_aggregate 集計 | success | 1440 | 2 | 0 | 0 | 0.45 |
-| p8_publish 公開 | success | 444 | 2499 | 0 | 0 | 0.157 |
+| p1_population 母集団確定 | success | 1687 | 1168 | 0 | 0 | 5.822 |
+| p2_candidates ドメイン候補生成 | success | 1168 | 1168 | 0 | 0 | 383.65 |
+| p3_domains メールドメイン確定 | partial | 3697 | 1425 | 24 | 2272 | 557.036 |
+| p4_measure DNS計測 | success | 1390 | 2 | 0 | 1409 | 4.615 |
+| p5_parse パース | success | 82160 | 1425 | 0 | 0 | 87.866 |
+| p6_infer 推察 | success | 1425 | 3651 | 0 | 0 | 1.437 |
+| p7_aggregate 集計 | success | 1425 | 2 | 0 | 0 | 0.487 |
+| p8_publish 公開 | success | 442 | 2495 | 0 | 0 | 0.173 |
 
 ## 工程間の件数
 
@@ -26,13 +26,13 @@
 
 | 前 | 後 | 前の成功 | 後の入力 | 差 |
 |---|---|---|---|---|
-| p1_population | p2_candidates | 1180 | 1180 | 0 |
-| p2_candidates | p3_domains | 1180 | 3738 | 2558 |
-| p3_domains | p4_measure | 1440 | 1405 | -35 |
-| p4_measure | p5_parse | 53 | 82016 | 81963 |
-| p5_parse | p6_infer | 1440 | 1440 | 0 |
-| p6_infer | p7_aggregate | 3717 | 1440 | -2277 |
-| p7_aggregate | p8_publish | 2 | 444 | 442 |
+| p1_population | p2_candidates | 1168 | 1168 | 0 |
+| p2_candidates | p3_domains | 1168 | 3697 | 2529 |
+| p3_domains | p4_measure | 1425 | 1390 | -35 |
+| p4_measure | p5_parse | 2 | 82160 | 82158 |
+| p5_parse | p6_infer | 1425 | 1425 | 0 |
+| p6_infer | p7_aggregate | 3651 | 1425 | -2226 |
+| p7_aggregate | p8_publish | 2 | 442 | 440 |
 
 ## 警告
 
@@ -43,7 +43,7 @@
 ### p2_candidates
 
 - `DOMAIN_SHARED_BY_ENTITIES` ×30: 同一ドメインが複数企業に紐づいている。持株会社・グループ共用の可能性
-- `UNALIGNED_RUA_TARGET` ×84: 自社ドメインでない rua 宛先があった。**候補にしていない。** 第三者のレポート処理サービスであり、その企業の送信ドメインではない。ベンダー名が分かれば configs/vendors/dmarc_rua_vendors.yaml に足すと P6 の dmarc_vendor 推定が埋まる
+- `UNALIGNED_RUA_TARGET` ×83: 自社ドメインでない rua 宛先があった。**候補にしていない。** 第三者のレポート処理サービスであり、その企業の送信ドメインではない。ベンダー名が分かれば configs/vendors/dmarc_rua_vendors.yaml に足すと P6 の dmarc_vendor 推定が埋まる
 
 ### p3_domains
 
@@ -51,13 +51,12 @@
 
 ### p4_measure
 
-- `RESUMED_FROM_EXISTING_BRONZE` ×1356: 同じ run の bronze に 1356 ドメインぶんが既にあったため測り直していない。**「観測していない」のではなく「前回の実行で観測済み」である**
-- `BRONZE_APPENDED_TO_EXISTING` ×4: 同じ run に既存の bronze があったため、上書きせず新しいパートに追記した（bronze は不変・追記のみ）。--resume なので、既に測り終えたドメインは測り直していない
-- `WILDCARD_DNS` ×2: 実在しないセレクタに応答したドメイン。何にでも答える DNS のため DKIM の検出結果は偽陽性の可能性がある
+- `RESUMED_FROM_EXISTING_BRONZE` ×1409: 同じ run の bronze に 1409 ドメインぶんが既にあったため測り直していない。**「観測していない」のではなく「前回の実行で観測済み」である**
+- `BRONZE_APPENDED_TO_EXISTING` ×5: 同じ run に既存の bronze があったため、上書きせず新しいパートに追記した（bronze は不変・追記のみ）。--resume なので、既に測り終えたドメインは測り直していない
 
 ### p5_parse
 
-- `BRONZE_OUTSIDE_MEASURED_SET` ×4: 同じ run の bronze に、いまの P3 が計測対象にしていないドメインがあった（前の試行の残り）。facts に入れていない
+- `BRONZE_OUTSIDE_MEASURED_SET` ×21: 同じ run の bronze に、いまの P3 が計測対象にしていないドメインがあった（前の試行の残り）。facts に入れていない
 - `DKIM_WILDCARD_SUSPECT` ×5: 対照クエリが応答したドメイン。DKIM の検出は偽陽性の可能性
 - `RUA_DOMAIN_UNREGISTERED` ×2: rua の宛先ドメインが未登録。第三者が登録すればレポートが漏洩しうる（Hureau et al., PAM 2024）
 - `MTA_STS_POLICY_UNUSABLE`: MTA-STS の TXT はあるが、ポリシーを取れない・読めないドメイン。**送る側の MTA も同じく読めないので、MTA-STS は効いていない**
@@ -67,13 +66,13 @@
 ### p6_infer
 
 - `NO_STALE_HISTORY`: 前月の inferences.parquet が無いため stale の連続月数を引き継げない。3 か月連続の判定は今月を1か月目として数え直す
-- `NO_INFERENCE_RATE_HIGH` ×321: 推定が付かないドメインが 22.3% で受け入れ基準（20% 未満）を超えている。unknown_mx_hosts から辞書を拡充する
-- `UNKNOWN_MX_HOSTS` ×75: 辞書に無い MX ホストが 75 種、189 ドメインぶんある。**全部を一覧に出している。****自社ドメイン配下の MX 289 ドメイン（211 社）は一覧から外している** ── 辞書に足してもその1社にしか効かない。**名前の無い MX ホスト 20 ドメインぶんも外している**（製品ではない。P5 の MX_UNREACHABLE を見ること）。頻度順の上位を手で辞書に追記すると推定率が上がる（DESIGN.md P6 実装メモ）
-- `SECURITY_GATEWAY_UNDETECTABLE` ×1120: セキュリティ製品を DNS 上で検出できなかったドメイン。**理由の内訳: api_mode_product 872件、self_hosted_mx 245件、spf_flattened 3件。** どれも「使っていない」と解釈してはならない
+- `NO_INFERENCE_RATE_HIGH` ×320: 推定が付かないドメインが 22.5% で受け入れ基準（20% 未満）を超えている。unknown_mx_hosts から辞書を拡充する
+- `UNKNOWN_MX_HOSTS` ×74: 辞書に無い MX ホストが 74 種、176 ドメインぶんある。**全部を一覧に出している。****自社ドメイン配下の MX 283 ドメイン（210 社）は一覧から外している** ── 辞書に足してもその1社にしか効かない。**名前の無い MX ホスト 20 ドメインぶんも外している**（製品ではない。P5 の MX_UNREACHABLE を見ること）。頻度順の上位を手で辞書に追記すると推定率が上がる（DESIGN.md P6 実装メモ）
+- `SECURITY_GATEWAY_UNDETECTABLE` ×1110: セキュリティ製品を DNS 上で検出できなかったドメイン。**理由の内訳: api_mode_product 865件、self_hosted_mx 243件、spf_flattened 2件。** どれも「使っていない」と解釈してはならない
 
 ### p7_aggregate
 
-- `COMMON12_UNMAPPED` ×1408: 共通12分類が付いていない企業は業種別集計から外した。業種不明を1つの業種として扱うと分母が歪む
+- `COMMON12_UNMAPPED` ×1391: 共通12分類が付いていない企業は業種別集計から外した。業種不明を1つの業種として扱うと分母が歪む
 - `NO_PREVIOUS_FACTS`: 前月 2026-10 の facts が無いため差分を計算していない
 - `GOLD_OTHER_POPULATIONS_KEPT` ×241: 同じ月の gold にあった他の母集団の行を残した: jp-all-listed, jp-nikkei225, us-all-listed
 

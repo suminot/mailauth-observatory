@@ -8,11 +8,11 @@
 `configs/worklist/unidentified_hosts.yaml` に理由を書いて作業リストから外してください。
 **「調べたが分からなかった」は結論であって、無かったことにはしません。**
 
-## 手を付けるもの（69 件）
+## 手を付けるもの（68 件）
 
 | 登録ドメイン | 件数 | 連続月 | 例 |
 |---|---|---|---|
-| `index.or.jp` | 30 | 1 | `mskigw21.index.or.jp`, `mskigw23.index.or.jp`, `mskigw22.index.or.jp` |
+| `index.or.jp` | 22 | 1 | `mskigw21.index.or.jp`, `mskigw23.index.or.jp`, `mskigw22.index.or.jp` |
 | `amazonses.com` | 10 | 1 | `feedback-smtp.ap-northeast-1.amazonses.com`, `feedback-smtp.us-east-1.amazonses.com` |
 | `aams6.jp` | 9 | 1 | `mx-1.aams6.jp`, `mx.aams6.jp`, `mx-0.aams6.jp` |
 | `keihin.co.jp` | 8 | 1 | `isgw.keihin.co.jp`, `mail.keihin.co.jp` |
@@ -21,7 +21,6 @@
 | `ddreams.jp` | 4 | 1 | `mail-swp2.ddreams.jp`, `mail-swp1.ddreams.jp`, `mail-nk1.ddreams.jp` |
 | `exacttarget.com` | 4 | 1 | `reply.s12.exacttarget.com`, `reply.s11.exacttarget.com` |
 | `fsi.ne.jp` | 4 | 1 | `sagw.fsi.ne.jp`, `argw.fsi.ne.jp` |
-| `uniqlo.co.jp` | 4 | 1 | `mail2.uniqlo.co.jp`, `mail4.uniqlo.co.jp`, `mail1.uniqlo.co.jp` |
 | `mitene.jp` | 3 | 1 | `mx-1.mitene.jp`, `mx-0.mitene.jp`, `mx.mitene.jp` |
 | `msaas.jp` | 3 | 1 | `mail-mgcm.msaas.jp`, `mail-mgcm04.msaas.jp` |
 | `mxthunder.net` | 3 | 1 | `tsukuba-milk-co-jp.p30.mxthunder.net`, `tsukuba-milk-co-jp.p40.mxthunder.net`, `tsukuba-milk-co-jp.p20.mxthunder.net` |
@@ -33,7 +32,6 @@
 | `blks.jp` | 2 | 1 | `control-mail-mta01.blks.jp`, `control-mail-mta02.blks.jp` |
 | `daimaru.co.jp` | 2 | 1 | `maildns2.daimaru.co.jp`, `maildns1.daimaru.co.jp` |
 | `enets.ne.jp` | 2 | 1 | `spamcs1.enets.ne.jp` |
-| `fastretailing.com` | 2 | 1 | `mail.aws.fastretailing.com` |
 | `heimdalsecurity.com` | 2 | 1 | `eu-esec-02.heimdalsecurity.com`, `eu-esec-01.heimdalsecurity.com` |
 | `icho-corp.sakura.ne.jp` | 2 | 1 | `icho-corp.sakura.ne.jp` |
 | `kyusanko.co.jp` | 2 | 1 | `mx1.kyusanko.co.jp`, `mx2.kyusanko.co.jp` |
@@ -55,6 +53,7 @@
 | `dataholdings.jp` | 1 | 1 | `rsv7.dataholdings.jp` |
 | `domainserver.ne.jp` | 1 | 1 | `ds082-304.domainserver.ne.jp` |
 | `eonet.ne.jp` | 1 | 1 | `mailhosting.eonet.ne.jp` |
+| `fastretailing.com` | 1 | 1 | `mail.aws.fastretailing.com` |
 | `footwork.co.jp` | 1 | 1 | `fwdns.footwork.co.jp` |
 | `gmogaika.com` | 1 | 1 | `mx.gmogaika.com` |
 | `gol.com` | 1 | 1 | `mx.mail.gol.com` |
