@@ -532,6 +532,49 @@ display(
 
 </div>
 
+### 日本と米国を並べる
+
+同じ月の、国内上場と米国上場の母集団を並べます。**順位や優劣を示すものでは
+ありません。**
+
+```js
+const PAIR = ["jp-all-listed", "us-all-listed"];
+const pairRows = PAIR.map((p) => latest.find((d) => d.population_id === p)).filter(Boolean);
+const share = (n, d) => (n == null || !d ? "—" : pct(rate(n, d)));
+const PAIR_ROWS = [
+  ["計測に現れた会社 / 母集団", (d) => `${num(d.entities_with_domains)} / ${num(d.total_entities)}`],
+  ["DMARC を出している（ドメイン）", (d) => share(d.dmarc_adopted_domains, d.observed_domains)],
+  ["DMARC が強制（quarantine・reject、ドメイン）", (d) => share(d.dmarc_enforced_domains, d.observed_domains)],
+  ["MX・SPF・DKIM がそろう会社", (d) => share(d.evidence_signed_entities, d.entities_with_domains)],
+  ["公式サイトと別のドメインでメールを受ける会社", (d) => d.mail_off_site_entities == null ? "—" : num(d.mail_off_site_entities)],
+  ["大口送信者の要件のうち DNS で見られる部分がそろう（送信ドメイン）", (d) => share(d.bulk_ready_domains, d.sending_domains)],
+  ["主ドメインの TXT が 1,232 バイトを超える（ドメイン）", (d) => share(d.txt_apex_oversize_domains, d.observed_domains)],
+  ["DMARC に廃止タグがある（ドメイン）", (d) => share(d.dmarc_historic_tags_domains, d.dmarc_adopted_domains)],
+];
+display(
+  pairRows.length < 2
+    ? html`<p class="muted">この月は両方の母集団がそろっていません。</p>`
+    : table(
+        PAIR_ROWS.map(([label, f]) => ({
+          項目: label,
+          国内上場: f(pairRows[0]),
+          米国上場: f(pairRows[1]),
+        })),
+        { sort: null }
+      )
+);
+```
+
+<div class="limits">
+
+- 母集団の作り方が違います（国内は上場会社すべて、米国は SEC に届け出る
+  事業会社。SPAC・ファンドなどは除いています）
+- 1社あたりのドメイン数も違うので、ドメインで数えた割合は会社の数の割合とは
+  一致しません
+- DMARC の廃止タグの割合の分母は、DMARC を出しているドメインです
+
+</div>
+
 ## 時系列
 
 ```js
