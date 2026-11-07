@@ -1,15 +1,15 @@
 # 日経225 構成銘柄
 #
-# 未実装かつ要注意。構成銘柄一覧は日本経済新聞社が編集した著作物であり、
-# 指数の構成銘柄リストをそのまま取り込むと二次利用の可否が問題になる。
-# JPX の data_j.xls を使わないのと同じ理由で、一次ソースの利用条件を
-# 確認するまで有効化しないこと。
+# **この設定で別に計測はしない。** 構成銘柄は configs/derived_populations.yaml
+# で国内上場（jp-all-listed）の会社に印を付け、P7 が別に集計する（2026-11-07）。
+# 一覧は Wikipedia の記事（CC BY-SA 4.0）の証券コード。日経の指数サイトは
+# 利用規約（情報の蓄積と第三者提供の禁止）のため使わない。
 id: jp-nikkei225
 label: 日経225構成銘柄
 country: JP
 enabled: false
 implemented: false
-blocked_by: 構成銘柄リストの利用条件が未確認（日本経済新聞社の編集著作物）
+blocked_by: 別に計測しない（configs/derived_populations.yaml で国内上場から集計する）
 
 source:
   primary: manual_securities_code_list

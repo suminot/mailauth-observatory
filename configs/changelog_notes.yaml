@@ -36,6 +36,7 @@ months:
       - ドメインごとに、会社と対応づけた根拠（会社が自分で書いた・証明書・会社の DNS・公式サイトのリンク先）と、メールに使っている証拠の段階を掛け合わせた数を足した。
       - ドメインの候補に、公式サイトのドメインに MX が無い会社の、同じ名前の別の TLD のドメイン（MX があり、トップページのタイトルに商号があるもの）を足した。
       - 同じ月の国内上場と米国上場の母集団を並べた表を、総括のページに足した（順位や優劣は示さない）。
+      - 日経平均株価の構成銘柄（225 社）を、国内上場の計測を測り直さずに別に集計するようにした。一覧は Wikipedia の記事（CC BY-SA 4.0）の証券コードを使う。
     en:
       - The outbound front-end check now includes the names that Proofpoint, Mimecast, Barracuda, Cisco, Trend Micro and others ask customers to publish in SPF for sending (only names found in each vendor's documentation). The number of US companies with an outbound front-end rose largely because of this.
       - Rules were added for DKIM CNAME targets (SendGrid, HubSpot, Constant Contact, Salesforce and others) and SPF includes (KnowBe4, Mailgun, Oracle and Japanese delivery services). The rise in sending-service counts comes from this.
@@ -63,3 +64,4 @@ months:
       - Per domain, counts crossing the grounds for tying it to the company (stated by the company, certificate, the company's DNS, linked from the website) with the stage of mail-use evidence were added.
       - For companies whose website domain has no MX, the same name under another TLD was added to the candidate domains (only where it has MX and its top page title carries the trade name).
       - A table placing the Japan-listed and US-listed populations for the same month side by side was added to the summary page (no ordering or scoring).
+      - The Nikkei 225 constituents (225 companies) are now counted separately from the Japan-listed measurement without measuring again. The list uses the securities codes in a Wikipedia article (CC BY-SA 4.0).

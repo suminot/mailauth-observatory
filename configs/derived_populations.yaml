@@ -1,0 +1,18 @@
+# 計測し直さずに、別の切り口で集計する母集団（P7 が印を付ける）。
+#
+# 親の母集団（parent）の会社のうち、証券コードが member_list にあるものを
+# この母集団としても数える。**計測は親の1本だけ**なので、月次の比較が崩れない。
+populations:
+  - id: jp-nikkei225
+    label: 日経平均株価の構成銘柄
+    parent: jp-all-listed
+    member_list: configs/populations/_lists/jp-nikkei225.csv
+    expected_size: 225
+    source:
+      # 日経の指数サイトは使わない（利用規約が情報の蓄積と第三者提供を禁じ、
+      # 自動取得も拒む）。Wikipedia の記事から証券コードだけを取る
+      name: 日本語版 Wikipedia「日経平均株価」の「構成銘柄一覧」節
+      url: https://ja.wikipedia.org/wiki/日経平均株価
+      license: CC BY-SA 4.0
+      as_of: "2026-10-01"
+      attribution: 日経平均株価の著作権は日本経済新聞社に帰属します

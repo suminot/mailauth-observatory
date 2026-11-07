@@ -1169,6 +1169,43 @@ if __name__ == "__main__":
     main()
 
 
+@app.command("index-members")
+def index_members_cmd(
+    population: Annotated[str, typer.Option("--population")] = "jp-nikkei225",
+    title: Annotated[str, typer.Option("--title", help="Wikipedia の記事名")] = "日経平均株価",
+) -> None:
+    """株価指数の構成銘柄の一覧を、Wikipedia の記事から取り直す（CC BY-SA 4.0）。
+
+    日経の指数サイトは使わない（利用規約が情報の蓄積と第三者提供を禁じる）。
+    取れた件数が見込みと違えば書き換えない。
+    """
+    import datetime as _dt
+    import urllib.parse
+
+    import httpx
+
+    from .p1_population.index_members import (
+        WIKIPEDIA_RAW,
+        load_derived,
+        parse_wikipedia_constituents,
+        write_member_list,
+    )
+
+    [d] = [x for x in load_derived() if x.id == population]
+    url = WIKIPEDIA_RAW.format(title=urllib.parse.quote(title))
+    resp = httpx.get(url, headers={"User-Agent": "mailauth-observatory"}, timeout=30)
+    resp.raise_for_status()
+    codes = parse_wikipedia_constituents(resp.text)
+    if d.expected_size and len(codes) != d.expected_size:
+        typer.echo(
+            f"{len(codes)} 件しか取れなかった（見込み {d.expected_size}）。書き換えない",
+            err=True,
+        )
+        raise typer.Exit(1)
+    write_member_list(Path(d.member_list), sorted(codes), retrieved=_dt.date.today())
+    typer.echo(f"{d.member_list} に {len(codes)} 件を書いた（出典: {url}）")
+
+
 @app.command("koukoku-scan")
 def koukoku_scan_cmd(
     entities: Annotated[Path, typer.Option("--entities", help="P1 の entities.parquet")],

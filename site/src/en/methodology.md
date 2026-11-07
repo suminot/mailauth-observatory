@@ -100,6 +100,20 @@ relations agencies). Only the domain part of email addresses is used; the
 addresses themselves are not stored. Some companies are still left without one. **Nothing that cannot be confirmed is used** — measuring another company's domain by
 mistake is a worse error than not measuring at all.
 
+### Nikkei 225 constituents
+
+The Nikkei 225 constituents (`jp-nikkei225`) are counted separately **from the
+Japan-listed measurement (`jp-all-listed`) without measuring again**.
+
+- The constituents list uses only the securities codes from the "constituents"
+  section of the Japanese Wikipedia article
+  "[日経平均株価](https://ja.wikipedia.org/wiki/%E6%97%A5%E7%B5%8C%E5%B9%B3%E5%9D%87%E6%A0%AA%E4%BE%A1)"
+  (CC BY-SA 4.0), as of 1 October 2026
+- Nothing is retrieved from Nikkei's index website (its terms of use prohibit
+  storing its information or providing it to third parties without permission)
+- The copyright of the Nikkei Stock Average belongs to Nikkei Inc. This site
+  neither calculates nor displays index values
+
 ## Companies left out of the population
 
 **Entities that are not operating companies** are left out of the US

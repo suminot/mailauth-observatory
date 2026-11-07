@@ -539,6 +539,7 @@ display(
 
 ```js
 const PAIR = ["jp-all-listed", "us-all-listed"];
+const n225 = latest.find((d) => d.population_id === "jp-nikkei225");
 const pairRows = PAIR.map((p) => latest.find((d) => d.population_id === p)).filter(Boolean);
 const share = (n, d) => (n == null || !d ? "—" : pct(rate(n, d)));
 const PAIR_ROWS = [
@@ -559,6 +560,7 @@ display(
           項目: label,
           国内上場: f(pairRows[0]),
           米国上場: f(pairRows[1]),
+          ...(n225 ? { "日経225（国内上場の内数）": f(n225) } : {}),
         })),
         { sort: null }
       )
@@ -572,6 +574,8 @@ display(
 - 1社あたりのドメイン数も違うので、ドメインで数えた割合は会社の数の割合とは
   一致しません
 - DMARC の廃止タグの割合の分母は、DMARC を出しているドメインです
+- 日経225 の列は国内上場の内数です（構成銘柄の一覧の出どころは「方法」のページ）。
+  日経平均株価の著作権は日本経済新聞社に帰属します
 
 </div>
 
