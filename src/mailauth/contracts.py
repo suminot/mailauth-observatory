@@ -977,6 +977,14 @@ class StatsOverall(_Model):
     dmarc_np_domains: int = 0
     #: DMARC に t=y（試行中。受け手は1段弱く扱う、RFC 9989）がある
     dmarc_testing_domains: int = 0
+    #: 会社ごとの「メールに使っている証拠」の段階（排他、apex の観測から）。
+    #: 受け取れる MX・SPF の送信元・DKIM の鍵がそろう / DKIM が無い / MX だけ / MX も無い
+    evidence_signed_entities: int | None = None
+    evidence_sending_entities: int | None = None
+    evidence_receiving_entities: int | None = None
+    evidence_none_entities: int | None = None
+    #: 公式サイトのドメインには MX が無いが、同じ会社の別のドメインにはある
+    mail_off_site_entities: int | None = None
     bulk_spf_ok_domains: int = 0
     bulk_dkim_domains: int = 0
     bulk_dmarc_ok_domains: int = 0
@@ -1085,6 +1093,11 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("reject_with_rua_domains", pa.int32()),
     ("dmarc_np_domains", pa.int32()),
     ("dmarc_testing_domains", pa.int32()),
+    ("evidence_signed_entities", pa.int32()),
+    ("evidence_sending_entities", pa.int32()),
+    ("evidence_receiving_entities", pa.int32()),
+    ("evidence_none_entities", pa.int32()),
+    ("mail_off_site_entities", pa.int32()),
     ("bulk_spf_ok_domains", pa.int32()),
     ("bulk_dkim_domains", pa.int32()),
     ("bulk_dmarc_ok_domains", pa.int32()),

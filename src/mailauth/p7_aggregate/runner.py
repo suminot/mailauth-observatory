@@ -33,6 +33,7 @@ from ..contracts import (
 )
 from ..io import read_parquet, write_parquet
 from ..manifest import RunManifest
+from ..p3_domains.runner import domain_id as p3_domain_id
 from ..paths import gold_dir, gold_root, month_date, phase_dir, phase_output, previous_run_id
 from . import delta as delta_mod
 from . import platform as platform_mod
@@ -275,6 +276,13 @@ def entity_index(entities: list[dict]) -> dict[str, dict]:
             "common12_code": _text(row.get("common12_code")),
             "common12_label": _text(row.get("common12_label")),
             "status": _text(row.get("status")) or EntityStatus.ACTIVE,
+            # 公式サイトのドメインの domain_id（P3 と同じ作り方）。メールが
+            # 公式サイトと別のドメインにある会社を数えるため
+            "official_domain_id": (
+                p3_domain_id(str(row.get("entity_id") or ""), str(row.get("official_domain")))
+                if _text(row.get("official_domain"))
+                else None
+            ),
         }
     return out
 
@@ -339,6 +347,8 @@ def run(
         for fact in facts:
             row = DomainRow.from_fact(fact)
             row.park_class = parks.get(row.domain_id)
+            attrs = entities.get(row.entity_id)
+            row.is_official = bool(attrs) and row.domain_id == attrs.get("official_domain_id")
             if row.entity_id not in entities:
                 orphan_entity_ids.add(row.entity_id)
                 continue

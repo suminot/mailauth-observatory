@@ -12,7 +12,8 @@
 from __future__ import annotations
 
 import json
-from collections import Counter
+import re
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -133,6 +134,48 @@ def _dmarc_usable(r) -> bool:
     return r.dmarc_present and not r.dmarc_multiple_records and r.dmarc_p in _VALID_DMARC_P
 
 
+def mail_evidence(observed: list[DomainRow]) -> dict[str, int]:
+    """会社ごとに「メールに使っている証拠」がどこまであるか（apex の観測行から）。
+
+    段階は排他で、上から順に当てる。
+
+      signed    : どれかのドメインで、受け取れる MX・SPF の送信元・DKIM の鍵がそろう
+      sending   : MX と SPF の送信元はあるが、DKIM は試したセレクタで見つからない
+      receiving : MX はあるが、SPF に送信元を書いていない
+      none      : どのドメインにも受け取れる MX が無い
+
+    **DNS に設定があることは、実際に送っている証明ではない。** それでも、
+    受け取りと送信と署名の設定がそろうドメインを、使っていないと見る理由は薄い。
+
+    `off_site`：公式サイトのドメインには受け取れる MX が無いが、同じ会社の
+    別のドメインにはある。**公式サイトのドメインだけを測る方法では、この会社の
+    メールを測れない**（TwoFive などの公開調査と比べるときの差）。
+    """
+    by_entity: dict[str, list[DomainRow]] = defaultdict(list)
+    for r in observed:
+        if r.entity_id:
+            by_entity[r.entity_id].append(r)
+    out = {"signed": 0, "sending": 0, "receiving": 0, "none": 0, "off_site": 0}
+    for rs in by_entity.values():
+        mx = any(r.mx_reachable for r in rs)
+        send = mx and any(r.spf_sends for r in rs)
+        signed = send and any(r.dkim_status == DkimStatus.DETECTED for r in rs)
+        if signed:
+            out["signed"] += 1
+        elif send:
+            out["sending"] += 1
+        elif mx:
+            out["receiving"] += 1
+        else:
+            out["none"] += 1
+        official = [r for r in rs if r.is_official]
+        if official and not any(r.mx_reachable for r in official) and any(
+            r.mx_reachable for r in rs if not r.is_official
+        ):
+            out["off_site"] += 1
+    return out
+
+
 def _count_true(rows, base, value) -> int | None:
     """`base` を満たす行のうち `value` が True の数。**値が1つも無ければ None**。"""
     vals = [value(r) for r in rows if base(r)]
@@ -185,6 +228,12 @@ class DomainRow:
     dmarc_historic_tags: bool | None = None
     spf_ip4_addresses: int | None = None
     dkim_domainkey_exists: bool | None = None
+    #: メールを受け取れる（MX があり、Null MX でなく、どれかの MX に宛先がある）
+    mx_reachable: bool = False
+    #: SPF に送信元を書いている（include・ip4/ip6・a・mx など。-all だけではない）
+    spf_sends: bool = False
+    #: その会社の公式サイトのドメインか（P7 の runner が付ける）
+    is_official: bool = False
     #: DMARC の np=（存在しないサブドメイン）と t=（試行中）。RFC 9989 で入ったタグ
     dmarc_np: str | None = None
     dmarc_t: str | None = None
@@ -239,6 +288,15 @@ class DomainRow:
             dmarc_historic_tags=_tristate(fact.get("dmarc_historic_tags")),
             spf_ip4_addresses=_opt_int(fact.get("spf_ip4_addresses")),
             dkim_domainkey_exists=_tristate(fact.get("dkim_domainkey_exists")),
+            mx_reachable=_truthy(fact.get("mx_present"))
+            and not _truthy(fact.get("mx_null"))
+            and not _truthy(fact.get("mx_unreachable")),
+            spf_sends=_truthy(fact.get("spf_present"))
+            and (
+                _nonempty(fact.get("spf_includes"))
+                or _nonempty(fact.get("spf_mechanisms"))
+                or bool(re.search(r"(?i)(^|\s)[+]?ip[46]:", str(fact.get("raw_spf") or "")))
+            ),
             dmarc_np=_text(fact.get("dmarc_np")),
             dmarc_t=_text(fact.get("dmarc_t")),
             # **最後に効く all を優先する**（redirect の先の all）。列が無い過去の
@@ -381,6 +439,7 @@ def aggregate(
     hardened = sum(1 for r in parked if r.park_class == ParkClass.HARDENED_PARKED)
     defended = sum(1 for r in parked if r.park_class == ParkClass.DEFENDED_PARKED)
     sending = [r for r in observed if r.park_class == ParkClass.ACTIVE_SENDING]
+    evidence = mail_evidence(observed)
     # **大口送信者の要件のうち DNS で見られる部分**（Gmail・Yahoo 2024-02、
     # Microsoft 2025-05）。SPF と DKIM と DMARC（p=none でよい）がそろって
     # いるか。整合（alignment）・PTR・TLS・配信停止・苦情率は DNS では見えない
@@ -576,6 +635,11 @@ def aggregate(
         dmarc_testing_domains=sum(
             1 for r in observed if r.dmarc_present and (r.dmarc_t or "").lower() == "y"
         ),
+        evidence_signed_entities=evidence["signed"],
+        evidence_sending_entities=evidence["sending"],
+        evidence_receiving_entities=evidence["receiving"],
+        evidence_none_entities=evidence["none"],
+        mail_off_site_entities=evidence["off_site"],
         bulk_spf_ok_domains=len(bulk_spf),
         bulk_dkim_domains=len(bulk_dkim),
         bulk_dmarc_ok_domains=len(bulk_dmarc),

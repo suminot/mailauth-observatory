@@ -218,6 +218,11 @@ Parquet は月ごとに保管しています。同じ数字を二重に持つと
 | `reject_with_rua_domains` | `p=reject` で、rua の宛先がある（例示用の名前は除く） |
 | `dmarc_np_domains` | DMARC に正しい値の `np=`（存在しないサブドメインへの方針、RFC 9989）がある |
 | `dmarc_testing_domains` | DMARC に `t=y`（試行中、RFC 9989）がある |
+| `evidence_signed_entities` | 会社ごとに、どれかの主ドメインで受け取れる MX・SPF の送信元・DKIM の鍵がそろう（以下4列は排他） |
+| `evidence_sending_entities` | MX と SPF の送信元はあるが、DKIM の鍵は試したセレクタで見つからない |
+| `evidence_receiving_entities` | MX はあるが、SPF に送信元を書いていない |
+| `evidence_none_entities` | どの主ドメインにも受け取れる MX が無い |
+| `mail_off_site_entities` | 公式サイトのドメインには受け取れる MX が無いが、同じ会社の別の主ドメインにはある |
 | `bulk_spf_ok_domains` | 送信しているドメイン（`sending_domains`）のうち、SPF があり評価がエラーにならない（`v=spf1` が1つ、`include` の先まで数えて上限 10 以内） |
 | `bulk_dkim_domains` | 同じく、DKIM の鍵が見つかった（試したセレクタの範囲） |
 | `bulk_dmarc_ok_domains` | 同じく、DMARC があり、レコードが有効（`p=none` を含む） |

@@ -162,6 +162,52 @@ company does not necessarily hold exactly one domain, so both are published.
 
 </div>
 
+### Is the domain used for the company's mail?
+
+Whether a measured domain is really used for a company's email addresses
+cannot be fully confirmed from outside. So, **for each company, we count how
+far the following settings line up on any of its domains**, in stages.
+
+```js
+display(
+  current?.evidence_signed_entities == null
+    ? html`<p class="muted">Not yet counted for this month. <strong>This is not zero.</strong></p>`
+    : table(
+        [
+          { Stage: "reachable MX, SPF senders and a DKIM key all present", Companies: current.evidence_signed_entities, Share: pct(rate(current.evidence_signed_entities, current.entities_with_domains)) },
+          { Stage: "MX and SPF senders, but no DKIM key found", Companies: current.evidence_sending_entities, Share: pct(rate(current.evidence_sending_entities, current.entities_with_domains)) },
+          { Stage: "MX, but no senders listed in SPF", Companies: current.evidence_receiving_entities, Share: pct(rate(current.evidence_receiving_entities, current.entities_with_domains)) },
+          { Stage: "no reachable MX on any domain", Companies: current.evidence_none_entities, Share: pct(rate(current.evidence_none_entities, current.entities_with_domains)) },
+        ],
+        { sort: null }
+      )
+);
+```
+
+```js
+display(
+  current?.mail_off_site_entities == null
+    ? html``
+    : html`<p><strong>${num(current.mail_off_site_entities)} companies</strong> have no reachable MX on their website's domain but <strong>receive mail on another domain of the same company</strong>. Measuring only the website's domain would miss these companies' mail settings.</p>`
+);
+```
+
+<div class="limits">
+
+- **Settings in DNS do not prove that mail is actually sent.** Still, there is
+  little reason to think a domain with receiving (MX), sending (SPF) and
+  signing (DKIM) settings all in place is unused
+- A "reachable MX" means an MX is present, it is not a Null MX, and at least
+  one MX host has an address
+- "SPF senders" means the record lists `include`, `ip4`, `ip6`, `a`, `mx` or
+  similar; `v=spf1 -all` alone (a declaration of not sending) does not count
+- DKIM counts only keys found under the selectors tried. The second stage also
+  contains companies that sign under selectors not tried
+- Shares use the companies that appeared in the measurement
+  (`entities_with_domains`) as the denominator
+
+</div>
+
 ## Stated versus effective
 
 That a record says `p=reject`, and that the policy actually takes effect, are
