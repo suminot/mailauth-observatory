@@ -358,6 +358,34 @@ display(
 
 </div>
 
+### Tags from the new DMARC specification (RFC 9989)
+
+RFC 9989 added a policy for non-existent subdomains (`np=`) and `t=y` to mark
+a policy under test, and removed `pct=`, `rf=` and `ri=`.
+
+```js
+display(
+  current?.dmarc_np_domains === undefined
+    ? html`<p class="muted">Not yet counted for this month. <strong>This is not zero.</strong></p>`
+    : table(
+        [
+          { Tag: "np= (policy for non-existent subdomains)", Domains: current?.dmarc_np_domains },
+          { Tag: "t=y (testing; receivers apply one step weaker)", Domains: current?.dmarc_testing_domains },
+          { Tag: "any of pct=, rf=, ri= (removed tags)", Domains: current?.dmarc_historic_tags_domains },
+        ],
+        { sort: null }
+      )
+);
+```
+
+<div class="limits">
+
+- Without `np=`, `sp=` applies, and without that, `p=`; a missing `np=` is not
+  an error in itself
+- Which specification a receiver follows cannot be seen from outside
+
+</div>
+
 ## The domain, and what sits under it
 
 A DMARC `p=` tag applies to the domain itself. **What applies to its

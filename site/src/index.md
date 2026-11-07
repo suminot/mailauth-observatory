@@ -346,6 +346,34 @@ display(
 
 </div>
 
+### DMARC の新しい仕様（RFC 9989）のタグ
+
+RFC 9989 は、存在しないサブドメインへの方針（`np=`）と、試行中であることを
+示す `t=y` を足し、`pct=` `rf=` `ri=` をなくしました。
+
+```js
+display(
+  current?.dmarc_np_domains === undefined
+    ? html`<p class="muted">この月はまだ集計していません。<strong>0 ではありません。</strong></p>`
+    : table(
+        [
+          { タグ: "np=（存在しないサブドメインへの方針）", ドメイン: current?.dmarc_np_domains },
+          { タグ: "t=y（試行中。受け手は1段弱く扱う）", ドメイン: current?.dmarc_testing_domains },
+          { タグ: "pct= rf= ri= のどれか（なくなったタグ）", ドメイン: current?.dmarc_historic_tags_domains },
+        ],
+        { sort: null }
+      )
+);
+```
+
+<div class="limits">
+
+- `np=` が無ければ `sp=`、それも無ければ `p=` が使われるので、`np=` が
+  無いこと自体は誤りではありません
+- 受け手がどちらの仕様で読むかは、外からは分かりません
+
+</div>
+
 ## 自分と、その配下
 
 DMARC の `p=` はそのドメイン自身に効きます。**配下のサブドメインに効くのは

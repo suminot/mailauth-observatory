@@ -1323,3 +1323,12 @@ def test_大口送信者の要件のうち_DNS_で見られる部分を送信し
     assert stats.sending_domains == 5
     assert (stats.bulk_spf_ok_domains, stats.bulk_dkim_domains, stats.bulk_dmarc_ok_domains,
             stats.bulk_ready_domains) == (3, 4, 4, 1)
+
+
+def test_RFC_9989_のタグを数える():
+    stats = _agg([
+        _row(domain_id="d:1", dmarc_present=True, dmarc_p="none", dmarc_np="reject", dmarc_t="y"),
+        _row(domain_id="d:2", dmarc_present=True, dmarc_p="none", dmarc_np="bogus", dmarc_t="n"),
+        _row(domain_id="d:3", dmarc_present=False, dmarc_np="reject", dmarc_t="y"),
+    ])
+    assert (stats.dmarc_np_domains, stats.dmarc_testing_domains) == (1, 1)

@@ -2755,6 +2755,24 @@ disney.com / thewaltdisneycompany.com）。
 - 送らないドメインの封じ方（null MX・`v=spf1 -all`・`p=reject`・失効 DKIM の組）
 - DKIM の古いセレクタと、別の会社との鍵の使い回し
 
+**同種の公開トラッカー・研究との差（2026-11-07 の調査）**：
+
+- 月ごとの方針の移り変わりの行列（none→quarantine→reject と、その逆。rua を
+  足した・外したも）。Hureau ら（PAM 2024）が年ごとに出している
+- SPF が通す IP の広さを **include の先まで展開して** 数える研究がある
+  （Czybik ら、IMC 2023「Lazy Gatekeepers」：10 万を超えるドメインが 34.7%）。
+  こちらは自分のレコードだけ（大手の送信基盤で全社が同じ大きさになるため）。
+  展開した分布は別の列として足す余地がある
+- rua の宛先の質：雛形のままの宛先（`dmarc@example.com` など）、
+  宛先の集中（上位5社で約3割）
+- `p=reject` かつ rua がある（EasyDMARC の 2026 年の報告が使う厳しい基準）
+- セレクタを知らずに DKIM を使っているかの手がかり：`_domainkey.<ドメイン>` が
+  NOERROR（internet.nl）。応答を誤る DNS があるので補助の扱い
+- 同じ会社だけで比べる（両方の月に測った会社だけの差）。上場・上場廃止で
+  分母が動くのを除く（オランダ Forum Standaardisatie の報告）
+- 業種別・規制のある業種（証券会社など）の切り口（TwoFive、Red Sift）
+- MTA-STS：`mta-sts` のホストに A/AAAA が無い（URIports 2024 で 29.4%）
+
 ## 7. 規模に対する前提
 
 いまの国内 1 母集団では問題にならないが、DESIGN.md の 30,000 ドメインでは

@@ -213,6 +213,8 @@ Parquet は月ごとに保管しています。同じ数字を二重に持つと
 | `spf_dangling_domains` | SPF の `include` か `redirect` の先のうち SPF の無いものについて、登録ドメインが登録されていないと確かめられた（第三者が登録すれば SPF を通るメールを送れる）。引けなかった先があるものは数えていない。列の無い月は空 |
 | `txt_apex_oversize_domains` | 主ドメインの TXT の応答の大きさの見積りが 1,232 バイトを超える。実際の応答の大きさではない。列の無い月は空 |
 | `spf_ip4_broad_domains` | 主ドメインの SPF が通すと書いた IPv4 アドレス（`ip4:`、重なりは1つに数える、`include` の先は数えない）が 65,536（/16 1つ分）を超える。列の無い月は空 |
+| `dmarc_np_domains` | DMARC に正しい値の `np=`（存在しないサブドメインへの方針、RFC 9989）がある |
+| `dmarc_testing_domains` | DMARC に `t=y`（試行中、RFC 9989）がある |
 | `bulk_spf_ok_domains` | 送信しているドメイン（`sending_domains`）のうち、SPF があり評価がエラーにならない（`v=spf1` が1つ、`include` の先まで数えて上限 10 以内） |
 | `bulk_dkim_domains` | 同じく、DKIM の鍵が見つかった（試したセレクタの範囲） |
 | `bulk_dmarc_ok_domains` | 同じく、DMARC があり、レコードが有効（`p=none` を含む） |

@@ -169,6 +169,9 @@ class DomainRow:
     dkim_ed25519_only: bool | None = None
     dmarc_historic_tags: bool | None = None
     spf_ip4_addresses: int | None = None
+    #: DMARC の np=（存在しないサブドメイン）と t=（試行中）。RFC 9989 で入ったタグ
+    dmarc_np: str | None = None
+    dmarc_t: str | None = None
     #: 最後の `all` の修飾子（- ~ ? +）。無ければ None
     spf_all_qualifier: str | None = None
     spf_error: str | None = None
@@ -217,6 +220,8 @@ class DomainRow:
             dkim_ed25519_only=_tristate(fact.get("dkim_ed25519_only")),
             dmarc_historic_tags=_tristate(fact.get("dmarc_historic_tags")),
             spf_ip4_addresses=_opt_int(fact.get("spf_ip4_addresses")),
+            dmarc_np=_text(fact.get("dmarc_np")),
+            dmarc_t=_text(fact.get("dmarc_t")),
             # **最後に効く all を優先する**（redirect の先の all）。列が無い過去の
             # run では自分のレコードの all
             spf_all_qualifier=(
@@ -525,6 +530,13 @@ def aggregate(
             {str(k): stages.get(k, 0) for k in range(5)}, sort_keys=True
         ),
         sending_domains=len(sending),
+        # RFC 9989 で入ったタグ。値が正しいものだけ数える
+        dmarc_np_domains=sum(
+            1 for r in observed if r.dmarc_present and (r.dmarc_np or "") in _VALID_DMARC_P
+        ),
+        dmarc_testing_domains=sum(
+            1 for r in observed if r.dmarc_present and (r.dmarc_t or "").lower() == "y"
+        ),
         bulk_spf_ok_domains=len(bulk_spf),
         bulk_dkim_domains=len(bulk_dkim),
         bulk_dmarc_ok_domains=len(bulk_dmarc),
