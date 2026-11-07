@@ -176,6 +176,7 @@ display(
         [
           { Stage: "reachable MX, SPF senders and a DKIM key all present", Companies: current.evidence_signed_entities, Share: pct(rate(current.evidence_signed_entities, current.entities_with_domains)) },
           { Stage: "MX and SPF senders, but no DKIM key found", Companies: current.evidence_sending_entities, Share: pct(rate(current.evidence_sending_entities, current.entities_with_domains)) },
+          ...(current.evidence_dkim_hint_entities == null ? [] : [{ Stage: "  of which names exist under _domainkey (likely signing under selectors not tried)", Companies: current.evidence_dkim_hint_entities, Share: pct(rate(current.evidence_dkim_hint_entities, current.entities_with_domains)) }]),
           { Stage: "MX, but no senders listed in SPF", Companies: current.evidence_receiving_entities, Share: pct(rate(current.evidence_receiving_entities, current.entities_with_domains)) },
           { Stage: "no reachable MX on any domain", Companies: current.evidence_none_entities, Share: pct(rate(current.evidence_none_entities, current.entities_with_domains)) },
         ],

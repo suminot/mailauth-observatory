@@ -984,6 +984,9 @@ class StatsOverall(_Model):
     #: 受け取れる MX・SPF の送信元・DKIM の鍵がそろう / DKIM が無い / MX だけ / MX も無い
     evidence_signed_entities: int | None = None
     evidence_sending_entities: int | None = None
+    #: evidence_sending のうち、`_domainkey` の配下に名前がある（試していないセレクタで
+    #: 署名していそう）。列の無い run は null
+    evidence_dkim_hint_entities: int | None = None
     evidence_receiving_entities: int | None = None
     evidence_none_entities: int | None = None
     #: 公式サイトのドメインには MX が無いが、同じ会社の別のドメインにはある
@@ -1104,6 +1107,7 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("dmarc_testing_domains", pa.int32()),
     ("evidence_signed_entities", pa.int32()),
     ("evidence_sending_entities", pa.int32()),
+    ("evidence_dkim_hint_entities", pa.int32()),
     ("evidence_receiving_entities", pa.int32()),
     ("evidence_none_entities", pa.int32()),
     ("mail_off_site_entities", pa.int32()),

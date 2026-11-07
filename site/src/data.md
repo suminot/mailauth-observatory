@@ -220,6 +220,7 @@ Parquet は月ごとに保管しています。同じ数字を二重に持つと
 | `dmarc_testing_domains` | DMARC に `t=y`（試行中、RFC 9989）がある |
 | `evidence_signed_entities` | 会社ごとに、どれかの主ドメインで受け取れる MX・SPF の送信元・DKIM の鍵がそろう（以下4列は排他） |
 | `evidence_sending_entities` | MX と SPF の送信元はあるが、DKIM の鍵は試したセレクタで見つからない |
+| `evidence_dkim_hint_entities` | `evidence_sending_entities` のうち、`_domainkey.<ドメイン>` の配下に名前がある（試していないセレクタで署名していそう）。内数。列の無い月は空 |
 | `evidence_receiving_entities` | MX はあるが、SPF に送信元を書いていない |
 | `evidence_none_entities` | どの主ドメインにも受け取れる MX が無い |
 | `mail_off_site_entities` | 公式サイトのドメインには受け取れる MX が無いが、同じ会社の別の主ドメインにはある |

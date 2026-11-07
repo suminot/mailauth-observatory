@@ -227,6 +227,7 @@ The main columns used in the tables above.
 | `dmarc_testing_domains` | DMARC carries `t=y` (testing, RFC 9989) |
 | `evidence_signed_entities` | per company, a reachable MX, SPF senders and a DKIM key all present on one of its main domains (the four columns are mutually exclusive) |
 | `evidence_sending_entities` | MX and SPF senders, but no DKIM key found under the selectors tried |
+| `evidence_dkim_hint_entities` | of `evidence_sending_entities`, those with names under `_domainkey.<domain>` (likely signing under selectors not tried). A subset. Empty in months without the column |
 | `evidence_receiving_entities` | MX, but no senders listed in SPF |
 | `evidence_none_entities` | no reachable MX on any main domain |
 | `mail_off_site_entities` | no reachable MX on the website's domain, but another main domain of the same company has one |
