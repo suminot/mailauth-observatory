@@ -161,8 +161,14 @@ class SiteCompany:
     country: str
 
 
-def names_company(page: str, company: SiteCompany) -> bool:
-    """リンク先のページが、その会社のものと言えるか（タイトルで見る）。"""
+def names_company(page: str, company: SiteCompany, domain: str | None = None) -> bool:
+    """リンク先のページが、その会社のものと言えるか（タイトルで見る）。
+
+    **`.co.jp` だけは本文に社名があれば認める。** `.co.jp` は日本で登記した
+    会社しか取れず、1社1つの決まりがある（P1 の `.co.jp` の推測と同じ扱い）。
+    2026-11-07 の国内で、同じ名前の別の TLD は 246 社中 11 社しか採れず、
+    タイトルに「株式会社〇〇」の形が無いサイトを落としていた
+    """
     from .p1_population.co_jp_guess import (
         MIN_CORE_CHARS,
         name_core,
@@ -172,7 +178,8 @@ def names_company(page: str, company: SiteCompany) -> bool:
 
     if company.country == "JP":
         core = name_core(company.name)
-        if len(core) >= MIN_CORE_CHARS and page_names_company(page, core, strict=True):
+        strict = not (domain or "").endswith(".co.jp")
+        if len(core) >= MIN_CORE_CHARS and page_names_company(page, core, strict=strict):
             return True
         return bool(company.name_en) and title_names_company_en(page, company.name_en)
     return title_names_company_en(page, company.name_en or company.name)
@@ -305,7 +312,7 @@ class SiteLinkSource:
             if not self.has_mx(domain):
                 return "no_mx"
             page = self._top(domain)
-            if page is None or not names_company(page, company):
+            if page is None or not names_company(page, company, domain):
                 return "not_same"
             return "found"
 

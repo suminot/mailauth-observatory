@@ -236,3 +236,13 @@ def test_同じ名前の別の_TLD_はリンク先より先に確かめる():
     src.discover([SiteCompany("global.canon", "キヤノン株式会社", None, "JP")])
     assert src.siblings == {"global.canon": ["canon.co.jp"]}
     assert src.stats.budget_skipped > 0
+
+
+def test_co_jp_は本文に社名があれば認め_それ以外はタイトルの商号の形を求める():
+    from mailauth.site_links import names_company
+
+    company = SiteCompany("global.example", "株式会社キヤノン電子技研", None, "JP")
+    page = "<title>Welcome</title><body>キヤノン電子技研のサイトです</body>"
+    assert names_company(page, company, "example.co.jp")
+    assert not names_company(page, company, "example.com")
+    assert not names_company(page, company, "example.jp")
