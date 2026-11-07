@@ -130,11 +130,15 @@ OFFICIAL_URL_SOURCES: dict[str, str | None] = {
 #: **必須でないものを必須として出すと、着手の障壁を実際より高く見せる。**
 PRIMARY_SOURCE_CREDENTIAL = {
     "sec_edgar": "MAILAUTH_CONTACT_EMAIL",
+    # グループ会社の一覧は gBizINFO で引いて作る（group-domains、BACKLOG 52）。
+    # 鍵が無ければ一覧が空のままなので、回せるとは言わない
+    "group_list": "MAILAUTH_GBIZINFO_TOKEN",
 }
 
 #: 一次ソースが「あれば添える」鍵。欠けても取得そのものは通る
 OPTIONAL_SOURCE_CREDENTIAL = {
     "edinet_code_list": "MAILAUTH_EDINET_SUBSCRIPTION_KEY",
+    "group_list": "MAILAUTH_EDINET_SUBSCRIPTION_KEY",
 }
 
 #: official_url 以外の enrich が使う鍵。欠けても計測は通る

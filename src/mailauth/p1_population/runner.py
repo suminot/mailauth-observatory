@@ -1167,10 +1167,21 @@ def run(
                 offline=offline,
                 rows=rows,
             )
+        if cfg.source.primary == "group_list":
+            return _run_group(
+                cfg,
+                run_id,
+                manifest=manifest,
+                out_dir=out_dir,
+                limit=limit,
+                dry_run=dry_run,
+                source_file=source_file,
+                rows=rows,
+            )
         if cfg.source.primary != "edinet_code_list":
             raise PopulationNotImplementedError(
                 f"source.primary={cfg.source.primary} は未実装です"
-                "（対応しているのは edinet_code_list / sec_edgar / wikidata）"
+                "（対応しているのは edinet_code_list / sec_edgar / wikidata / group_list）"
             )
         if cfg.source.edinet_code_list is None:
             raise EdinetError("source.edinet_code_list の設定がありません")
@@ -1322,6 +1333,97 @@ def run(
             manifest.add_output(OUTPUT_FILENAME, records=n)
 
         return manifest.to_dict()
+
+
+def _run_group(
+    cfg: PopulationConfig,
+    run_id: str,
+    *,
+    manifest: RunManifest,
+    out_dir: Path,
+    limit: int | None,
+    dry_run: bool,
+    source_file: str | Path | None = None,
+    rows: list[Any] | None = None,
+) -> dict[str, Any]:
+    """グループ会社（上場会社の国内子会社）。BACKLOG 52。
+
+    親は EDINET コードリストの上場会社。子会社とドメインは koukoku-scan と
+    group-domains が置いた一覧から読む（この工程では外に問い合わせない。
+    コードリストの取得だけ）。
+    """
+    from .edinet_koukoku import SCAN_CSV, read_scan
+    from .group_domains import GROUP_CSV
+    from .group_domains import read_csv as read_group_csv
+    from .group_population import build_group_entities
+
+    if rows is None:
+        if cfg.source.edinet_code_list is None:
+            raise EdinetError("source.edinet_code_list の設定がありません")
+        fetched = fetch_code_list(
+            cfg.source.edinet_code_list,
+            cache_ttl_hours=cfg.refresh.cache_ttl_hours,
+            source_file=source_file,
+        )
+        rows, _parse_stats = parse_code_list(fetched.path, cfg.source.edinet_code_list)
+    parents = [
+        r for r in rows
+        if normalize_securities_code(r.securities_code)
+        and (r.listing_status or "").strip() != "非上場"
+    ]
+    group_path = config_path(GROUP_CSV)
+    group_rows = read_group_csv(group_path)
+    if not group_rows:
+        manifest.add_warning(
+            "GROUP_LIST_EMPTY",
+            message=(
+                f"{GROUP_CSV} が無いか空。koukoku-scan（子会社名）と group-domains"
+                "（gBizINFO）を先に流す"
+            ),
+        )
+    listed_domains = {
+        d for _doc, domains, _on in read_scan(config_path(SCAN_CSV)).values() for d in domains
+    }
+    entities, stats = build_group_entities(
+        group_rows, parents, listed_domains, population_id=cfg.id, run_id=run_id,
+        country=cfg.country,
+    )
+    manifest.counts.input = stats["found"]
+    if limit:
+        entities = entities[:limit]
+    manifest.set_breakdown(
+        group=stats,
+        parents_with_group=len({e.parent_entity_id for e in entities}),
+    )
+    if limit:
+        this_month = month_date(run_id)
+        for e in entities:
+            e.first_seen_month = e.first_seen_month or this_month
+            e.last_seen_month = this_month
+    else:
+        entities = _diff_with_previous(entities, run_id, manifest)
+    active = [e for e in entities if e.status != EntityStatus.DELISTED]
+    manifest.counts.success = len(active)
+    _check_acceptance(entities, cfg, manifest)
+
+    if dry_run:
+        manifest.add_warning("DRY_RUN", message="dry_run のため出力を書いていない")
+    else:
+        df = records_to_frame(entities, ENTITY_ARROW_SCHEMA)
+        n = write_parquet(
+            df,
+            out_dir / OUTPUT_FILENAME,
+            ENTITY_ARROW_SCHEMA,
+            sort_keys=ENTITY_SORT_KEYS,
+            metadata={
+                "mailauth.phase": PHASE,
+                "mailauth.run_id": run_id,
+                "mailauth.population_id": cfg.id,
+                "mailauth.attribution": " / ".join(cfg.attribution),
+            },
+        )
+        manifest.add_output(OUTPUT_FILENAME, records=n)
+    return manifest.to_dict()
 
 
 def _run_foreign(

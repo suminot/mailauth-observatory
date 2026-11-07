@@ -56,6 +56,9 @@ class DerivedPopulation:
     member_list: str
     expected_size: int | None = None
     source: dict = field(default_factory=dict)
+    #: 一覧の証券コードと突き合わせる列。グループ会社は親の証券コード
+    #: （`parent_securities_code`）で突き合わせる
+    match: str = "securities_code"
 
     def codes(self) -> set[str]:
         path = Path(self.member_list)
@@ -76,6 +79,7 @@ def load_derived(path: Path = DERIVED_CONFIG) -> list[DerivedPopulation]:
             id=str(d["id"]), label=str(d.get("label") or d["id"]), parent=str(d["parent"]),
             member_list=str(d["member_list"]), expected_size=d.get("expected_size"),
             source=d.get("source") or {},
+            match=str(d.get("match") or "securities_code"),
         )
         for d in data.get("populations") or []
     ]

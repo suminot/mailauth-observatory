@@ -320,9 +320,10 @@ def add_derived_populations(entities: dict[str, dict], derived, manifest=None) -
     matched: dict[str, int] = {}
     for d in derived:
         codes = d.codes()
+        key = getattr(d, "match", "securities_code")
         n = 0
         for attrs in entities.values():
-            if d.parent in attrs["population_ids"] and attrs.get("securities_code") in codes:
+            if d.parent in attrs["population_ids"] and attrs.get(key) in codes:
                 if d.id not in attrs["population_ids"]:
                     attrs["population_ids"] = [*attrs["population_ids"], d.id]
                 n += 1
@@ -356,6 +357,10 @@ def entity_index(entities: list[dict]) -> dict[str, dict]:
             "common12_label": _text(row.get("common12_label")),
             "status": _text(row.get("status")) or EntityStatus.ACTIVE,
             "securities_code": normalize_securities_code(_text(row.get("securities_code"))),
+            # グループ会社（BACKLOG 52）の親の証券コード。日経225 のグループを数える
+            "parent_securities_code": normalize_securities_code(
+                _text(row.get("parent_securities_code"))
+            ),
             # 公式サイトのドメインの domain_id（P3 と同じ作り方）。メールが
             # 公式サイトと別のドメインにある会社を数えるため
             "official_domain_id": (

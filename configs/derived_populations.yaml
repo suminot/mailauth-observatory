@@ -16,3 +16,16 @@ populations:
       license: CC BY-SA 4.0
       as_of: "2026-10-01"
       attribution: 日経平均株価の著作権は日本経済新聞社に帰属します
+  # 日経225 の会社のグループ会社（国内子会社、BACKLOG 52）。グループ会社の母集団の
+  # うち、親の証券コードが日経225 の一覧にあるもの。会社の数は決まっていない
+  - id: jp-nikkei225-group
+    label: 日経平均株価の構成銘柄のグループ会社
+    parent: jp-all-listed-group
+    member_list: configs/populations/_lists/jp-nikkei225.csv
+    match: parent_securities_code
+    source:
+      name: 日本語版 Wikipedia「日経平均株価」の「構成銘柄一覧」節
+      url: https://ja.wikipedia.org/wiki/日経平均株価
+      license: CC BY-SA 4.0
+      as_of: "2026-10-01"
+      attribution: 日経平均株価の著作権は日本経済新聞社に帰属します

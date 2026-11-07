@@ -114,6 +114,26 @@ Japan-listed measurement (`jp-all-listed`) without measuring again**.
 - The copyright of the Nikkei Stock Average belongs to Nikkei Inc. This site
   neither calculates nor displays index values
 
+### Group companies (domestic subsidiaries)
+
+Domestic subsidiaries of Japan-listed companies are measured as **a population
+separate from the listed companies** (`jp-all-listed-group`). A subsidiary's
+mail is not always run by its parent, so these are not mixed into the
+listed-company figures.
+
+- Subsidiary names are those the company gives under "affiliated companies" in
+  its annual securities report (EDINET). The website domain comes from the
+  company homepage registered in METI's gBizINFO corporate data. **Only names
+  matching exactly one corporation are used** (so that a different company with
+  the same name is not measured)
+- Listed subsidiaries (measured as listed companies) and subsidiaries whose
+  website is on a listed company's own domain are left out
+- **This is not every subsidiary.** It covers the main subsidiaries named in the
+  annual securities report that have a website registered in gBizINFO. Overseas
+  subsidiaries are not included
+- Group companies of the Nikkei 225 constituents (`jp-nikkei225-group`) are those
+  in this population whose parent is a constituent, counted separately
+
 ## Companies left out of the population
 
 **Entities that are not operating companies** are left out of the US

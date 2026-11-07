@@ -268,3 +268,18 @@ acceptance:
   p3:
     min_confirmed_rate: 0.30
     max_entities_without_confirmed_rate: 0.15
+
+# **母集団ごとの上書き**（P2 が entities の population_ids を見て当てる）。
+# discovery / limits / subdomains の中のキーだけを上書きする
+per_population:
+  # グループ会社（BACKLOG 52）。ドメインは gBizINFO の企業サイトで決まっている。
+  # 起点が数千あるので、crt.sh（0.5 qps）とリンク先を読む経路は使わない ──
+  # 使うと P2 が数時間になり、上場会社の補充の crt.sh の枠も食う。
+  # メールの痕跡（SPF / rua）と、主ドメインの下のよく使う名前は引く
+  jp-all-listed-group:
+    discovery:
+      ct_log: false
+      ct_org: false
+      site_link: false
+      edinet_koukoku: false
+      official_alt: false

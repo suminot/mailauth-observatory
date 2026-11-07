@@ -46,6 +46,8 @@ _REQUIRED_BY_PRIMARY = {
     "edinet_code_list": ("edinet_code_list",),
     "sec_edgar": (),
     "wikidata": ("wikidata_query",),
+    # グループ会社（BACKLOG 52）。親の上場会社を引くためにコードリストを読む
+    "group_list": ("edinet_code_list",),
 }
 
 
