@@ -782,7 +782,16 @@ def run(
         org_max = int(org_cfg.get("max_per_entity", 20))
         #: 起点のある会社にも組織名検索の結果（キャッシュだけ）を使う
         org_all = bool(org_cfg.get("all_entities", False))
-        org_pending_names: list[str] = []
+        #: (先に引くか, 組織名)。**派生の母集団（日経225 など）の会社を先に引く** ──
+        #: 補充は crt.sh が遅く 15 分で 40 件ほどしか引けない（2026-11-07）
+        org_pending_names: list[tuple[int, str]] = []
+        from ..normalize import normalize_securities_code
+        from ..p1_population.index_members import load_derived
+
+        org_first_codes: set[str] = set()
+        for d in load_derived():
+            if d.parent == _population_of(active) and d.match == "securities_code":
+                org_first_codes |= d.codes()
         org_dns_seeds = int(org_cfg.get("dns_seeds_per_entity", 3))
         ct_org_stats: dict[str, int] = {
             "searched": 0,
@@ -909,7 +918,11 @@ def run(
                 if name:
                     cached = ct_source.cached_org(name)
                     if cached is None:
-                        org_pending_names.append(name)
+                        code = normalize_securities_code(
+                            row.get("securities_code") if isinstance(
+                                row.get("securities_code"), str) else None
+                        )
+                        org_pending_names.append((0 if code in org_first_codes else 1, name))
                     else:
                         ct_org_stats["seeded_cached"] += 1
                         added = [d for d in cached.found[:org_max] if d != official]
@@ -1345,10 +1358,12 @@ def run(
             pending = [d for d in all_seeds if d not in ct_ready or ct_ready[d].error]
             population = _population_of(active)
             if org_all and org_pending_names:
-                org_path = write_org_pending(
-                    Path(ct_cache_dir), run_id, population, org_pending_names
+                ordered = [n for _, n in sorted(org_pending_names, key=lambda x: x[0])]
+                org_path = write_org_pending(Path(ct_cache_dir), run_id, population, ordered)
+                ct_org_stats["seeded_pending"] = len(set(ordered))
+                ct_org_stats["seeded_pending_first"] = sum(
+                    1 for p, _ in org_pending_names if p == 0
                 )
-                ct_org_stats["seeded_pending"] = len(set(org_pending_names))
                 ct_org_stats["org_pending_path"] = str(org_path)
             path = write_pending(
                 Path(ct_cache_dir),

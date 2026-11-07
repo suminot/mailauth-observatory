@@ -1989,3 +1989,37 @@ def test_p2_CTのメール用らしい名前をサブドメインの候補にす
     # 所有の裏付けの無い apex の配下は足さない
     assert not (df["domain"] == "mail.unrelated.jp").any()
     assert result["breakdown"]["ct_mail_name_candidates"] >= 1
+
+
+def test_p2_組織名の積み残しは日経225の会社を前に置く(seeded_run, tmp_path, monkeypatch):
+    """補充は crt.sh が遅く、15 分で 40 件ほどしか引けない（2026-11-07）。
+    派生の母集団（日経225）の会社を先に引けるよう、積み残しの前に置く。"""
+    import json
+
+    from mailauth.p1_population import index_members
+
+    entities = pd.read_parquet(phase_output(RUN, "p1_population", "entities.parquet"))
+    seeded = [r for _, r in entities.iterrows() if str(r["entity_id"]) in SEED_DOMAINS]
+    assert len(seeded) >= 2
+    names = [str(r["name_en"] or r["name"]) for r in seeded]
+    last = seeded[-1]
+    code_list = tmp_path / "n225.csv"
+    code_list.write_text(f"securities_code\n{last['securities_code']}\n", encoding="utf-8")
+    monkeypatch.setattr(index_members, "load_derived", lambda *a, **k: [
+        index_members.DerivedPopulation(id="jp-nikkei225", label="x", parent="jp-all-listed",
+                                        member_list=str(code_list)),
+    ])
+
+    class Cached(StaticCtSource):
+        cache_dir = tmp_path / "crtsh"
+
+        def cached_org(self, n):
+            return None
+
+    out = run_p2(run_id=RUN, resolver=StaticResolver(ANSWERS), ct_source=Cached(dict(CT.mapping)))
+    path = out["breakdown"]["ct_org"]["org_pending_path"]
+    pending = json.loads(open(path, encoding="utf-8").read())["pending"]
+    want_first = str(last["name_en"] or last["name"])
+    assert pending[0] == want_first
+    assert set(pending) >= set(names)
+    assert out["breakdown"]["ct_org"]["seeded_pending_first"] == 1
