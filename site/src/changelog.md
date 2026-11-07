@@ -3,7 +3,7 @@
 計測方法や集計定義の変更を記録する。数字が前月と比べて動いたとき、
 **実態が変わったのか計測が変わったのか**を区別できるようにするためである。
 
-この一覧は `mailauth changelog` が生成している（2026-11-07T13:28:06+00:00）。
+この一覧は `mailauth changelog` が生成している（2026-11-07T16:00:15+00:00）。
 版の変化は機械が検出するが、**それが数字にどう影響したかは人が書く。**
 「解釈」の欄が空いている月は、まだ書かれていないということである。
 
@@ -38,6 +38,7 @@
 - ドメインの候補に、公式サイトのドメインに MX が無い会社の、同じ名前の別の TLD のドメイン（MX があり、トップページのタイトルに商号があるもの）を足した。
 - 同じ月の国内上場と米国上場の母集団を並べた表を、総括のページに足した（順位や優劣は示さない）。
 - 日経平均株価の構成銘柄（225 社）を、国内上場の計測を測り直さずに別に集計するようにした。一覧は Wikipedia の記事（CC BY-SA 4.0）の証券コードを使う。
+- 証明書の組織名でドメインを探す経路を、公式サイトのある会社にも広げた（月のあいだに補充で引いたものを使う）。見つけたサブドメインの数と、そのうち登録ドメインに DMARC があるものの数を足した。
 
 ### 計測側の変更
 
@@ -50,16 +51,16 @@
 | 母集団 | 指標 | 前月 | 当月 | 差 |
 |---|---|---|---|---|
 | us-all-listed | total_entities | 5267 | 5254 | -13 |
-| us-all-listed | total_domains | 4877 | 9472 | +4595 |
-| us-all-listed | observed_domains | 4877 | 9472 | +4595 |
-| us-all-listed | entities_with_domains | 4869 | 5172 | +303 |
-| us-all-listed | spf_adopted_domains | 4616 | 7246 | +2630 |
-| us-all-listed | dmarc_adopted_domains | 4156 | 6558 | +2402 |
-| us-all-listed | dmarc_enforced_domains | 3087 | 5041 | +1954 |
-| us-all-listed | enforced_reject_domains | 1690 | 3090 | +1400 |
-| us-all-listed | dkim_detected_domains | 3748 | 4845 | +1097 |
+| us-all-listed | total_domains | 4877 | 9442 | +4565 |
+| us-all-listed | observed_domains | 4877 | 9442 | +4565 |
+| us-all-listed | entities_with_domains | 4869 | 5171 | +302 |
+| us-all-listed | spf_adopted_domains | 4616 | 7221 | +2605 |
+| us-all-listed | dmarc_adopted_domains | 4156 | 6536 | +2380 |
+| us-all-listed | dmarc_enforced_domains | 3087 | 5025 | +1938 |
+| us-all-listed | enforced_reject_domains | 1690 | 3078 | +1388 |
+| us-all-listed | dkim_detected_domains | 3748 | 4825 | +1077 |
 | us-all-listed | parked_hardened | 4 | 114 | +110 |
-| us-all-listed | parked_neglected | 140 | 1621 | +1481 |
+| us-all-listed | parked_neglected | 140 | 1620 | +1480 |
 
 - 前月 2026-10 の manifest が無いため、計測側の変更を検出していない。初回の月か、実行記録が失われている
 - 業種の分類集合が変わっている。**写像の版が変わると前月との比較が成立しない。** 同一版で再集計するか、比較しない旨を明記すること

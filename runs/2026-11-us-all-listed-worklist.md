@@ -14,11 +14,11 @@
 |---|---|---|---|
 | `exacttarget.com` | 168 | 1 | `inbound-reply.s7.exacttarget.com`, `reply.s11.exacttarget.com`, `reply.s10.exacttarget.com` |
 | `cscdns.net` | 80 | 1 | `custmx.cscdns.net` |
-| `amazonses.com` | 76 | 1 | `feedback-smtp.us-east-1.amazonses.com`, `feedback-smtp.ap-south-1.amazonses.com`, `feedback-smtp.us-west-2.amazonses.com` |
+| `amazonses.com` | 75 | 1 | `feedback-smtp.us-east-1.amazonses.com`, `feedback-smtp.ap-south-1.amazonses.com`, `feedback-smtp.us-west-2.amazonses.com` |
 | `arsmtp.com` | 66 | 1 | `alpinereit-com.mx1.arsmtp.com`, `alpinereit-com.mx2.arsmtp.com`, `koss.com.1.arsmtp.com` |
-| `registrar-servers.com` | 40 | 1 | `eforward5.registrar-servers.com`, `eforward3.registrar-servers.com`, `eforward1.registrar-servers.com` |
 | `gpphosted.com` | 36 | 1 | `mxa-00336402.gslb.gpphosted.com`, `mxb-00336402.gslb.gpphosted.com`, `mxa-00588301.gslb.gpphosted.com` |
 | `sherwin.com` | 36 | 1 | `emhost64.sherwin.com`, `emhost62.sherwin.com`, `emhost63.sherwin.com` |
+| `registrar-servers.com` | 35 | 1 | `eforward5.registrar-servers.com`, `eforward3.registrar-servers.com`, `eforward1.registrar-servers.com` |
 | `netnames.net` | 32 | 1 | `relay2.netnames.net`, `relay1.netnames.net` |
 | `verisign.com` | 24 | 1 | `mail4.verisign.com`, `mail2.verisign.com`, `mail3.verisign.com` |
 | `sendgrid.net` | 20 | 1 | `mx2.sendgrid.net` |
@@ -82,7 +82,6 @@
 | `driftmail.net` | 4 | 1 | `smtp.driftmail.net`, `smtp2.driftmail.net` |
 | `earthlink-vadesecure.net` | 4 | 1 | `mx04.earthlink-vadesecure.net`, `mx03.earthlink-vadesecure.net`, `mx02.earthlink-vadesecure.net` |
 | `everycloudtech.us` | 4 | 1 | `mx104.everycloudtech.us`, `mx103.everycloudtech.us`, `mx102.everycloudtech.us` |
-| `gandi.net` | 4 | 1 | `spool.mail.gandi.net`, `fb.mail.gandi.net` |
 | `greenradar.com` | 4 | 1 | `amtdigital-net.mail.dr.greenradar.com`, `amtdigital-net.mail.hk.greenradar.com`, `amtdinc-com.mail.hk.greenradar.com` |
 | `huntington-bank.com` | 4 | 1 | `gw1net.huntington-bank.com`, `gw4net.huntington-bank.com`, `gw2net.huntington-bank.com` |
 | `klarna.com` | 4 | 1 | `mxz3.klarna.com`, `mxz1.klarna.com`, `mxz4.klarna.com` |
@@ -112,6 +111,7 @@
 | `dnsmadeeasy.com` | 3 | 1 | `mx2.dnsmadeeasy.com`, `mx1.dnsmadeeasy.com`, `mx3.dnsmadeeasy.com` |
 | `eemms.net` | 3 | 1 | `mx.eemms.net` |
 | `exfy.io` | 3 | 1 | `mail1.prod.sjc.exfy.io`, `mail1.prod.rno.exfy.io`, `mail1.prod.lax.exfy.io` |
+| `flonetwork.com` | 3 | 1 | `uubak3smtp1.flonetwork.com`, `uubak2smtp1.flonetwork.com`, `uubak1smtp2.flonetwork.com` |
 
 - P6 の未知ホスト一覧が上限 100 件に達している。**一覧に無いホストが残っている**（頻度の低いものが切れている）
 
