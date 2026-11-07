@@ -201,6 +201,43 @@ display(
 
 </div>
 
+**ドメインごとに、会社と対応づけた根拠と、メールに使っている証拠の段階を
+掛け合わせると**次のとおりです（主ドメイン、観測できたもの）。
+
+```js
+const OWN = JSON.parse(current?.ownership_evidence_dist ?? "null");
+const OWN_JA = {
+  company_stated: "会社が自分で書いた（公式サイト・有報の公告など）",
+  certificate: "証明書（組織名・同じ証明書に載っている）",
+  own_dns: "会社の DNS が指している（SPF・DMARC）",
+  web_link: "公式サイトのリンク先で、タイトルに商号",
+  other: "その他（よく使われる名前など）",
+};
+display(
+  !OWN
+    ? html`<p class="muted">この月はまだ集計していません。</p>`
+    : table(
+        Object.keys(OWN_JA).map((k) => ({
+          根拠: OWN_JA[k],
+          "MX・SPF・DKIM がそろう": OWN[k]?.signed ?? 0,
+          "MX・SPF（DKIM 未検出）": OWN[k]?.sending ?? 0,
+          "MX だけ": OWN[k]?.receiving ?? 0,
+          "受け取れる MX が無い": OWN[k]?.none ?? 0,
+        })),
+        { sort: null }
+      )
+);
+```
+
+<div class="limits">
+
+- 根拠は、そのドメインを見つけた経路のうち、いちばん強いものです。1つの
+  ドメインが複数の経路で見つかることがあります
+- 「受け取れる MX が無い」ドメインには、送らないと宣言しているもの
+  （Null MX や `v=spf1 -all`）や、ウェブサイト専用のものが入っています
+
+</div>
+
 ## 名目と実効
 
 `p=reject` と書いてあることと、それが実際に効いていることは別の事実です。

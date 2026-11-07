@@ -134,6 +134,57 @@ def _dmarc_usable(r) -> bool:
     return r.dmarc_present and not r.dmarc_multiple_records and r.dmarc_p in _VALID_DMARC_P
 
 
+#: 会社とドメインを対応づけた根拠の強さの順（強いものから）。P2 の経路を束ねる
+OWNERSHIP_TIERS = ("company_stated", "certificate", "own_dns", "web_link", "other")
+_OWNERSHIP_OF_METHOD = {
+    # 会社が自分で書いた（公式サイト・有報の公告・年次報告書・運営者の確認）
+    "official_url": "company_stated",
+    "official_alt": "company_stated",
+    "edinet_koukoku": "company_stated",
+    "manual": "company_stated",
+    # 同じ証明書に載っている・証明書の組織名がその会社
+    "ct_org": "certificate",
+    "ct_log": "certificate",
+    "tls_san": "certificate",
+    # 会社の DNS が指している（SPF の redirect・自社の include・DMARC の rua）
+    "spf_redirect": "own_dns",
+    "spf_include": "own_dns",
+    "dmarc_rua": "own_dns",
+    # 公式サイトのリンク先で、ページのタイトルに商号がある
+    "site_link": "web_link",
+}
+
+
+def ownership_tier(methods) -> str | None:
+    """経路の一覧から、いちばん強い根拠の区分。経路が無ければ None。"""
+    tiers = {_OWNERSHIP_OF_METHOD.get(str(m), "other") for m in (methods or [])}
+    for tier in OWNERSHIP_TIERS:
+        if tier in tiers:
+            return tier
+    return None
+
+
+def domain_stage(r: DomainRow) -> str:
+    """1ドメインの「メールに使っている証拠」の段階（`mail_evidence` と同じ区切り）。"""
+    if not r.mx_reachable:
+        return "none"
+    if not r.spf_sends:
+        return "receiving"
+    return "signed" if r.dkim_status == DkimStatus.DETECTED else "sending"
+
+
+def ownership_evidence(observed: list[DomainRow]) -> str | None:
+    """根拠の区分 × 証拠の段階のドメイン数（JSON）。根拠が1つも無ければ None。"""
+    rows = [r for r in observed if r.ownership]
+    if not rows:
+        return None
+    table = {t: {s: 0 for s in ("signed", "sending", "receiving", "none")}
+             for t in OWNERSHIP_TIERS}
+    for r in rows:
+        table[r.ownership][domain_stage(r)] += 1
+    return json.dumps(table, sort_keys=True)
+
+
 def mail_evidence(observed: list[DomainRow]) -> dict[str, int]:
     """会社ごとに「メールに使っている証拠」がどこまであるか（apex の観測行から）。
 
@@ -234,6 +285,9 @@ class DomainRow:
     spf_sends: bool = False
     #: その会社の公式サイトのドメインか（P7 の runner が付ける）
     is_official: bool = False
+    #: 会社とドメインを対応づけた根拠のうち、いちばん強いもの（P3 の経路から。
+    #: `OWNERSHIP_TIERS` のどれか。P3 の出力が無い run では None）
+    ownership: str | None = None
     #: DMARC の np=（存在しないサブドメイン）と t=（試行中）。RFC 9989 で入ったタグ
     dmarc_np: str | None = None
     dmarc_t: str | None = None
@@ -640,6 +694,7 @@ def aggregate(
         evidence_receiving_entities=evidence["receiving"],
         evidence_none_entities=evidence["none"],
         mail_off_site_entities=evidence["off_site"],
+        ownership_evidence_dist=ownership_evidence(observed),
         bulk_spf_ok_domains=len(bulk_spf),
         bulk_dkim_domains=len(bulk_dkim),
         bulk_dmarc_ok_domains=len(bulk_dmarc),
