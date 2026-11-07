@@ -1211,6 +1211,38 @@ def index_members_cmd(
     typer.echo(f"{d.member_list} に {len(codes)} 件を書いた（出典: {url}）")
 
 
+@app.command("group-domains")
+def group_domains_cmd(
+    max_lookups: Annotated[
+        int, typer.Option("--max-lookups", help="1回に引く子会社名の上限")
+    ] = 2000,
+) -> None:
+    """子会社名から gBizINFO で企業サイトのドメインを引く（グループ会社、BACKLOG 52）。
+
+    商号が完全に一致する法人が1つだけのときだけ採る。上場会社の数字には混ぜない。
+    """
+    import json as _json
+
+    from .config import credential
+    from .p1_population import edinet_subsidiaries as subs
+    from .p1_population import group_domains as grp
+    from .paths import cache_root
+
+    token = credential("MAILAUTH_GBIZINFO_TOKEN")
+    if not token:
+        typer.echo("MAILAUTH_GBIZINFO_TOKEN が無い", err=True)
+        raise typer.Exit(2)
+    search = grp.GbizNameSearch(token, cache_dir=cache_root() / "gbizinfo_names")
+    data, stats = grp.scan(
+        search,
+        subs.read_csv(subs.SUBS_CSV),
+        grp.read_csv(grp.GROUP_CSV),
+        max_lookups=max_lookups,
+    )
+    grp.write_csv(grp.GROUP_CSV, data)
+    typer.echo(_json.dumps(stats, ensure_ascii=False))
+
+
 @app.command("koukoku-scan")
 def koukoku_scan_cmd(
     entities: Annotated[Path, typer.Option("--entities", help="P1 の entities.parquet")],
