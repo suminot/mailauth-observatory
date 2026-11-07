@@ -24,6 +24,7 @@ nifco-fastener.com・nifcodamper.com、都築電気 tsuzuki.co.jp から tsuzuki
 from __future__ import annotations
 
 import re
+import time
 import unicodedata
 from collections import Counter
 from collections.abc import Callable, Iterable
@@ -112,6 +113,9 @@ class SiteLinkStats:
     #: 確かめられた（企業ごとの延べ）
     found: int = 0
     entities_with_found: int = 0
+    #: 持ち時間を使い切って読まなかった（トップページ・確かめ）。**「無い」ではない**
+    budget_skipped: int = 0
+    elapsed_sec: float = 0.0
     samples: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -156,13 +160,23 @@ class SiteLinkSource:
         concurrency: int = DEFAULT_CONCURRENCY,
         shared_limit: int = SHARED_LIMIT,
         max_candidates: int = MAX_CANDIDATES,
+        budget_sec: float = 0.0,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.fetch = fetch
         self.has_mx = has_mx
         self.concurrency = max(int(concurrency), 1)
         self.shared_limit = shared_limit
         self.max_candidates = max_candidates
+        #: **この経路にかける持ち時間（秒）。0 で無制限。** 国内 2026-11-07 の
+        #: 流し直しで P2 が 3 時間かかった。超えたら残りは読まない
+        self.budget_sec = float(budget_sec or 0)
+        self.clock = clock
+        self._deadline: float | None = None
         self.stats = SiteLinkStats()
+
+    def _over(self) -> bool:
+        return self._deadline is not None and self.clock() > self._deadline
 
     def _top(self, domain: str) -> str | None:
         for url in (f"https://www.{domain}/", f"https://{domain}/"):
@@ -178,8 +192,13 @@ class SiteLinkSource:
         """起点ドメイン → 同じ会社と確かめられた別ドメイン。"""
         items = list({c.official: c for c in companies if c.official}.values())
         self.stats.sites += len(items)
+        started = self.clock()
+        if self.budget_sec > 0:
+            self._deadline = started + self.budget_sec
 
-        def links(company: SiteCompany) -> list[str] | None:
+        def links(company: SiteCompany) -> list[str] | None | str:
+            if self._over():
+                return "budget"
             page = self._top(company.official)
             return None if page is None else link_domains(page, company.official)
 
@@ -189,6 +208,9 @@ class SiteLinkSource:
             in_input_order(links, items, concurrency=self.concurrency, window=256),
             strict=True,
         ):
+            if got == "budget":
+                self.stats.budget_skipped += 1
+                continue
             if got is None:
                 self.stats.unreadable += 1
                 continue
@@ -215,6 +237,8 @@ class SiteLinkSource:
 
         def check(task: tuple[SiteCompany, str]) -> str:
             company, domain = task
+            if self._over():
+                return "budget"
             if not self.has_mx(domain):
                 return "no_mx"
             page = self._top(domain)
@@ -228,6 +252,9 @@ class SiteLinkSource:
             in_input_order(check, tasks, concurrency=self.concurrency, window=256),
             strict=True,
         ):
+            if kind == "budget":
+                self.stats.budget_skipped += 1
+                continue
             if kind == "no_mx":
                 self.stats.no_mx += 1
                 continue
@@ -240,4 +267,5 @@ class SiteLinkSource:
             if len(self.stats.samples) < 10:
                 self.stats.samples.append(f"{company.official} → {domain}")
         self.stats.entities_with_found = len(out)
+        self.stats.elapsed_sec = round(self.clock() - started, 1)
         return out

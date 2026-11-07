@@ -633,7 +633,11 @@ def run(
 
                 contact = credential("MAILAUTH_CONTACT_EMAIL")
                 if contact:
-                    site_source = _live_site_source(contact, resolver)
+                    site_source = _live_site_source(
+                        contact,
+                        resolver,
+                        budget_sec=float(cfg.get("site_link_budget_minutes", 40) or 0) * 60,
+                    )
                 else:
                     manifest.add_warning(
                         "SITE_LINK_SKIPPED",
@@ -1400,8 +1404,14 @@ def _check_acceptance(
     manifest.set_breakdown(acceptance=checks)
 
 
-def _live_site_source(contact: str, resolver: Resolver) -> SiteLinkSource:
-    """企業のトップページを読む。連絡先つきの User-Agent、全体で 1 秒 5 本まで。"""
+def _live_site_source(
+    contact: str, resolver: Resolver, *, budget_sec: float = 0.0
+) -> SiteLinkSource:
+    """企業のトップページを読む。連絡先つきの User-Agent、全体で 1 秒 8 本まで。
+
+    相手はそれぞれ別の会社のサイトで、1社あたり数本しか読まない。応答待ちを
+    重ねる（16 本）。持ち時間（`site_link_budget_minutes`）を超えたら残りは読まない
+    """
     import threading
 
     import httpx
@@ -1419,11 +1429,11 @@ def _live_site_source(contact: str, resolver: Resolver) -> SiteLinkSource:
     def fetch(url: str) -> str | None:
         # 相手はそれぞれ別の会社のサイトで、1社あたり数本しか読まない
         with lock:
-            wait = 0.2 - (time.monotonic() - last[0])
+            wait = 0.125 - (time.monotonic() - last[0])
             if wait > 0:
                 time.sleep(wait)
             last[0] = time.monotonic()
-        deadline = time.monotonic() + 20
+        deadline = time.monotonic() + 12
         try:
             with client.stream("GET", url) as resp:
                 if resp.status_code >= 400:
@@ -1441,4 +1451,4 @@ def _live_site_source(contact: str, resolver: Resolver) -> SiteLinkSource:
         answer = resolver.query(domain, "MX")
         return bool(answer.observed and answer.record_present)
 
-    return SiteLinkSource(fetch, has_mx)
+    return SiteLinkSource(fetch, has_mx, concurrency=16, budget_sec=budget_sec)

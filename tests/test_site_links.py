@@ -168,3 +168,20 @@ def test_読む途中の例外で止まらない():
     src = SiteLinkSource(fetch, lambda d: True, concurrency=1)
     assert src.discover([SiteCompany("own.co.jp", "株式会社甲乙丙", None, "JP")]) == {}
     assert src.stats.unreadable == 1
+
+
+def test_持ち時間を超えたら残りは読まず数えて残す():
+    t = [0.0]
+
+    def clock():
+        return t[0]
+
+    def fetch(url):
+        t[0] += 10  # 1本10秒かかる
+        return _page("株式会社甲乙丙")
+
+    companies = [SiteCompany(f"c{i}.co.jp", "株式会社甲乙丙", None, "JP") for i in range(5)]
+    src = SiteLinkSource(fetch, lambda d: True, concurrency=1, budget_sec=25, clock=clock)
+    src.discover(companies)
+    assert src.stats.budget_skipped > 0
+    assert src.stats.sites == 5
