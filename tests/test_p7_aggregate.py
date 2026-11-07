@@ -1350,3 +1350,25 @@ def test_方針の移り変わりを同じドメインだけで数える():
     # quarantine_partial → none は後退（以前は DMARC 無しと同じ 0 に落ちて数えなかった）
     assert (result.policy_upgraded, result.policy_downgraded) == (2, 1)
     assert (result.rua_added, result.rua_removed) == (1, 1)
+
+
+def test_rua_の雛形の宛先と_reject_かつ_rua_を数える():
+    from mailauth.p7_aggregate.metrics import is_placeholder_domain
+
+    assert is_placeholder_domain("example.com")
+    assert is_placeholder_domain("mail.example.org")
+    assert is_placeholder_domain("dmarc.test")
+    assert not is_placeholder_domain("yourdomain.com")  # 登録されていることがある
+    assert not is_placeholder_domain("rua.example-co.jp")
+    def row(i, p, rua):
+        return DomainRow.from_fact({"domain_id": f"d:{i}", "entity_id": f"jp:{i}",
+                                    "is_apex": True, "observed": True, "dmarc_present": True,
+                                    "dmarc_p": p, "dmarc_rua": rua})
+
+    stats = _agg([
+        row(1, "reject", ["r.example.jp"]),
+        row(2, "reject", ["example.com"]),
+        row(3, "reject", []),
+        row(4, "none", ["example.net"]),
+    ])
+    assert (stats.rua_placeholder_domains, stats.reject_with_rua_domains) == (2, 1)
