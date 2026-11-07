@@ -116,3 +116,18 @@ def test_gBizINFOにサイトが無い法人は法人番号でWikidataのサイ�
         ("jp:2000000000005", "kodenki-logi.co.jp"),
     ]
     assert stats["from_wikidata"] == 1
+
+
+def test_3社以上の親の下に出る法人は子会社として扱わない():
+    """注記に出てくる借入先・信託口の銀行（2026-11-07：日本カストディ銀行が 27 社の下に出た）。"""
+    parents = [_row(f"E0000{i}", f"親{i}株式会社", f"{i}0000", f"100000000000{i}")
+               for i in (1, 2, 3)]
+    group = {(f"E0000{i}", "株式会社信託口銀行"): ("3000000000001", "trust.example.jp", "found")
+             for i in (1, 2, 3)}
+    group[("E00001", "子株式会社")] = ("3000000000002", "ko.example.jp", "found")
+    group[("E00002", "子株式会社")] = ("3000000000002", "ko.example.jp", "found")
+    entities, stats = build_group_entities(
+        group, parents, set(), population_id="jp-all-listed-group", run_id=RUN,
+    )
+    assert [e.entity_id for e in entities] == ["jp:3000000000002"]  # 合弁（親2社）は残す
+    assert stats["many_parents"] == 3

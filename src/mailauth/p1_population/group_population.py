@@ -13,6 +13,9 @@
   していることが多く、測ると親会社をもう一度測ることになる
 - 同じ法人番号が複数の親会社の下に出たもの（合弁など）は1社にし、
   EDINET コードの若い親会社に付ける
+- **3社以上の親会社の下に出る法人は外す。** 子会社ではなく、注記に出てくる
+  借入先・信託口の銀行（日本カストディ銀行が 27 社、三菱UFJ の銀行が 29 社の
+  下に出ていた。2026-11-07）。合弁でも親は2社まで
 """
 
 from __future__ import annotations
@@ -27,6 +30,9 @@ from ..normalize import (
     normalize_name,
     normalize_securities_code,
 )
+
+#: これ以上の親会社の下に出る法人は子会社として扱わない
+MANY_PARENTS = 3
 
 
 def build_group_entities(
@@ -51,8 +57,14 @@ def build_group_entities(
     }
     stats = {
         "rows": 0, "found": 0, "from_wikidata": 0, "parent_not_listed": 0, "listed_company": 0,
-        "listed_domain": 0, "duplicate_number": 0, "entities": 0,
+        "listed_domain": 0, "duplicate_number": 0, "many_parents": 0, "entities": 0,
     }
+    #: 法人番号ごとの親の数。3社以上なら子会社ではない（借入先・信託口の銀行）
+    parents_of: dict[str, set[str]] = {}
+    for (code, _name), (number, _domain, _status) in group_rows.items():
+        hb_ = normalize_houjin_bangou(number) if number else None
+        if hb_:
+            parents_of.setdefault(hb_, set()).add(code)
     sites = sites or {}
     entities: dict[str, Entity] = {}
     for (code, name), (number, domain, status) in sorted(group_rows.items()):
@@ -79,6 +91,9 @@ def build_group_entities(
             continue
         if hb in listed_numbers:
             stats["listed_company"] += 1
+            continue
+        if len(parents_of.get(hb, ())) >= MANY_PARENTS:
+            stats["many_parents"] += 1
             continue
         domain = domain.lower()
         if domain in listed_domains:

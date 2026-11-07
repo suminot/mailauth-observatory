@@ -129,7 +129,9 @@ listed-company figures.
   corporation, the official website recorded in Wikidata (CC0) for that
   corporate number is used
 - Listed subsidiaries (measured as listed companies) and subsidiaries whose
-  website is on a listed company's own domain are left out
+  website is on a listed company's own domain are left out. Corporations named
+  under three or more listed companies (such as lenders or trust banks mentioned
+  in the notes) are not subsidiaries and are also left out
 - **This is not every subsidiary.** It covers the main subsidiaries named in the
   annual securities report that have a website registered in gBizINFO. Overseas
   subsidiaries are not included
