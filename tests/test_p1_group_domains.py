@@ -66,3 +66,42 @@ def test_子会社名の一覧から消えた名前は残さない(tmp_path):
     data, stats = scan(s, subs, old, max_lookups=10)
     assert list(data) == [("E1", "A株式会社")]
     assert stats["already"] == 1
+
+
+def test_活動情報で絞らず_法人の種類で絞り_閉鎖した法人は採らない(tmp_path):
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(dict(request.url.params))
+        return httpx.Response(200, json={"hojin-infos": [
+            {"corporate_number": "1", "name": "株式会社サンプル", "close_date": "2020-03-31",
+             "company_url": "https://old.example.jp"},
+            {"corporate_number": "2", "name": "株式会社サンプル",
+             "company_url": "https://sample.example.co.jp"},
+        ]})
+
+    s = GbizNameSearch("t", qps=0, cache_dir=tmp_path,
+                       client=httpx.Client(transport=httpx.MockTransport(handler)))
+    assert s.lookup("株式会社サンプル") == ("2", "example.co.jp", "found")
+    assert "exist_flg" not in seen
+    assert seen["corporate_type"] == "301"
+    assert int(seen["limit"]) >= 1000
+
+
+def test_引き方が古い一覧は_found_以外を引き直す(tmp_path):
+    from mailauth.p1_population.group_domains import csv_query_version
+
+    s = _search(tmp_path, {"B株式会社": [{"corporate_number": "8", "name": "B株式会社",
+                                         "company_url": "https://b.example.jp"}]})
+    old = {("E1", "A株式会社"): ("9", "a.jp", "found"), ("E1", "B株式会社"): ("", "", "not_found")}
+    subs = {"E1": ("S1", ["A株式会社", "B株式会社"], "2026-11-08")}
+    data, stats = scan(s, subs, old, max_lookups=10, queried_with=None)
+    assert data[("E1", "B株式会社")][2] == "found"
+    assert stats["already"] == 1 and stats["looked_up"] == 1
+    path = tmp_path / "g.csv"
+    path.write_text("edinet_code,subsidiary,corporate_number,domain,status\nE1,A株式会社,9,a.jp,found\n",
+                    encoding="utf-8")
+    assert csv_query_version(path) is None
+    write_csv(path, data)
+    from mailauth.p1_population.group_domains import QUERY_VERSION
+    assert csv_query_version(path) == QUERY_VERSION

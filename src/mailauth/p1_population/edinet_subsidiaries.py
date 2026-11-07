@@ -34,7 +34,7 @@ _WINDOW = 40_000
 MAX_PER_COMPANY = 300
 #: 名前の読み方を変えたら上げる。**上がったら、読んだ有報も読み直す**（節の本文は
 #: キャッシュにあるので、取り直しは要らない）
-SUBS_PARSER_VERSION = 2
+SUBS_PARSER_VERSION = 3
 
 _LEGAL = "株式会社|有限会社|合同会社"
 _NAME = re.compile(
@@ -49,7 +49,7 @@ _CONNECTORS = sorted((
     "により", "による", "であった", "である", "していた", "しており", "しております",
     "おります", "した", "して", "する", "を連結", "を除外", "を設立", "を新たに", "新たに",
     "の全株式", "を保有", "が保有", "が所有", "を所有", "を取得", "当該", "前連結会計年度",
-    "当連結会計年度", "連結の範囲", "出資により", "を100%",
+    "当連結会計年度", "連結の範囲", "出資により", "を100%", "の決算日", "決算日",
 ), key=len, reverse=True)
 _CONNECTOR_RE = re.compile("|".join(re.escape(c) for c in _CONNECTORS))
 #: 表の見出し。子会社の区分だけ読む（持分法の関連会社・親会社・その他の関係会社は
@@ -95,12 +95,24 @@ def _subsidiary_part(section: str) -> str:
     return " ".join(parts)
 
 
+#: 名前の前に付いた住所（「東京都千代田区丸の内一丁目4番5号三菱UFJ信託銀行株式会社」）
+_ADDRESS_PREFIX = re.compile(r"^.*?\d+(?:号|番地)")
+#: 「株式会社X」の X の後ろに付いた助詞（「株式会社日本カストディ銀行は、」）
+_TRAILING_PARTICLE = re.compile(rf"^((?:{_LEGAL}).{{2,}}?)[はがをにでへも]$")
+
+
+def _trim(name: str) -> str:
+    name = _ADDRESS_PREFIX.sub("", name)
+    m = _TRAILING_PARTICLE.match(name)
+    return m.group(1) if m else name
+
+
 def names_from_section(section: str, own_name: str | None = None) -> list[str]:
     own = unicodedata.normalize("NFKC", own_name or "").replace(" ", "")
     body = _CONNECTOR_RE.sub("、", _subsidiary_part(section))
     out: list[str] = []
     for raw in _NAME.findall(body):
-        name = raw.strip().replace(" ", "")
+        name = _trim(raw.strip().replace(" ", ""))
         core = re.sub(_LEGAL, "", name)
         # 注記の番号（「(注)1.」）や記号だけのものは名前ではない
         if len(re.sub(r"[\W\d_]", "", core)) < 2 or not re.match(r"[\w]", name):

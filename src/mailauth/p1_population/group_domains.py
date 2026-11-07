@@ -25,8 +25,16 @@ from ..normalize import domain_from_url
 from .enrich import GBIZINFO_ENDPOINT, USER_AGENT
 
 GROUP_CSV = "configs/domains/subsidiary_domains.csv"
-GROUP_FIELDS = ("edinet_code", "subsidiary", "corporate_number", "domain", "status")
-CACHE_VERSION = 1
+GROUP_FIELDS = ("edinet_code", "subsidiary", "corporate_number", "domain", "status", "query")
+#: 引き方の版。上がったら、found 以外の名前を引き直す（2：exist_flg をやめ、件数を
+#: 増やし、法人の種類で絞り、閉鎖した法人を除く。2026-11-08）
+QUERY_VERSION = 2
+CACHE_VERSION = QUERY_VERSION
+#: 1回の検索で受け取る件数。部分一致なので、ありふれた商号（「日本道路株式会社」）は
+#: 50 件では完全一致の法人が入らないことがあった
+SEARCH_LIMIT = 1000
+#: 商号の法人格 → gBizINFO の corporate_type（301 株式会社・302 有限会社・305 合同会社）
+_CORPORATE_TYPE = (("株式会社", "301"), ("有限会社", "302"), ("合同会社", "305"))
 
 
 def _norm(name: str | None) -> str:
@@ -100,11 +108,19 @@ class GbizNameSearch:
         return result
 
     def _lookup(self, name: str) -> tuple[str | None, str | None, str]:
-        payload = self._get(GBIZINFO_ENDPOINT, {"name": name, "exist_flg": "true", "limit": "50"})
+        # **`exist_flg` は付けない。** 「閉鎖していない」ではなく「法人活動情報（届出・
+        # 補助金・調達など）がある」に絞るパラメータで（API 仕様、2026-11-08 に確認）、
+        # 子会社の多くがこれで落ちて not_found になっていた（3,000 件中 1,635 件）
+        params = {"name": name, "limit": str(SEARCH_LIMIT)}
+        ctype = next((code for form, code in _CORPORATE_TYPE if form in name), None)
+        if ctype:
+            params["corporate_type"] = ctype
+        payload = self._get(GBIZINFO_ENDPOINT, params)
         if payload is None:
             return None, None, "error"
+        # 閉鎖した法人（登記記録の閉鎖）は採らない
         hits = [h for h in (payload.get("hojin-infos") or [])
-                if _norm(h.get("name")) == _norm(name)]
+                if _norm(h.get("name")) == _norm(name) and not h.get("close_date")]
         if not hits:
             return None, None, "not_found"
         if len({h.get("corporate_number") for h in hits}) > 1:
@@ -135,6 +151,20 @@ def read_csv(path: str | Path) -> dict[tuple[str, str], tuple[str, str, str]]:
     return out
 
 
+def csv_query_version(path: str | Path) -> int | None:
+    """一覧を書いたときの引き方の版。列が無い（古い一覧）なら None、一覧が無ければ今の版。"""
+    p = Path(path)
+    if not p.exists():
+        return QUERY_VERSION
+    with p.open(encoding="utf-8", newline="") as f:
+        for row in csv.DictReader(f):
+            try:
+                return int(row.get("query") or "")
+            except ValueError:
+                return None
+    return QUERY_VERSION
+
+
 def write_csv(path: str | Path, data: dict[tuple[str, str], tuple[str, str, str]]) -> None:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -143,7 +173,7 @@ def write_csv(path: str | Path, data: dict[tuple[str, str], tuple[str, str, str]
         w.writerow(GROUP_FIELDS)
         for (code, name) in sorted(data):
             number, domain, status = data[(code, name)]
-            w.writerow([code, name, number, domain, status])
+            w.writerow([code, name, number, domain, status, QUERY_VERSION])
 
 
 def scan(
@@ -152,6 +182,7 @@ def scan(
     existing: dict[tuple[str, str], tuple[str, str, str]],
     *,
     max_lookups: int,
+    queried_with: int | None = QUERY_VERSION,
 ) -> tuple[dict[tuple[str, str], tuple[str, str, str]], dict[str, int]]:
     """子会社名を順に引く。**引き終えた名前（error 以外）は引き直さない。**
 
@@ -167,8 +198,15 @@ def scan(
     for code, name in pairs:
         stats["names"] += 1
         prev = existing.get((code, name))
-        if prev and prev[2] and prev[2] != "error":
+        # 引き方が古ければ、found 以外は引き直す（見つからなかった理由が引き方かもしれない）
+        stale = queried_with != QUERY_VERSION and bool(prev) and prev[2] != "found"
+        if prev and prev[2] and prev[2] != "error" and not stale:
             stats["already"] += 1
+            continue
+        if stale and stats["looked_up"] >= max_lookups:
+            # 古い結果は今の版の一覧に残さない（残すと次に引き直す対象から外れる）
+            out.pop((code, name), None)
+            stats["deferred"] += 1
             continue
         if stats["looked_up"] >= max_lookups:
             stats["deferred"] += 1
