@@ -1,22 +1,22 @@
 # 月次計測 2026-11（us-all-listed）
 
 - 母集団: `us-all-listed`
-- 状態: **failed**
-- 集計時刻: 2026-11-07T07:06:46+00:00
-- 警告: 24 件
+- 状態: **partial**
+- 集計時刻: 2026-11-07T11:53:15+00:00
+- 警告: 25 件
 
 ## 工程
 
 | 工程 | 状態 | 入力 | 成功 | 失敗 | スキップ | 秒 |
 |---|---|---|---|---|---|---|
-| p1_population 母集団確定 | success | 6059 | 5254 | 0 | 0 | 1683.825 |
-| p2_candidates ドメイン候補生成 | partial | 5254 | 5202 | 33 | 52 | 7379.59 |
-| p3_domains メールドメイン確定 | failed | 22456 | 0 | 37 | 0 | 547.585 |
-| p4_measure DNS計測 | success | 11044 | 0 | 0 | 10904 | 9.42 |
-| p5_parse パース | success | 452008 | 10801 | 0 | 0 | 965.771 |
-| p6_infer 推察 | success | 10801 | 36329 | 0 | 0 | 8.547 |
-| p7_aggregate 集計 | success | 10801 | 13 | 0 | 0 | 2.169 |
-| p8_publish 公開 | success | 305 | 2221 | 0 | 0 | 0.162 |
+| p1_population 母集団確定 | success | 6059 | 5254 | 0 | 0 | 790.713 |
+| p2_candidates ドメイン候補生成 | success | 5254 | 5202 | 0 | 52 | 3745.535 |
+| p3_domains メールドメイン確定 | partial | 20966 | 10857 | 263 | 10109 | 3161.153 |
+| p4_measure DNS計測 | success | 10857 | 1911 | 0 | 10904 | 1273.039 |
+| p5_parse パース | success | 554109 | 10587 | 0 | 0 | 942.764 |
+| p6_infer 推察 | success | 10587 | 39074 | 0 | 0 | 4.922 |
+| p7_aggregate 集計 | success | 10587 | 13 | 0 | 0 | 1.597 |
+| p8_publish 公開 | success | 314 | 2239 | 0 | 0 | 0.099 |
 
 ## 工程間の件数
 
@@ -27,12 +27,12 @@
 | 前 | 後 | 前の成功 | 後の入力 | 差 |
 |---|---|---|---|---|
 | p1_population | p2_candidates | 5254 | 5254 | 0 |
-| p2_candidates | p3_domains | 5202 | 22456 | 17254 |
-| p3_domains | p4_measure | 0 | 11044 | 11044 |
-| p4_measure | p5_parse | 0 | 452008 | 452008 |
-| p5_parse | p6_infer | 10801 | 10801 | 0 |
-| p6_infer | p7_aggregate | 36329 | 10801 | -25528 |
-| p7_aggregate | p8_publish | 13 | 305 | 292 |
+| p2_candidates | p3_domains | 5202 | 20966 | 15764 |
+| p3_domains | p4_measure | 10857 | 10857 | 0 |
+| p4_measure | p5_parse | 1911 | 554109 | 552198 |
+| p5_parse | p6_infer | 10587 | 10587 | 0 |
+| p6_infer | p7_aggregate | 39074 | 10587 | -28487 |
+| p7_aggregate | p8_publish | 13 | 314 | 301 |
 
 ## 警告
 
@@ -46,43 +46,39 @@
 ### p2_candidates
 
 - `SHARED_RUA_DOMAIN_DROPPED` ×6: 複数企業の rua 宛先になっているドメインを候補から落とした。**第三者のレポート処理サービスを企業のドメインとして計測しない。** ベンダー名が分かれば configs/vendors/dmarc_rua_vendors.yaml に、本当にグループ共用なら configs/domains/manual_domains.csv に足すこと
-- `DOMAIN_SHARED_BY_ENTITIES` ×91: 同一ドメインが複数企業に紐づいている。持株会社・グループ共用の可能性
+- `DOMAIN_SHARED_BY_ENTITIES` ×115: 同一ドメインが複数企業に紐づいている。持株会社・グループ共用の可能性
 - `UNALIGNED_RUA_TARGET` ×264: 自社ドメインでない rua 宛先があった。**候補にしていない。** 第三者のレポート処理サービスであり、その企業の送信ドメインではない。ベンダー名が分かれば configs/vendors/dmarc_rua_vendors.yaml に足すと P6 の dmarc_vendor 推定が埋まる
 
 ### p4_measure
 
 - `RESUMED_FROM_EXISTING_BRONZE` ×10904: 同じ run の bronze に 10904 ドメインぶんが既にあったため測り直していない。**「観測していない」のではなく「前回の実行で観測済み」である**
-- `BRONZE_APPENDED_TO_EXISTING` ×21: 同じ run に既存の bronze があったため、上書きせず新しいパートに追記した（bronze は不変・追記のみ）。--resume なので、既に測り終えたドメインは測り直していない
+- `BRONZE_APPENDED_TO_EXISTING` ×22: 同じ run に既存の bronze があったため、上書きせず新しいパートに追記した（bronze は不変・追記のみ）。--resume なので、既に測り終えたドメインは測り直していない
+- `WILDCARD_DNS` ×14: 実在しないセレクタに応答したドメイン。何にでも答える DNS のため DKIM の検出結果は偽陽性の可能性がある
 
 ### p5_parse
 
-- `BRONZE_OUTSIDE_MEASURED_SET` ×103: 同じ run の bronze に、いまの P3 が計測対象にしていないドメインがあった（前の試行の残り）。facts に入れていない
-- `DKIM_WILDCARD_SUSPECT` ×82: 対照クエリが応答したドメイン。DKIM の検出は偽陽性の可能性
-- `RUA_DOMAIN_UNREGISTERED` ×3: rua の宛先ドメインが未登録。第三者が登録すればレポートが漏洩しうる（Hureau et al., PAM 2024）
-- `MTA_STS_POLICY_UNUSABLE` ×26: MTA-STS の TXT はあるが、ポリシーを取れない・読めないドメイン。**送る側の MTA も同じく読めないので、MTA-STS は効いていない**
+- `BRONZE_OUTSIDE_MEASURED_SET` ×2215: 同じ run の bronze に、いまの P3 が計測対象にしていないドメインがあった（前の試行の残り）。facts に入れていない
+- `DKIM_WILDCARD_SUSPECT` ×88: 対照クエリが応答したドメイン。DKIM の検出は偽陽性の可能性
+- `RUA_DOMAIN_UNREGISTERED` ×4: rua の宛先ドメインが未登録。第三者が登録すればレポートが漏洩しうる（Hureau et al., PAM 2024）
+- `MTA_STS_POLICY_UNUSABLE` ×25: MTA-STS の TXT はあるが、ポリシーを取れない・読めないドメイン。**送る側の MTA も同じく読めないので、MTA-STS は効いていない**
 - `MTA_STS_MX_MISMATCH` ×6: MTA-STS のポリシーの mx に、実際の MX が入っていない。**enforce なら、対応している送り手からのメールが届かない**
-- `MX_UNREACHABLE` ×97: どの MX ホストにも宛先が無い（名前が無い、またはアドレスが無い）ドメイン。**このドメイン宛のメールは届かない。** 終わったサービスや綴りの誤りを指したままのものがある
+- `MX_UNREACHABLE` ×121: どの MX ホストにも宛先が無い（名前が無い、またはアドレスが無い）ドメイン。**このドメイン宛のメールは届かない。** 終わったサービスや綴りの誤りを指したままのものがある
 - `MX_DOMAIN_UNREGISTERED` ×3: MX ホストの登録ドメインが未登録。**第三者が登録すれば、その企業のドメイン宛のメールを受け取れる**（rua の未登録と同じ形）
 
 ### p6_infer
 
 - `NO_STALE_HISTORY`: 前月の inferences.parquet が無いため stale の連続月数を引き継げない。3 か月連続の判定は今月を1か月目として数え直す
-- `NO_INFERENCE_RATE_HIGH` ×3748: 推定が付かないドメインが 34.7% で受け入れ基準（20% 未満）を超えている。unknown_mx_hosts から辞書を拡充する
-- `UNKNOWN_MX_HOSTS` ×100: 辞書に無い MX ホストが 283 種、949 ドメインぶんある。**一覧に出しているのは上位 100 種まで**で、ほかに 183 種（242 ドメイン）が載っていない。**自社ドメイン配下の MX 511 ドメイン（308 社）は一覧から外している** ── 辞書に足してもその1社にしか効かない。**名前の無い MX ホスト 146 ドメインぶんも外している**（製品ではない。P5 の MX_UNREACHABLE を見ること）。頻度順の上位を手で辞書に追記すると推定率が上がる（DESIGN.md P6 実装メモ）
-- `SECURITY_GATEWAY_UNDETECTABLE` ×8399: セキュリティ製品を DNS 上で検出できなかったドメイン。**理由の内訳: api_mode_product 7821件、self_hosted_mx 272件、spf_flattened 306件、tenant_placeholder_mx 2件。** どれも「使っていない」と解釈してはならない
+- `NO_INFERENCE_RATE_HIGH` ×2258: 推定が付かないドメインが 21.3% で受け入れ基準（20% 未満）を超えている。unknown_mx_hosts から辞書を拡充する
+- `UNKNOWN_MX_HOSTS` ×100: 辞書に無い MX ホストが 371 種、1533 ドメインぶんある。**一覧に出しているのは上位 100 種まで**で、ほかに 271 種（406 ドメイン）が載っていない。**自社ドメイン配下の MX 689 ドメイン（377 社）は一覧から外している** ── 辞書に足してもその1社にしか効かない。**名前の無い MX ホスト 193 ドメインぶんも外している**（製品ではない。P5 の MX_UNREACHABLE を見ること）。頻度順の上位を手で辞書に追記すると推定率が上がる（DESIGN.md P6 実装メモ）
+- `SECURITY_GATEWAY_UNDETECTABLE` ×7963: セキュリティ製品を DNS 上で検出できなかったドメイン。**理由の内訳: api_mode_product 7258件、self_hosted_mx 359件、spf_flattened 346件、tenant_placeholder_mx 2件。** どれも「使っていない」と解釈してはならない
 
 ### p7_aggregate
 
 - `COMMON12_UNMAPPED` ×52: 共通12分類が付いていない企業は業種別集計から外した。業種不明を1つの業種として扱うと分母が歪む
 - `NO_PREVIOUS_FACTS`: 前月 2026-10 の facts が無いため差分を計算していない
-- `GOLD_OTHER_POPULATIONS_KEPT` ×84: 同じ月の gold にあった他の母集団の行を残した: jp-all-listed
+- `GOLD_OTHER_POPULATIONS_KEPT` ×90: 同じ月の gold にあった他の母集団の行を残した: jp-all-listed
 
 ### p8_publish
 
 - `TIER2_DISABLED`: 第2層は無効。個社名付き明細は出力していない。有効化には事前通知から最低 30 日の訂正期間とアクセス制御の設定が必要
 
-
-## 失敗した工程
-
-- **p3_domains**: dns.name.BadEscape: An escaped code in a text format of DNS name is invalid.
-  - SERVFAIL: 37

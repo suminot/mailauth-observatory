@@ -3,7 +3,7 @@
 計測方法や集計定義の変更を記録する。数字が前月と比べて動いたとき、
 **実態が変わったのか計測が変わったのか**を区別できるようにするためである。
 
-この一覧は `mailauth changelog` が生成している（2026-11-07T10:51:43+00:00）。
+この一覧は `mailauth changelog` が生成している（2026-11-07T11:53:29+00:00）。
 版の変化は機械が検出するが、**それが数字にどう影響したかは人が書く。**
 「解釈」の欄が空いている月は、まだ書かれていないということである。
 
@@ -44,16 +44,16 @@
 | 母集団 | 指標 | 前月 | 当月 | 差 |
 |---|---|---|---|---|
 | us-all-listed | total_entities | 5267 | 5254 | -13 |
-| us-all-listed | total_domains | 4877 | 10753 | +5876 |
-| us-all-listed | observed_domains | 4877 | 10753 | +5876 |
-| us-all-listed | entities_with_domains | 4869 | 5163 | +294 |
-| us-all-listed | spf_adopted_domains | 4616 | 6814 | +2198 |
-| us-all-listed | dmarc_adopted_domains | 4156 | 6198 | +2042 |
-| us-all-listed | dmarc_enforced_domains | 3087 | 4742 | +1655 |
-| us-all-listed | enforced_reject_domains | 1690 | 2949 | +1259 |
-| us-all-listed | dkim_detected_domains | 3748 | 4601 | +853 |
-| us-all-listed | parked_hardened | 4 | 63 | +59 |
-| us-all-listed | parked_neglected | 140 | 3337 | +3197 |
+| us-all-listed | total_domains | 4877 | 9472 | +4595 |
+| us-all-listed | observed_domains | 4877 | 9472 | +4595 |
+| us-all-listed | entities_with_domains | 4869 | 5172 | +303 |
+| us-all-listed | spf_adopted_domains | 4616 | 7246 | +2630 |
+| us-all-listed | dmarc_adopted_domains | 4156 | 6558 | +2402 |
+| us-all-listed | dmarc_enforced_domains | 3087 | 5041 | +1954 |
+| us-all-listed | enforced_reject_domains | 1690 | 3090 | +1400 |
+| us-all-listed | dkim_detected_domains | 3748 | 4845 | +1097 |
+| us-all-listed | parked_hardened | 4 | 114 | +110 |
+| us-all-listed | parked_neglected | 140 | 1621 | +1481 |
 
 - 前月 2026-10 の manifest が無いため、計測側の変更を検出していない。初回の月か、実行記録が失われている
 
