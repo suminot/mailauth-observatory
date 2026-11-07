@@ -560,6 +560,8 @@ const PAIR_ROWS = [
   ["companies measured / population", (d) => `${num(d.entities_with_domains)} / ${num(d.total_entities)}`],
   ["main domains (observed)", (d) => num(d.observed_domains)],
   ["subdomains found (share whose registrable domain has DMARC)", (d) => d.subdomains_found == null ? "—" : `${num(d.subdomains_found)} (${share(d.subdomains_found_dmarc, d.subdomains_found)})`],
+  ["companies publishing DMARC (on any one domain)", (d) => share(d.dmarc_adopted_entities, d.entities_with_domains)],
+  ["companies enforcing DMARC (on any one domain)", (d) => share(d.dmarc_enforced_entities, d.entities_with_domains)],
   ["publishes DMARC (domains)", (d) => share(d.dmarc_adopted_domains, d.observed_domains)],
   ["DMARC enforcing (quarantine, reject; domains)", (d) => share(d.dmarc_enforced_domains, d.observed_domains)],
   ["companies with MX, SPF and DKIM in place", (d) => share(d.evidence_signed_entities, d.entities_with_domains)],
@@ -590,6 +592,9 @@ display(
 - The number of domains per company also differs, so shares counted by domain
   do not match shares counted by company
 - The share with removed DMARC tags uses domains publishing DMARC as the denominator
+- Company rows count a company if any one of its domains qualifies, the same way
+  published studies that report per company count. The denominator is the
+  companies that appeared in the measurement
 - "Subdomains found" counts subdomains found through certificate logs, common
   names and the like (web host names included). Rates use main domains as the
   denominator, so subdomains are counted separately. Use this when comparing with

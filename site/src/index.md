@@ -547,6 +547,8 @@ const PAIR_ROWS = [
   ["計測に現れた会社 / 母集団", (d) => `${num(d.entities_with_domains)} / ${num(d.total_entities)}`],
   ["主ドメイン（観測できたもの）", (d) => num(d.observed_domains)],
   ["見つけたサブドメイン（うち登録ドメインに DMARC があるもの）", (d) => d.subdomains_found == null ? "—" : `${num(d.subdomains_found)}（${share(d.subdomains_found_dmarc, d.subdomains_found)}）`],
+  ["DMARC を出している会社（どれか1つのドメインで）", (d) => share(d.dmarc_adopted_entities, d.entities_with_domains)],
+  ["DMARC が強制の会社（どれか1つのドメインで）", (d) => share(d.dmarc_enforced_entities, d.entities_with_domains)],
   ["DMARC を出している（ドメイン）", (d) => share(d.dmarc_adopted_domains, d.observed_domains)],
   ["DMARC が強制（quarantine・reject、ドメイン）", (d) => share(d.dmarc_enforced_domains, d.observed_domains)],
   ["MX・SPF・DKIM がそろう会社", (d) => share(d.evidence_signed_entities, d.entities_with_domains)],
@@ -577,6 +579,8 @@ display(
 - 1社あたりのドメイン数も違うので、ドメインで数えた割合は会社の数の割合とは
   一致しません
 - DMARC の廃止タグの割合の分母は、DMARC を出しているドメインです
+- 会社の行は「どれか1つのドメインで出していれば数える」数え方で、会社単位で
+  発表している公開調査と同じ数え方です。分母は計測に現れた会社です
 - 「見つけたサブドメイン」は、証明書の記録やよく使われる名前などで見つけた
   サブドメインの数です（ウェブ用の名前を含みます）。率の分母は主ドメインで
   閉じているので、サブドメインは別に数えています。サブドメインまで数える公開
