@@ -38,6 +38,10 @@ discovery:
 # 残すのはメールの痕跡から出てきた経路だけにする。CT ログは1社で
 # 数百件の名前を返すので、そこから丸ごと残すと P3 / P4 の計測量が
 # 桁で増える。**MX を持つかどうかは P3 で見る。**
+# 公式サイトのリンク先を読む持ち時間（分）。国内 2026-11-07 の流し直しで P2 が
+# 3 時間かかった。超えたら残りは読まず、breakdown.site_link.budget_skipped に数える
+site_link_budget_minutes: 40
+
 subdomains:
   enabled: true
   # この経路で見つかったサブドメインだけ残す。他は apex に丸める
