@@ -69,6 +69,10 @@ def _known_registrable(host: str) -> str | None:
 API_BASE = "https://api.edinet-fsa.go.jp/api/v2"
 #: 有価証券報告書（訂正は読まない）
 YUHO = "120"
+#: 有価証券届出書。**上場したばかりで有報がまだ無い会社**は、上場時の届出書の
+#: 「株式事務の概要」に同じ公告掲載方法を書いている（2026-11-07、起点の無い
+#: 27 社のうち 9 社が新規上場）。有報が無いときだけ使う
+REGISTRATION = "030"
 #: 遡る日数。決算期のずれと提出の遅れを見込んで 1 年と少し
 LOOKBACK_DAYS = 400
 #: これより新しい日の一覧はキャッシュしない（取り下げ・追加がありうる）
@@ -77,6 +81,8 @@ FRESH_DAYS = 7
 WINDOW = 400
 #: キャッシュの形が変わったら上げる
 CACHE_VERSION = 1
+#: 書類一覧のキャッシュの形（有報だけ → 有報と届出書）。上げると一覧だけ取り直す
+LIST_CACHE_VERSION = 2
 
 _URL = re.compile(r"https?://[A-Za-z0-9.\-]+(?:/[^\s<>\"'）)」]*)?")
 _TAG = re.compile(r"<[^>]+>")
@@ -160,6 +166,8 @@ class KoukokuStats:
     fetch_failed: int = 0
     #: 書類一覧を引けなかった日の数
     list_failed_days: int = 0
+    #: 有報が無く、有価証券届出書を読んだ会社（新規上場）
+    from_registration: int = 0
     #: 有報が見つからなかったが、一覧を引けなかった日があるので「無い」とは言えない
     yuho_unknown: int = 0
     samples: list[str] = field(default_factory=list)
@@ -213,7 +221,7 @@ class EdinetKoukoku:
         if path is not None and path.exists():
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
-                if data.get("version") == CACHE_VERSION:
+                if data.get("version") == LIST_CACHE_VERSION:
                     self.stats.cache_hit += 1
                     return list(data["docs"])
             except (OSError, ValueError, KeyError):
@@ -230,22 +238,25 @@ class EdinetKoukoku:
         if status != "200":
             return None
         docs = [
-            {"docID": r["docID"], "edinetCode": r.get("edinetCode") or ""}
+            {"docID": r["docID"], "edinetCode": r.get("edinetCode") or "",
+             "type": r.get("docTypeCode") or ""}
             for r in payload.get("results") or []
-            if r.get("docTypeCode") == YUHO
+            if r.get("docTypeCode") in (YUHO, REGISTRATION)
             and str(r.get("withdrawalStatus") or "0") == "0"
             and r.get("docID")
         ]
         if path is not None and (self.today - day).days >= FRESH_DAYS:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(
-                json.dumps({"version": CACHE_VERSION, "docs": docs}), encoding="utf-8"
+                json.dumps({"version": LIST_CACHE_VERSION, "docs": docs}), encoding="utf-8"
             )
         return docs
 
     def latest_yuho(self, codes: set[str]) -> dict[str, str]:
         """EDINET コード → 最新の有報の docID。新しい日から遡り、揃ったらやめる。"""
         found: dict[str, str] = {}
+        #: 有報が見つからなかった会社の、最新の有価証券届出書
+        registration: dict[str, str] = {}
         day = self.today
         for _ in range(LOOKBACK_DAYS):
             if len(found) == len(codes):
@@ -257,9 +268,18 @@ class EdinetKoukoku:
                 else:
                     for d in docs:
                         code = d["edinetCode"]
-                        if code in codes and code not in found:
-                            found[code] = d["docID"]
+                        if code not in codes:
+                            continue
+                        if d.get("type", YUHO) == YUHO:
+                            found.setdefault(code, d["docID"])
+                        else:
+                            registration.setdefault(code, d["docID"])
             day -= dt.timedelta(days=1)
+        # **有報が無い会社だけ、届出書で補う**
+        for code, doc_id in registration.items():
+            if code not in found:
+                found[code] = doc_id
+                self.stats.from_registration += 1
         return found
 
     # -- 1件の有報 ---------------------------------------------------------------
