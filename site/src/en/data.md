@@ -217,6 +217,10 @@ The main columns used in the tables above.
 | `spf_all_pass_domains` | the final SPF term is `+all` (including a bare `all`) |
 | `spf_all_missing_domains` | the SPF record has no `all` |
 | `spf_all_unknown_domains` | the `redirect=` target could not be looked up, so the final `all` is unknown (in none of the five columns above) |
+| `spf_dangling_domains` | among SPF `include` or `redirect` targets with no SPF record, one whose registrable domain was confirmed unregistered (anyone registering it could send mail that passes SPF). Domains with targets that could not be looked up are not counted. Empty in months without the column |
+| `txt_apex_oversize_domains` | the estimated size of the apex TXT response exceeds 1,232 bytes. Not the actual response size. Empty in months without the column |
+| `dkim_ed25519_only_domains` | the DKIM keys found (excluding revoked keys and the wildcard) are Ed25519 only. Empty in months without the column |
+| `dmarc_historic_tags_domains` | DMARC carries tags removed in RFC 9989 (`pct=`, `rf=`, `ri=`). Not an error. Empty in months without the column |
 | `dmarc_invalid_domains` | publishes DMARC, but the record is invalid (two `v=DMARC1` records, or `p=` missing or invalid). Included in `dmarc_adopted_domains` |
 | `dkim_key_2048_domains` | of the domains where DKIM was found, every RSA key found is 2048 bits or longer |
 | `dkim_key_1024_domains` | likewise, the shortest RSA key found is 1024 bits |

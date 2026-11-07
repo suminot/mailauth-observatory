@@ -28,7 +28,7 @@ from ..normalize import etld_plus_one
 from ..ordered import in_input_order
 from ..p4_measure.bronze import iter_bronze_files, read_bronze
 from ..paths import bronze_dir, month_date, phase_dir, phase_output
-from ..records import find_spf_records, is_null_mx, join_txt_strings
+from ..records import dmarc_tags, find_spf_records, is_null_mx, join_txt_strings
 from ..records import mx_hosts as extract_mx_hosts
 from ..resolver import Resolver
 from . import dkim as dkim_mod
@@ -43,7 +43,7 @@ OUTPUT_FILENAME = "facts.parquet"
 #: 1.1.0（2026-11）：SPF を include と redirect の先まで数える（BACKLOG 41）
 #: 1.2.0（2026-11）：DKIM の鍵の長さを RSA だけ見積もる（Ed25519 を短い鍵と誤らない）
 #: 1.3.0（2026-11）：SPF の最後に効く all を redirect の先まで読む
-PARSER_VERSION = "1.3.0"
+PARSER_VERSION = "1.4.0"
 
 #: 返していないドメインを何件まで抱えるか（`ordered.in_input_order`）。
 #: 同時本数より十分大きくしないと、先頭の1件が遅いたびに手が止まる
@@ -166,7 +166,8 @@ def parse_domain(
     # include と redirect の先まで数える（BACKLOG 41）。先の TXT は resolver が
     # 覚えているので、同じ include（spf.protection.outlook.com など）を何度も
     # 引かない。resolver が無い run では null のまま
-    out.update(spf_lookup_total=None, spf_total_exceeds=None, spf_target_broken=None)
+    out.update(spf_lookup_total=None, spf_total_exceeds=None, spf_target_broken=None,
+               spf_target_unregistered=None)
     # 最後に効く all。自分のレコードに all があればそれ。redirect で任せて
     # いれば任せた先の all（resolver が無ければ自分の分だけ）
     out["spf_all_effective"] = spf.all_qualifier
@@ -183,6 +184,35 @@ def parse_domain(
             spf_total_exceeds=exceeds,
             spf_target_broken=walk.broken_target,
         )
+        # **SPF が名指ししている先のドメインが、登録されていないか**（BACKLOG 49）。
+        # SubdoMailing（2024）では、期限切れで空いたドメインが大手の SPF の
+        # include に残っていて、取り直した第三者がそのブランドとして送れた。
+        # 見るのは SPF の無かった先（missing）だけ ── 記録がある先は登録されている
+        unregistered = (
+            _any_registrable_unregistered(walk.missing, resolver) if walk.missing else False
+        )
+        # 引けなかった先があれば、「空いていない」とは言えない（原則5）
+        out["spf_target_unregistered"] = (
+            None if unregistered is False and not walk.complete else unregistered
+        )
+
+    # -- apex の TXT の大きさ（BACKLOG 49） ------------------------------------
+    # 所有確認のトークンが積もると、apex の TXT の応答が 1,232 バイト（DNS Flag
+    # Day 2020 の目安）を超え、UDP で切れて TCP に回る。受け手の SPF の評価が
+    # 一時エラーになることがある（NDSS MADWeb 2026, Hager & Petrlic）
+    spf_records_raw = [r for r in by_purpose.get(QueryPurpose.SPF, []) if r.get("observed")]
+    out["txt_apex_count"] = None
+    out["txt_apex_bytes"] = None
+    out["txt_apex_tcp"] = None
+    if spf_records_raw:
+        rec = spf_records_raw[0]
+        chunks = [
+            a.get("data") if isinstance(a.get("data"), list) else [str(a.get("data") or "")]
+            for a in (rec.get("answers") or [])
+        ]
+        out["txt_apex_count"] = len(chunks)
+        out["txt_apex_bytes"] = estimate_txt_response_bytes(domain, chunks)
+        out["txt_apex_tcp"] = rec.get("protocol") == "tcp" if rec.get("protocol") else None
 
     # apex TXT のうち SPF 以外。所有権確認 TXT の照合に使う（P6）。
     # SPF は専用フィールドがあるので重複させない
@@ -218,6 +248,11 @@ def parse_domain(
         policy_label=dmarc.policy_label,
         blind_enforcement=dmarc.blind_enforcement,
         spec_version=dmarc.spec_version,
+    )
+    # **RFC 9989 で無くなったタグ（pct・rf・ri）が残っているか。** 受け手が
+    # 新しい仕様で読むと無視される。誤りではないので「直す余地」として数える
+    out["dmarc_historic_tags"] = (
+        bool(set(dmarc_tags(dmarc.raw)) & {"pct", "rf", "ri"}) if dmarc.raw else None
     )
 
     # rua の外部宛先。個人情報を集めないためドメインだけを見る
@@ -306,6 +341,15 @@ def parse_domain(
         wildcard_record=wildcard_txt,
         cnames=cnames,
         applicable=selectors_tried > 0,
+    )
+    # **Ed25519 の鍵しか無い**（RFC 8463）。Gmail と Exchange Online は Ed25519 の
+    # 署名を検証しない（NDSS MADWeb 2026）。RSA の鍵と並べて置くのが勧められる形
+    # 何にでも答える DNS（対照クエリが応答した）では鍵そのものが当てにならない
+    live_keys = [k for k in dkim.keys if k.valid and not k.revoked and k.selector != "*"]
+    out["dkim_ed25519_only"] = (
+        all((k.key_type or "rsa") == "ed25519" for k in live_keys)
+        if live_keys and not dkim.wildcard_suspect
+        else None
     )
     out.update(
         dkim_status=dkim.status,
@@ -436,6 +480,19 @@ def _mx_reachability(hosts: list[str], resolver: Resolver | None) -> dict[str, A
     else:
         out["mx_domain_unregistered"] = False if unknown == 0 else None
     return out
+
+
+def estimate_txt_response_bytes(name: str, records: list[list[str]]) -> int:
+    """TXT の応答の大きさの見積り（バイト）。
+
+    ヘッダ 12 + 質問（名前 + 4）+ 各レコード（圧縮した名前 2 + 型・クラス・TTL・
+    長さ 10 + character-string ごとに 1 + 中身）+ EDNS の OPT 11。
+    """
+    qname = len(name.rstrip(".")) + 2
+    size = 12 + qname + 4 + 11
+    for chunks in records:
+        size += 12 + sum(1 + len(str(c).encode("utf-8")) for c in chunks)
+    return size
 
 
 def _any_registrable_unregistered(names: list[str], resolver: Resolver) -> bool | None:

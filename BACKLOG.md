@@ -2729,6 +2729,33 @@ disney.com / thewaltdisneycompany.com）。
   候補にする** ── ブランドのドメインでメールを出す会社がある
 - 他社の公式サイトと同じドメインは、社名と合うときだけ使う
 
+## 49. 調査から足した P5 の項目 ── **4つ入れた（2026-11-07）**
+
+同じことをしている人たち（大規模計測の論文、DMARC 普及の定点観測、
+商用の DMARC・ASM 製品）が見ているもので、ここに無かったものを洗い出した。
+
+**入れたもの**（P5 1.4.0、列の無い過去の run は集計で null）：
+
+| 列（fact） | 集計（gold） | 中身 |
+|---|---|---|
+| `spf_target_unregistered` | `spf_dangling_domains` | SPF の include / redirect の先（SPF の無かったもの）の登録ドメインが登録されていない。SubdoMailing（2024）の形。NS が NXDOMAIN で上の接尾辞が実在するときだけ True |
+| `txt_apex_count` `txt_apex_bytes` `txt_apex_tcp` | `txt_apex_oversize_domains` | apex の TXT の応答の大きさの見積り。1,232 バイト（DNS Flag Day 2020）を超えると UDP で切れて TCP に回る |
+| `dkim_ed25519_only` | `dkim_ed25519_only_domains` | 見つかった鍵が Ed25519 だけ。検証しない受け手がある（RFC 8463 は RSA と並べる形を勧める） |
+| `dmarc_historic_tags` | `dmarc_historic_tags_domains` | RFC 9989 で無くなった `pct` `rf` `ri` が残っている。誤りではない |
+
+**次に入れる候補**（大きさの小さい順ではなく、読み手にとっての意味の順）：
+
+- 大口送信者の要件（Gmail・Yahoo・Microsoft）に照らした「整っているか」の
+  一覧。順位や点数にはせず、項目ごとの数を並べる
+- SPF が許している IP アドレスの広さ（`ip4:` の合計、`/8` などの広すぎる範囲）
+- サブドメインまで含めた実効の被覆（自分・`sp=`・`np=`・実際に送っている
+  サブドメインの4つの分母）
+- RFC 9989 の木をたどる組織ドメインの決め方と `psd=`
+- BIMI の中身（SVG Tiny PS・証明書の検証）
+- MTA-STS と DANE をもう一段深く（ポリシーの有効期限、TLSA と証明書の一致）
+- 送らないドメインの封じ方（null MX・`v=spf1 -all`・`p=reject`・失効 DKIM の組）
+- DKIM の古いセレクタと、別の会社との鍵の使い回し
+
 ## 7. 規模に対する前提
 
 いまの国内 1 母集団では問題にならないが、DESIGN.md の 30,000 ドメインでは

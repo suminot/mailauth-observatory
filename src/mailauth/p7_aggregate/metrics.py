@@ -70,6 +70,16 @@ def _min_int(values: Any) -> int | None:
     return min(nums) if nums else None
 
 
+def _opt_int(value: Any) -> int | None:
+    """整数か None（欠損・NaN は None）。"""
+    if value is None or isinstance(value, (str, bytes, bool)):
+        return None
+    try:
+        return int(value) if value == value else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _text(value: Any) -> str | None:
     if value is None:
         return None
@@ -86,6 +96,18 @@ def _tristate(value: object) -> bool | None:
     if isinstance(value, float) and value != value:  # NaN
         return None
     return bool(value)
+
+
+#: UDP で切れずに返る目安（DNS Flag Day 2020 の EDNS バッファ 1,232 バイト）
+TXT_UDP_SAFE_BYTES = 1232
+
+
+def _count_true(rows, base, value) -> int | None:
+    """`base` を満たす行のうち `value` が True の数。**値が1つも無ければ None**。"""
+    vals = [value(r) for r in rows if base(r)]
+    if not any(v is not None for v in vals):
+        return None
+    return sum(1 for v in vals if v is True)
 
 
 @dataclass
@@ -125,6 +147,11 @@ class DomainRow:
     #: SPF を include の先まで数えて上限を超えるか / 先が壊れているか（P5。三値）
     spf_total_exceeds: bool | None = None
     spf_target_broken: bool | None = None
+    #: BACKLOG 49（P5 1.4.0）。三値。列の無い過去の run は None
+    spf_target_unregistered: bool | None = None
+    txt_apex_bytes: int | None = None
+    dkim_ed25519_only: bool | None = None
+    dmarc_historic_tags: bool | None = None
     #: 最後の `all` の修飾子（- ~ ? +）。無ければ None
     spf_all_qualifier: str | None = None
     spf_error: str | None = None
@@ -168,6 +195,10 @@ class DomainRow:
             rua_domain_unregistered=_tristate(fact.get("rua_domain_unregistered")),
             spf_total_exceeds=_tristate(fact.get("spf_total_exceeds")),
             spf_target_broken=_tristate(fact.get("spf_target_broken")),
+            spf_target_unregistered=_tristate(fact.get("spf_target_unregistered")),
+            txt_apex_bytes=_opt_int(fact.get("txt_apex_bytes")),
+            dkim_ed25519_only=_tristate(fact.get("dkim_ed25519_only")),
+            dmarc_historic_tags=_tristate(fact.get("dmarc_historic_tags")),
             # **最後に効く all を優先する**（redirect の先の all）。列が無い過去の
             # run では自分のレコードの all
             spf_all_qualifier=(
@@ -431,6 +462,22 @@ def aggregate(
             sum(1 for r in observed if r.spf_present and r.spf_target_broken is True)
             if spf_walked
             else None
+        ),
+        # BACKLOG 49。**列の無い過去の run では 0 ではなく null**
+        spf_dangling_domains=_count_true(
+            observed, lambda r: r.spf_present, lambda r: r.spf_target_unregistered
+        ),
+        txt_apex_oversize_domains=(
+            sum(1 for r in observed
+                if r.txt_apex_bytes is not None and r.txt_apex_bytes > TXT_UDP_SAFE_BYTES)
+            if any(r.txt_apex_bytes is not None for r in observed)
+            else None
+        ),
+        dkim_ed25519_only_domains=_count_true(
+            observed, lambda r: True, lambda r: r.dkim_ed25519_only
+        ),
+        dmarc_historic_tags_domains=_count_true(
+            observed, lambda r: r.dmarc_present, lambda r: r.dmarc_historic_tags
         ),
         spf_all_fail_domains=all_q.get("-", 0),
         spf_all_softfail_domains=all_q.get("~", 0),
