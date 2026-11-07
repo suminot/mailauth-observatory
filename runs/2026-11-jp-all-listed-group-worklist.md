@@ -8,14 +8,14 @@
 `configs/worklist/unidentified_hosts.yaml` に理由を書いて作業リストから外してください。
 **「調べたが分からなかった」は結論であって、無かったことにはしません。**
 
-## 手を付けるもの（66 件）
+## 手を付けるもの（69 件）
 
 | 登録ドメイン | 件数 | 連続月 | 例 |
 |---|---|---|---|
 | `index.or.jp` | 30 | 1 | `mskigw21.index.or.jp`, `mskigw23.index.or.jp`, `mskigw22.index.or.jp` |
-| `amazonses.com` | 9 | 1 | `feedback-smtp.ap-northeast-1.amazonses.com`, `feedback-smtp.us-east-1.amazonses.com` |
+| `amazonses.com` | 10 | 1 | `feedback-smtp.ap-northeast-1.amazonses.com`, `feedback-smtp.us-east-1.amazonses.com` |
+| `aams6.jp` | 9 | 1 | `mx-1.aams6.jp`, `mx.aams6.jp`, `mx-0.aams6.jp` |
 | `keihin.co.jp` | 8 | 1 | `isgw.keihin.co.jp`, `mail.keihin.co.jp` |
-| `aams6.jp` | 6 | 1 | `mx-1.aams6.jp`, `mx.aams6.jp`, `mx-0.aams6.jp` |
 | `inet-jp.com` | 5 | 1 | `mxvc23.inet-jp.com`, `mxvc25.inet-jp.com`, `mxvc38.inet-jp.com` |
 | `bit-drive.ne.jp` | 4 | 1 | `vcgwp2.bit-drive.ne.jp`, `vcgws4.bit-drive.ne.jp`, `vcgwp1.bit-drive.ne.jp` |
 | `ddreams.jp` | 4 | 1 | `mail-swp2.ddreams.jp`, `mail-swp1.ddreams.jp`, `mail-nk1.ddreams.jp` |
@@ -25,6 +25,7 @@
 | `mitene.jp` | 3 | 1 | `mx-1.mitene.jp`, `mx-0.mitene.jp`, `mx.mitene.jp` |
 | `msaas.jp` | 3 | 1 | `mail-mgcm.msaas.jp`, `mail-mgcm04.msaas.jp` |
 | `mxthunder.net` | 3 | 1 | `tsukuba-milk-co-jp.p30.mxthunder.net`, `tsukuba-milk-co-jp.p40.mxthunder.net`, `tsukuba-milk-co-jp.p20.mxthunder.net` |
+| `sagawa-exp.co.jp` | 3 | 1 | `spms.sagawa-exp.co.jp`, `spms-2.sagawa-exp.co.jp`, `spms-1.sagawa-exp.co.jp` |
 | `smbcnikko.co.jp` | 3 | 1 | `y1maildrv11.mail.smbcnikko.co.jp`, `y1maildrv12.mail.smbcnikko.co.jp`, `o1maildrv11.mail.smbcnikko.co.jp` |
 | `twex.jp` | 3 | 1 | `mail.twex.jp` |
 | `wdb.com` | 3 | 1 | `mail3.wdb.com` |
@@ -44,6 +45,7 @@
 | `secu-dity.jp` | 2 | 1 | `bc.secu-dity.jp` |
 | `thalesgroup.com` | 2 | 1 | `mx01.thalesgroup.com`, `mx02.thalesgroup.com` |
 | `vanceport2.sakura.ne.jp` | 2 | 1 | `vanceport2.sakura.ne.jp` |
+| `zaq.ne.jp` | 2 | 1 | `mgw1.mx.zaq.ne.jp`, `mgw2.mx.zaq.ne.jp` |
 | `aeon-ecbo.biz` | 1 | 1 | `mm-mail.aeon-ecbo.biz` |
 | `aics.ne.jp` | 1 | 1 | `amxi.aics.ne.jp` |
 | `casio.jp` | 1 | 1 | `mnm1.casio.jp` |
@@ -71,6 +73,7 @@
 | `mcnx.jp` | 1 | 1 | `sv2.mcnx.jp` |
 | `mxthunder.com` | 1 | 1 | `tsukuba-milk-co-jp.p10.mxthunder.com` |
 | `naturum.jp` | 1 | 1 | `mail.naturum.jp` |
+| `recochoku.net` | 1 | 1 | `rcmail.product.recochoku.net` |
 | `secure.jp` | 1 | 1 | `bta1361.secure.jp` |
 | `shared-server.net` | 1 | 1 | `mx.red.shared-server.net` |
 | `spnet.ne.jp` | 1 | 1 | `www4.spnet.ne.jp` |
@@ -79,7 +82,7 @@
 | `yamaso-web.co.jp` | 1 | 1 | `columba.yamaso-web.co.jp` |
 | `zero-medical.sakura.ne.jp` | 1 | 1 | `zero-medical.sakura.ne.jp` |
 
-## 調査済み・同定できなかったもの（5 件）
+## 調査済み・同定できなかったもの（6 件）
 
 **件数は残します。** 「調べたが分からなかった」を無かったことにしないためです。
 
@@ -90,6 +93,7 @@
 | `s-idc.net` | 2 | 公開情報から同定できない | 2026-11-01 |
 | `secomtrust.net` | 2 | 公開情報から同定できない | 2026-11-01 |
 | `xspmail.jp` | 2 | 公開情報から同定できない | 2026-11-01 |
+| `u-netsurf.ne.jp` | 1 | 公開情報から同定できない | 2026-11-01 |
 
 ## 追記のしかた
 
