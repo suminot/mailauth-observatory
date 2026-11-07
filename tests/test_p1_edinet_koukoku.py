@@ -406,8 +406,27 @@ def test_有報に書いた自社ドメインを公式サイトとして優先�
     manifest = RunManifest(run_id="2026-11", phase="p1_population", out_dir="/tmp/unused")
     _prefer_filing_domains([mcg, same, empty, parent, child], manifest, scan_path=str(path))
     assert (mcg.official_domain, mcg.official_url) == ("mcgc.com", "https://mcgc.com/")
+    # 第三者のページ（.jp でない）は候補に残さない
+    assert mcg.alt_domains == []
     assert same.official_domain == "murata.co.jp"
     assert empty.official_domain == "c.co.jp"
     assert (parent.official_domain, child.official_domain) == ("a.co.jp", "b.co.jp")
     b = manifest.breakdown["filing_domain"]
     assert (b["replaced"], b["agreed"], b["filled"], b["shared_skipped"]) == (1, 1, 1, 2)
+
+
+
+def test_置き換えた前の公式サイトが_jp_ならブランドとして候補に残す(tmp_path):
+    from mailauth.contracts import Entity
+    from mailauth.manifest import RunManifest
+    from mailauth.p1_population.edinet_koukoku import write_scan
+    from mailauth.p1_population.runner import _prefer_filing_domains
+
+    e = Entity(entity_id="jp:1", run_id="2026-11", country="JP", population_ids=["jp-all-listed"],
+               name="寿スピリッツ株式会社", name_normalized="寿スピリッツ", edinet_code="E1",
+               official_domain="okashinet.co.jp", official_url="https://okashinet.co.jp/")
+    path = tmp_path / "k.csv"
+    write_scan(path, {"E1": ("S1", ["kotobukispirits.co.jp"], "2026-11-06")})
+    manifest = RunManifest(run_id="2026-11", phase="p1_population", out_dir="/tmp/unused")
+    _prefer_filing_domains([e], manifest, scan_path=str(path))
+    assert (e.official_domain, e.alt_domains) == ("kotobukispirits.co.jp", ["okashinet.co.jp"])

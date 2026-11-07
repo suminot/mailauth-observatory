@@ -419,6 +419,10 @@ def _fill_from_jawiki(
     )
 
 
+def _is_jp_name(domain: str | None) -> bool:
+    return bool(domain) and str(domain).lower().rstrip(".").endswith(".jp")
+
+
 def _prefer_filing_domains(
     entities: list[Entity], manifest: RunManifest, *, scan_path: str | None = None
 ) -> None:
@@ -459,6 +463,12 @@ def _prefer_filing_domains(
             continue
         if e.official_domain:
             replaced.append(f"{e.official_domain} → {dom}（{e.name}）")
+            # **前の公式サイトが .jp の名前なら候補に残す**（クラレ kuraray.co.jp、
+            # 寿スピリッツ okashinet.co.jp のようなブランドのサイト）。.jp は国内に
+            # 住所のある組織しか登録できない。第三者のページ（pitchbook.com・
+            # disclosure.site）はここで落ちる
+            if _is_jp_name(e.official_domain) and e.official_domain not in e.alt_domains:
+                e.alt_domains.append(e.official_domain)
         else:
             filled += 1
         e.official_domain = dom
