@@ -235,12 +235,22 @@ def run(
 
         targets = []
         dropped_by_request = 0
+        #: **同じドメインは1回だけ測る。** 複数の会社が同じドメインを持つことがあり
+        #: （japanpost.jp）、2回測ると bronze に同じレコードが2組入り、P5 が
+        #: 「DMARC が2つある」と読む。階層は深い方（A）に合わせる
+        seen_domain: dict[str, int] = {}
         for _, r in measured.iterrows():
             domain = str(r["domain"])
             if excluded.excludes(domain, entity_id=str(r.get("entity_id") or "") or None):
                 dropped_by_request += 1
                 excluded.record(domain)
                 continue
+            if domain in seen_domain:
+                prev = targets[seen_domain[domain]]
+                if str(r["measure_tier"] or MeasureTier.C) == MeasureTier.A:
+                    prev["tier"] = MeasureTier.A
+                continue
+            seen_domain[domain] = len(targets)
             targets.append(
                 {
                     "domain": domain,
