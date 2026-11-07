@@ -220,6 +220,8 @@ The main columns used in the tables above.
 | `spf_dangling_domains` | among SPF `include` or `redirect` targets with no SPF record, one whose registrable domain was confirmed unregistered (anyone registering it could send mail that passes SPF). Domains with targets that could not be looked up are not counted. Empty in months without the column |
 | `txt_apex_oversize_domains` | the estimated size of the apex TXT response exceeds 1,232 bytes. Not the actual response size. Empty in months without the column |
 | `spf_ip4_broad_domains` | the IPv4 addresses the apex SPF record lets through (`ip4:`, overlaps counted once, `include` targets not counted) exceed 65,536 (one /16). Empty in months without the column |
+| `dmarc_np_domains` | DMARC carries a valid `np=` (policy for non-existent subdomains, RFC 9989) |
+| `dmarc_testing_domains` | DMARC carries `t=y` (testing, RFC 9989) |
 | `bulk_spf_ok_domains` | among sending domains (`sending_domains`), SPF is present and evaluates without error (one `v=spf1`, within 10 lookups counted through `include` targets) |
 | `bulk_dkim_domains` | likewise, a DKIM key was found (within the selectors tried) |
 | `bulk_dmarc_ok_domains` | likewise, DMARC is present with a valid record (including `p=none`) |

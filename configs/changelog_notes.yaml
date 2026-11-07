@@ -28,6 +28,7 @@ months:
       - SPF の include・redirect の先のドメインが登録されていないもの、主ドメインの TXT の応答が 1,232 バイトを超える見積りのもの、DKIM の鍵が Ed25519 だけのもの、DMARC に RFC 9989 で無くなったタグがあるものの数を足した。
       - 主ドメインの SPF が通すと書いた IPv4 アドレスが 65,536 を超えるドメインの数を足した（include の先は数えない）。
       - 送信しているドメインのうち、大口送信者の要件（Gmail・Yahoo・Microsoft）のうち DNS で見られる部分（SPF・DKIM・DMARC）がそろっているものの数を足した。
+      - DMARC に RFC 9989 で入ったタグ（np=・t=y）があるドメインの数を足した。
     en:
       - The outbound front-end check now includes the names that Proofpoint, Mimecast, Barracuda, Cisco, Trend Micro and others ask customers to publish in SPF for sending (only names found in each vendor's documentation). The number of US companies with an outbound front-end rose largely because of this.
       - Rules were added for DKIM CNAME targets (SendGrid, HubSpot, Constant Contact, Salesforce and others) and SPF includes (KnowBe4, Mailgun, Oracle and Japanese delivery services). The rise in sending-service counts comes from this.
@@ -47,3 +48,4 @@ months:
       - Counts were added for domains where an SPF include or redirect target's domain is not registered, where the apex TXT response is estimated to exceed 1,232 bytes, where the DKIM keys found are Ed25519 only, and where DMARC carries tags removed in RFC 9989.
       - A count was added for domains whose apex SPF record lets through more than 65,536 IPv4 addresses (include targets are not counted).
       - Among sending domains, counts were added for the DNS-visible part of bulk-sender requirements (Gmail, Yahoo, Microsoft): SPF, DKIM and DMARC.
+      - Counts were added for domains whose DMARC carries the tags introduced in RFC 9989 (np=, t=y).
