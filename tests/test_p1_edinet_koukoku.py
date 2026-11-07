@@ -430,3 +430,24 @@ def test_置き換えた前の公式サイトが_jp_ならブランドとして�
     manifest = RunManifest(run_id="2026-11", phase="p1_population", out_dir="/tmp/unused")
     _prefer_filing_domains([e], manifest, scan_path=str(path))
     assert (e.official_domain, e.alt_domains) == ("kotobukispirits.co.jp", ["okashinet.co.jp"])
+
+
+def test_有報が無い新規上場の会社は有価証券届出書を読む():
+    api = FakeApi(
+        {
+            "2026-11-05": [_doc("R2", "E2", "030")],  # 有報のある会社の、新しい届出書
+            "2026-10-01": [_doc("R1", "E1", "030")],
+            "2026-06-26": [_doc("Y2", "E2", "120")],
+        },
+        {"R1": _zip(_koukoku("https://www.newco.co.jp/")),
+         "Y2": _zip(_koukoku("https://www.oldco.co.jp/")),
+         "R2": _zip(_koukoku("https://www.wrong.co.jp/"))},
+    )
+    ok = _confirm_only({"newco.co.jp": "株式会社新規", "oldco.co.jp": "株式会社既存"})
+    reader = EdinetKoukoku(api, ok, today=TODAY)
+    got = reader.websites_for(
+        [("jp:1", "E1", "株式会社新規", None), ("jp:2", "E2", "株式会社既存", None)], taken=set()
+    )
+    # 有報がある会社は、新しい届出書があっても有報を読む
+    assert got == {"jp:1": "newco.co.jp", "jp:2": "oldco.co.jp"}
+    assert reader.stats.from_registration == 1
