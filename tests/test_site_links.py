@@ -185,3 +185,35 @@ def test_持ち時間を超えたら残りは読まず数えて残す():
     src.discover(companies)
     assert src.stats.budget_skipped > 0
     assert src.stats.sites == 5
+
+
+def test_同じ名前の別の_TLD_の候補():
+    from mailauth.site_links import sibling_candidates
+
+    assert sibling_candidates("global.canon", "JP") == ["canon.co.jp", "canon.com", "canon.jp"]
+    assert sibling_candidates("www.zett.jp", "JP") == ["zett.co.jp", "zett.com"]
+    assert sibling_candidates("acme.com", "US") == ["acme.net", "acme.co"]
+    assert sibling_candidates("x.example", "DE") == []
+
+
+def test_公式サイトに_MX_が無ければ同じ名前の別の_TLD_を商号で確かめて採る():
+    web = Web(
+        {
+            "https://www.global.canon/": _page("キヤノン株式会社"),
+            "https://www.canon.co.jp/": _page("キヤノン株式会社 | Canon"),
+            # 同じ名前の別の会社。タイトルに商号が無いので採らない
+            "https://www.canon.com/": _page("Canon Outdoor Supplies LLC"),
+            "https://www.hasmx.co.jp/": _page("株式会社甲乙丙"),
+        },
+        mx={"canon.co.jp", "canon.com", "hasmx.co.jp", "hasmx.com"},
+    )
+    src = _src(web)
+    got = src.discover([
+        SiteCompany("global.canon", "キヤノン株式会社", None, "JP"),
+        # 公式サイトに MX があれば別の TLD は見に行かない
+        SiteCompany("hasmx.co.jp", "株式会社甲乙丙", None, "JP"),
+    ])
+    assert got == {}
+    assert src.siblings == {"global.canon": ["canon.co.jp"]}
+    assert (src.stats.sibling_checked, src.stats.sibling_found) == (1, 1)
+    assert "https://www.hasmx.com/" not in web.fetched

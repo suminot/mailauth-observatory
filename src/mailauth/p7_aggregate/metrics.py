@@ -152,6 +152,7 @@ _OWNERSHIP_OF_METHOD = {
     "dmarc_rua": "own_dns",
     # 公式サイトのリンク先で、ページのタイトルに商号がある
     "site_link": "web_link",
+    "sibling_tld": "web_link",
 }
 
 
