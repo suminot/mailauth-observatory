@@ -62,6 +62,7 @@ crt.sh は Actions の IP 帯に対して遅い。同時4本で1件16.3秒とい
 from __future__ import annotations
 
 import json
+import re
 import statistics
 import threading
 import time
@@ -79,11 +80,49 @@ CRTSH_ENDPOINT = "https://crt.sh/"
 USER_AGENT = "mailauth-observatory/0.1 (research; contact via github.com/suminot)"
 
 
+#: 証明書に載ったサブドメインのうち、**メールのドメインに使われがちな名前**（左端の
+#: ラベル）。受信用のホスト名（imap・owa など）は入れない ── ホストであって、
+#: アドレスの右側に来る名前ではない。数字の付いたもの（mail2）も採る
+MAIL_NAME_LABELS = (
+    "mail", "mails", "email", "e-mail", "mx", "smtp", "post", "news", "newsletter",
+    "mag", "magazine", "info", "mm", "mkt", "marketing", "crm", "em", "e", "m",
+    "send", "notice", "notify", "bounce", "return", "reply", "noreply", "no-reply", "ml",
+)
+_MAIL_NAME_RE = re.compile(
+    r"^(?:" + "|".join(re.escape(x) for x in MAIL_NAME_LABELS) + r")\d{0,2}$"
+)
+#: 1回の検索で残す数の上限
+MAX_MAIL_NAMES = 30
+
+
+def mail_name(candidate: str, apex: str | None) -> str | None:
+    """`candidate` が `apex` の配下（2段まで）で、左端がメール用らしい名前なら返す。"""
+    if not apex or not candidate.endswith("." + apex):
+        return None
+    labels = candidate[: -len(apex) - 1].split(".")
+    if len(labels) > 2 or not _MAIL_NAME_RE.match(labels[0]):
+        return None
+    return candidate
+
+
+def _collect_mail_names(names, apex: str | None) -> list[str]:
+    out: dict[str, None] = {}
+    for n in names:
+        hit = mail_name(n, apex)
+        if hit:
+            out.setdefault(hit, None)
+    return sorted(out)[:MAX_MAIL_NAMES]
+
+
 @dataclass
 class CtResult:
     domain: str
     #: 見つかった eTLD+1 の集合
     found: list[str] = field(default_factory=list)
+    #: 引いたドメインの配下で、**メール用らしい名前**の FQDN（`mail.`・`news.` など、
+    #: `MAIL_NAME_LABELS`）。サブドメインの候補にする（BACKLOG 52）。P3 が自分の MX か
+    #: `_dmarc` を持つものだけ測る
+    mail_names: list[str] = field(default_factory=list)
     #: 正規化前に見た FQDN の件数。爆発の度合いを記録する
     raw_names: int = 0
     from_cache: bool = False
@@ -408,6 +447,7 @@ class CrtShClient:
                     domain=domain,
                     found=payload.get("found", []),
                     raw_names=payload.get("raw_names", 0),
+                    mail_names=payload.get("mail_names", []),
                     from_cache=True,
                     cache_month=payload.get("month"),
                     source=payload.get("source", "crtsh"),
@@ -518,6 +558,7 @@ class CrtShClient:
                     {
                         "found": result.found,
                         "raw_names": result.raw_names,
+                        "mail_names": result.mail_names,
                         # **どの月の観測かを payload にも書く。** パスだけに
                         # 頼ると、ディレクトリを動かしたときに月が分からなくなる
                         "month": self.month,
@@ -695,6 +736,8 @@ def _extract(domain: str, rows: list[dict]) -> CtResult:
     seen: dict[str, None] = {}
     raw = 0
     shared = 0
+    own_apex = etld_plus_one(domain)
+    names_seen: list[str] = []
     for row in rows or []:
         names = str(row.get("name_value") or "")
         apexes: dict[str, None] = {}
@@ -703,6 +746,7 @@ def _extract(domain: str, rows: list[dict]) -> CtResult:
             if not candidate or " " in candidate:
                 continue
             raw += 1
+            names_seen.append(candidate)
             apex = etld_plus_one(candidate)
             if apex:
                 apexes.setdefault(apex, None)
@@ -711,7 +755,8 @@ def _extract(domain: str, rows: list[dict]) -> CtResult:
             continue
         for apex in apexes:
             seen.setdefault(apex, None)
-    return CtResult(domain=domain, found=sorted(seen), raw_names=raw, shared_skipped=shared)
+    return CtResult(domain=domain, found=sorted(seen), raw_names=raw, shared_skipped=shared,
+                    mail_names=_collect_mail_names(names_seen, own_apex))
 
 
 class StaticCtSource:
@@ -721,8 +766,10 @@ class StaticCtSource:
         self,
         mapping: dict[str, list[str]] | None = None,
         orgs: dict[str, list[str]] | None = None,
+        mail_names: dict[str, list[str]] | None = None,
     ) -> None:
         self.mapping = mapping or {}
+        self.mail_names = mail_names or {}
         #: 組織名 -> ドメイン。**空でも `search_org` は持つ。**
         #: 持たないと P2 が「この CT ソースは組織名検索を持たない」として
         #: 経路ごと落とし、検査が**通っているのに何も見ていない**状態になる
@@ -733,7 +780,8 @@ class StaticCtSource:
     def search(self, domain: str) -> CtResult:
         self.calls.append(domain)
         found = self.mapping.get(domain, [])
-        return CtResult(domain=domain, found=list(found), raw_names=len(found))
+        return CtResult(domain=domain, found=list(found), raw_names=len(found),
+                        mail_names=list(self.mail_names.get(domain, [])))
 
     def search_org(self, name: str) -> CtResult:
         self.org_calls.append(name)
@@ -964,6 +1012,7 @@ class CertSpotterClient:
         client = self._client or httpx.Client(timeout=self.timeout, follow_redirects=True)
         started = time.monotonic()
         seen: dict[str, None] = {}
+        names_seen: list[str] = []
         raw = 0
         after: str | None = None
         pages = 0
@@ -1016,6 +1065,7 @@ class CertSpotterClient:
                         if not candidate or " " in candidate:
                             continue
                         raw += 1
+                        names_seen.append(candidate)
                         apex = etld_plus_one(candidate)
                         if apex:
                             seen.setdefault(apex, None)
@@ -1039,6 +1089,7 @@ class CertSpotterClient:
             domain=domain,
             found=sorted(seen),
             raw_names=raw,
+            mail_names=_collect_mail_names(names_seen, etld_plus_one(domain)),
             cache_month=self.month,
             duration_sec=round(time.monotonic() - started, 3),
             attempts=pages,
@@ -1051,6 +1102,7 @@ class CertSpotterClient:
                     {
                         "found": result.found,
                         "raw_names": result.raw_names,
+                        "mail_names": result.mail_names,
                         "month": self.month,
                         "source": "certspotter",
                     }

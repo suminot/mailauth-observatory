@@ -229,6 +229,25 @@ class _Collector:
             return
         self.subdomains.setdefault(name, {}).setdefault(method, detail)
 
+    def add_named_subdomains(self, names: list[str], method: DiscoveryMethod, detail: str) -> int:
+        """名前の分かっているサブドメインを候補に足す（CT のメール用らしい名前）。
+
+        apex に所有の裏付けがあるものだけ。枠が埋まっていれば足さずに数える。
+        """
+        added = 0
+        for name in names:
+            apex = etld_plus_one(name)
+            if not apex or name in self.subdomains or name == apex:
+                continue
+            if not set(self.found.get(apex, {})) & OWNERSHIP_METHODS:
+                continue
+            if len(self.subdomains) >= self.subdomain_limit:
+                self.subdomains_truncated += 1
+                continue
+            self.subdomains[name] = {method: detail}
+            added += 1
+        return added
+
     def add_common_labels(self, labels: list[str], from_methods: frozenset[str]) -> int:
         """主ドメインの下の `mail.` などを、サブドメインの候補に足す（BACKLOG 33）。
 
@@ -603,6 +622,9 @@ def run(
         common_label_from = frozenset(
             str(m) for m in (sub_cfg.get("common_labels_under") or ["official_url", "manual"])
         )
+        #: 公式サイトの CT に載っていたメール用らしい名前を、サブドメインの候補にする
+        ct_mail_enabled = bool(sub_cfg.get("enabled")) and bool(sub_cfg.get("ct_mail_names"))
+        ct_mail_names: dict[str, list[str]] = {}
 
         # 起点となる official_domain が無い企業は、手動辞書が無ければ候補ゼロになる
         without_domain = [
@@ -947,6 +969,8 @@ def run(
                         collector.add(found, DiscoveryMethod.CT_LOG, f"{via} %.{official}")
                     if len(ct.found) > ct_max:
                         ct_stats["truncated"] += len(ct.found) - ct_max
+                    if ct_mail_enabled and getattr(ct, "mail_names", None):
+                        ct_mail_names.setdefault(entity_id, []).extend(ct.mail_names)
 
                 if tls_enabled:
                     san = tls_ready.get(official) or tls_source.lookup(official)
@@ -1164,6 +1188,16 @@ def run(
                 ),
             )
 
+        # **CT のメール用らしい名前も、よく使われる名前の前に足す**（実在する名前なので
+        # 推測より先）。他の経路で見つけたものは押し出さない
+        ct_mail_count = 0
+        for eid, names in sorted(ct_mail_names.items()):
+            collector = collectors.get(eid)
+            if collector is not None:
+                ct_mail_count += collector.add_named_subdomains(
+                    sorted(set(names)), DiscoveryMethod.CT_MAIL_NAME, "CT のメール用らしい名前"
+                )
+
         # **よく使われる名前は最後に足す。** 他の経路で見つけたものを押し出さない
         common_label_count = 0
         if common_labels:
@@ -1267,6 +1301,7 @@ def run(
             subdomain_candidates=subdomain_count,
             shared_subdomains_dropped=len(shared_subdomains),
             common_label_candidates=common_label_count,
+            ct_mail_name_candidates=ct_mail_count,
             ct=ct_stats,
             tls_san=tls_stats,
             site_link=site_stats if site_stats is not None else {"enabled": False},

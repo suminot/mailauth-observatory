@@ -61,6 +61,10 @@ class DiscoveryMethod(StrEnum):
     #: 名前は推測だが、**測るのは自分の MX か `_dmarc` を持つものだけ**で、
     #: ワイルドカードの MX は P3 で外す（BACKLOG 33）
     COMMON_LABEL = "common_label"
+    #: 公式サイトの証明書の記録（CT）に載っていた、メール用らしい名前のサブドメイン
+    #: （`news.` など、ctlog.MAIL_NAME_LABELS）。**名前は実在する**が、メールに
+    #: 使っているかは P3 が自分の MX か `_dmarc` で確かめる
+    CT_MAIL_NAME = "ct_mail_name"
 
 
 class DomainRole(StrEnum):

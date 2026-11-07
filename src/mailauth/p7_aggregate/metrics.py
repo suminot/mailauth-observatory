@@ -146,6 +146,7 @@ _OWNERSHIP_OF_METHOD = {
     "ct_org": "certificate",
     "ct_log": "certificate",
     "tls_san": "certificate",
+    "ct_mail_name": "certificate",
     # 会社の DNS が指している（SPF の redirect・自社の include・DMARC の rua）
     "spf_redirect": "own_dns",
     "spf_include": "own_dns",

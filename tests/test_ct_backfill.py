@@ -75,6 +75,8 @@ def test_certspotter_は証明書の名前を_eTLD1_にまとめて月のキャ�
     assert payload == {
         "found": ["example-mail.jp", "example.co.jp"],
         "raw_names": 4,
+        # メール用らしい名前のサブドメインも残す（BACKLOG 52）
+        "mail_names": ["mail.example.co.jp"],
         "month": MONTH,
         "source": "certspotter",
     }
@@ -948,3 +950,18 @@ def test_組織名だけの補充は_15_分で切り上げる():
     """次の月次計測の P2 はこの工程が終わるのを待つ（crt.sh を倍の頻度で叩かない）。"""
     fill = _steps()[_index("補充")]
     assert "MINUTES=15" in fill["run"] and '--max-minutes "$MINUTES"' in fill["run"]
+
+
+def test_CT_の応答からメール用らしい名前のサブドメインを残す():
+    """BACKLOG 52：TwoFive との差のうちサブドメイン。CT に載った `news.` などを候補にする。"""
+    from mailauth.ctlog import _extract, mail_name
+
+    rows = [
+        {"name_value": "www.example.co.jp\nnews.example.co.jp\nmail2.example.co.jp"},
+        {"name_value": "imap.example.co.jp\n*.example.co.jp\nm.shop.example.co.jp"},
+        {"name_value": "news.other.co.jp\na.b.mail.example.co.jp\nnewsroom.example.co.jp"},
+    ]
+    r = _extract("example.co.jp", rows)
+    assert r.mail_names == ["m.shop.example.co.jp", "mail2.example.co.jp", "news.example.co.jp"]
+    assert mail_name("example.co.jp", "example.co.jp") is None
+    assert mail_name("e.example.com", "example.com") == "e.example.com"

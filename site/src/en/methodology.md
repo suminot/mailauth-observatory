@@ -368,6 +368,11 @@ delivery or validation) carry neither, so they fall away.
   MX or `_dmarc` record of their own are measured. **Where a domain returns an
   MX for any name (a wildcard), it is not counted as the subdomain's own MX.**
   Subdomain counts are not comparable with earlier months
+- From the next month in which certificate transparency (CT) logs are queried,
+  subdomains with **mail-like names** (`news.`, `mail2.`, `info.` and the like)
+  that appear in the CT records for the official site are also candidates. The
+  names exist, but again only those carrying an MX or `_dmarc` record of their
+  own are measured. Subdomain counts are not comparable with earlier months
 
 ### `p=` and `sp=` are different things
 
