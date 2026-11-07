@@ -15,23 +15,24 @@
 | `amazonses.com` | 62 | 1 | `feedback-smtp.ap-northeast-1.amazonses.com`, `feedback-smtp.us-east-1.amazonses.com`, `feedback-smtp.us-west-2.amazonses.com` |
 | `aams4.jp` | 16 | 1 | `mx-1.aams4.jp`, `mx-0.aams4.jp`, `mx.aams4.jp` |
 | `antispameurope.de` | 16 | 1 | `mx11d.antispameurope.de`, `mx11c.antispameurope.de`, `mx11b.antispameurope.de` |
-| `recop.jp` | 16 | 1 | `mail2.recop.jp` |
+| `recop.jp` | 15 | 1 | `mail2.recop.jp` |
 | `registrar-servers.com` | 15 | 1 | `eforward5.registrar-servers.com`, `eforward3.registrar-servers.com`, `eforward2.registrar-servers.com` |
 | `exacttarget.com` | 10 | 1 | `inbound-reply.s1.exacttarget.com`, `reply.s10.exacttarget.com`, `reply.s12.exacttarget.com` |
 | `jm-s.co.jp` | 10 | 1 | `mx03.jm-s.co.jp`, `mx01.jm-s.co.jp`, `mx02.jm-s.co.jp` |
-| `hetemail.jp` | 9 | 1 | `mx.hetemail.jp` |
 | `antispameurope.com` | 8 | 1 | `mx16b.antispameurope.com`, `mx16a.antispameurope.com`, `mx16d.antispameurope.com` |
 | `dnsv.jp` | 8 | 1 | `mailforward.dnsv.jp` |
-| `fsi.ne.jp` | 7 | 1 | `sagw.fsi.ne.jp` |
+| `fsi.ne.jp` | 8 | 1 | `sagw.fsi.ne.jp` |
+| `hetemail.jp` | 8 | 1 | `mx.hetemail.jp` |
 | `ktk-sol.co.jp` | 7 | 1 | `mx.ktk-sol.co.jp` |
 | `aams6.jp` | 6 | 1 | `mx.aams6.jp`, `mx-0.aams6.jp`, `mx-1.aams6.jp` |
-| `ddreams.jp` | 6 | 1 | `mail-swp1.ddreams.jp`, `mail-swp2.ddreams.jp` |
 | `daiwahouse.co.jp` | 5 | 1 | `tokyogw5.daiwahouse.co.jp`, `osakagw5.daiwahouse.co.jp`, `osakagw.daiwahouse.co.jp` |
 | `google.com` | 5 | 1 | `alt3.gmr-smtp-in.l.google.com`, `alt2.gmr-smtp-in.l.google.com`, `alt1.gmr-smtp-in.l.google.com` |
 | `0101.co.jp` | 4 | 1 | `mwbmry11.0101.co.jp`, `mwbmta11.0101.co.jp`, `mwbmta21.0101.co.jp` |
 | `acrodea.co.jp` | 4 | 1 | `mr2.acrodea.co.jp`, `mr1.acrodea.co.jp` |
 | `bit-drive.ne.jp` | 4 | 1 | `vcgws40.bit-drive.ne.jp`, `vcgwp30.bit-drive.ne.jp`, `vcgwp6.bit-drive.ne.jp` |
+| `ddreams.jp` | 4 | 1 | `mail-swp1.ddreams.jp`, `mail-swp2.ddreams.jp` |
 | `denso.co.jp` | 4 | 1 | `ma-dnext03.denso.co.jp`, `ma-dnext02.denso.co.jp`, `ma-dnext00.denso.co.jp` |
+| `enets.ne.jp` | 4 | 1 | `spamcs1.enets.ne.jp` |
 | `index.or.jp` | 4 | 1 | `mskigw22.index.or.jp`, `mskigw21.index.or.jp`, `mskigw23.index.or.jp` |
 | `mailcloud.com.tw` | 4 | 1 | `mxs.mailcloud.com.tw`, `xs2.mailcloud.com.tw`, `security.mailcloud.com.tw` |
 | `makeshop.jp` | 4 | 1 | `mail4.makeshop.jp`, `mail2.makeshop.jp` |
@@ -43,7 +44,6 @@
 | `aams.jp` | 3 | 1 | `bbsec-1.aams.jp`, `bbsec-0.aams.jp`, `bbsec.aams.jp` |
 | `admiral.ne.jp` | 3 | 1 | `xmx01.admiral.ne.jp`, `zmx00.admiral.ne.jp` |
 | `cloudz.jp` | 3 | 1 | `mx-1.cloudz.jp`, `mx-0.cloudz.jp`, `mx.cloudz.jp` |
-| `enets.ne.jp` | 3 | 1 | `spamcs1.enets.ne.jp` |
 | `idc.jp` | 3 | 1 | `filter.spmf.idc.jp`, `mailrelay2.idc.jp` |
 | `meidensha.co.jp` | 3 | 1 | `gatekeeper1.meidensha.co.jp`, `gatekeeper3.meidensha.co.jp`, `gatekeeper2.meidensha.co.jp` |
 | `memenet.or.jp` | 3 | 1 | `dr-web02.memenet.or.jp`, `dr-web01.memenet.or.jp`, `cache.memenet.or.jp` |
@@ -65,6 +65,7 @@
 | `ichinen.co.jp` | 2 | 1 | `mx1.ichinen.co.jp`, `mx2.ichinen.co.jp` |
 | `igws.jp` | 2 | 1 | `fuj-relay2.igws.jp`, `fuj-relay1.igws.jp` |
 | `imatrix.co.jp` | 2 | 1 | `mxacloud01.imatrix.co.jp`, `mxacloud02.imatrix.co.jp` |
+| `ipsol-dc.net` | 2 | 1 | `mgw02.ipsol-dc.net`, `mgw01.ipsol-dc.net` |
 | `ispgateway.de` | 2 | 1 | `mxlb.ispgateway.de` |
 | `jescohd.sakura.ne.jp` | 2 | 1 | `jescohd.sakura.ne.jp` |
 | `kis-net.ne.jp` | 2 | 1 | `hsp2.kis-net.ne.jp` |
@@ -73,8 +74,10 @@
 | `mailer91.com` | 2 | 1 | `mx1.mailer91.com`, `mx2.mailer91.com` |
 | `mailprotect.be` | 2 | 1 | `mx.backup.mailprotect.be`, `mx.mailprotect.be` |
 | `marketingsuite.jp` | 2 | 1 | `ims.marketingsuite.jp` |
+| `mewave.jp` | 2 | 1 | `sato1.check.mewave.jp`, `cbon1.check.mewave.jp` |
 | `mkt7450.com` | 2 | 1 | `mail6851.asics.mkt7450.com`, `reply.asics.mkt7450.com` |
 | `mktomail.com` | 2 | 1 | `potomac1050.mktomail.com` |
+| `msaas.jp` | 2 | 1 | `mail-mgnatori.msaas.jp`, `mail-mgcm.msaas.jp` |
 | `msgs.jp` | 2 | 1 | `i.msgs.jp` |
 | `netease.com` | 2 | 1 | `qiye163mx02.mxmail.netease.com`, `qiye163mx01.mxmail.netease.com` |
 | `netindex.sakura.ne.jp` | 2 | 1 | `netindex.sakura.ne.jp` |
@@ -82,28 +85,25 @@
 | `pacific-systems.co.jp` | 2 | 1 | `mail0.pacific-systems.co.jp`, `mail1.pacific-systems.co.jp` |
 | `primedrive.jp` | 2 | 1 | `primedrive.jp` |
 | `repica.jp` | 2 | 1 | `b004.repica.jp`, `b005.repica.jp` |
+| `ringerhut.sakura.ne.jp` | 2 | 1 | `ringerhut.sakura.ne.jp` |
 | `sdx.ne.jp` | 2 | 1 | `scan-s1.sdx.ne.jp`, `scan-s2.sdx.ne.jp` |
 | `sendmail.ne.jp` | 2 | 1 | `acmf03.sendmail.ne.jp`, `acmf04.sendmail.ne.jp` |
 | `smtps.jp` | 2 | 1 | `kitagasdelivery.smtps.jp`, `asanuma.smtps.jp` |
 | `sony.com` | 2 | 1 | `mail2.fw-sd.sony.com`, `mail1.fw-bc.sony.com` |
-| `ssol-ix.jp` | 2 | 1 | `mail2.ssol-ix.jp`, `mail.ssol-ix.jp` |
 | `synapse.ne.jp` | 2 | 1 | `mx.synapse.ne.jp` |
 | `tdk.com` | 2 | 1 | `tdksf1.jp.tdk.com`, `tdksf2.jp.tdk.com` |
+| `tecraft.sakura.ne.jp` | 2 | 1 | `tecraft.sakura.ne.jp` |
 | `thalesgroup.com` | 2 | 1 | `mx01.thalesgroup.com`, `mx02.thalesgroup.com` |
 | `united-c.sakura.ne.jp` | 2 | 1 | `united-c.sakura.ne.jp` |
 | `wdb.com` | 2 | 1 | `mail2.wdb.com`, `mail3.wdb.com` |
 | `wordpress.com` | 2 | 1 | `smtp-fwd.wordpress.com` |
+| `yutaka-trusty.co.jp` | 2 | 1 | `ns2.yutaka-trusty.co.jp`, `ns1.yutaka-trusty.co.jp` |
 | `aics.ne.jp` | 1 | 1 | `amxi.aics.ne.jp` |
 | `ambisys.net` | 1 | 1 | `mx.ambisys.net` |
 | `asahi-intecc.com` | 1 | 1 | `mail.asahi-intecc.com` |
-| `asmo-foodservice.sakura.ne.jp` | 1 | 1 | `asmo-foodservice.sakura.ne.jp` |
-| `asmo-trd.sakura.ne.jp` | 1 | 1 | `asmo-trd.sakura.ne.jp` |
 | `atworks.com.cn` | 1 | 1 | `mx1.atworks.com.cn` |
 | `axis-corp.com` | 1 | 1 | `copro-t.sv.axis-corp.com` |
 | `b2b-mail.net` | 1 | 1 | `est-mta.b2b-mail.net` |
-| `bandp1983.sakura.ne.jp` | 1 | 1 | `bandp1983.sakura.ne.jp` |
-| `biccamera.com` | 1 | 1 | `mail.biccamera.com` |
-| `bmsend.com` | 1 | 1 | `mx.bmsend.com` |
 
 ## 調査済み・同定できなかったもの（8 件）
 
@@ -115,8 +115,8 @@
 | `biglobe.ne.jp` | 8 | 公開情報から同定できない | 2026-11-01 |
 | `xspmail.jp` | 8 | 公開情報から同定できない | 2026-11-01 |
 | `s-idc.net` | 7 | 公開情報から同定できない | 2026-11-01 |
+| `u-netsurf.ne.jp` | 4 | 公開情報から同定できない | 2026-11-01 |
 | `secomtrust.net` | 3 | 公開情報から同定できない | 2026-11-01 |
-| `u-netsurf.ne.jp` | 3 | 公開情報から同定できない | 2026-11-01 |
 | `conoha.ne.jp` | 2 | 公開情報から同定できない | 2026-11-01 |
 | `kagoyamail.jp` | 2 | 公開情報から同定できない | 2026-11-01 |
 
