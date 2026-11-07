@@ -231,6 +231,8 @@ The main columns used in the tables above.
 | `evidence_none_entities` | no reachable MX on any main domain |
 | `mail_off_site_entities` | no reachable MX on the website's domain, but another main domain of the same company has one |
 | `ownership_evidence_dist` | per main domain, the grounds for tying it to the company (`company_stated`, `certificate`, `own_dns`, `web_link`, `other`) × the stage of mail-use evidence (`signed`, `sending`, `receiving`, `none`), as domain counts (JSON) |
+| `subdomains_found` | subdomains found (certificate logs, common names and the like; whether measured or not; web host names included) |
+| `subdomains_found_dmarc` | of those, subdomains whose registrable domain has DMARC (covered by inheritance). For comparison with published studies that count subdomains |
 | `bulk_spf_ok_domains` | among sending domains (`sending_domains`), SPF is present and evaluates without error (one `v=spf1`, within 10 lookups counted through `include` targets) |
 | `bulk_dkim_domains` | likewise, a DKIM key was found (within the selectors tried) |
 | `bulk_dmarc_ok_domains` | likewise, DMARC is present with a valid record (including `p=none`) |

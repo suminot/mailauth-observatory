@@ -577,6 +577,28 @@ class CrtShClient:
         return out
 
 
+    def cached_org(self, name: str) -> CtResult | None:
+        """組織名検索の**キャッシュだけ**を見る。無ければ None（取りにいかない）。
+
+        起点のある会社の組織名検索は、P2 では取りにいかず、月のあいだの補充
+        （`backfill`）が埋めたキャッシュだけを使う。P2 の持ち時間を増やさない
+        """
+        path = self._cache_path(_org_cache_key(name))
+        if not path or not path.is_file():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+        return CtResult(
+            domain=_org_cache_key(name),
+            found=payload.get("found", []),
+            raw_names=payload.get("raw_names", 0),
+            from_cache=True,
+            cache_month=payload.get("month"),
+            source=payload.get("source", "crtsh"),
+        )
+
     def prefetch_org(self, names: Iterable[str]) -> dict[str, CtResult]:
         """組織名をまとめて引く。`prefetch` と同じく**応答待ちだけを重ねる。**
 
@@ -823,6 +845,24 @@ def write_pending(
     return path
 
 
+#: 組織名検索の積み残し（起点のある会社の、まだ引いていない組織名）
+ORG_PENDING_DIRNAME = "_org_pending"
+
+
+def org_pending_path(cache_dir: Path, month: str, population: str) -> Path:
+    return cache_dir / f"month={month}" / ORG_PENDING_DIRNAME / f"{population}.json"
+
+
+def write_org_pending(cache_dir: Path, month: str, population: str, names: Iterable[str]) -> Path:
+    """P2 がキャッシュに無かった組織名を書く。補充が余った時間で引く。"""
+    path = org_pending_path(cache_dir, month, population)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"month": month, "population": population,
+               "pending": sorted({n for n in names if n})}
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+    return path
+
+
 def list_pending(cache_dir: Path, month: str) -> list[Path]:
     base = cache_dir / f"month={month}" / PENDING_DIRNAME
     return sorted(base.glob("*.json")) if base.is_dir() else []
@@ -1028,6 +1068,8 @@ class BackfillReport:
     certspotter: dict = field(default_factory=dict)
     #: 流し直しを頼んでよい母集団（積み残しがほぼ無くなった）
     ready_for_rerun: list[str] = field(default_factory=list)
+    #: 組織名検索の積み残しを引いた結果
+    crtsh_org: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -1035,6 +1077,7 @@ class BackfillReport:
             "populations": self.populations,
             "crtsh": self.crtsh,
             "certspotter": self.certspotter,
+            "crtsh_org": self.crtsh_org,
             "ready_for_rerun": self.ready_for_rerun,
         }
 
@@ -1132,6 +1175,39 @@ def backfill(
             "errors_by_kind": dict(sorted(errors.items())),
             "stopped": certspotter.stopped,
         }
+
+    # **組織名の積み残しは、ドメインの積み残しを片づけた残りの時間で引く。**
+    # 同じ crt.sh のクライアント（0.5 qps）を使うので、本数の上限は変わらない。
+    # 流し直しは頼まない（次の月次計測で使われる）
+    org_base = cache_dir / f"month={month}" / ORG_PENDING_DIRNAME
+    org_files = sorted(org_base.glob("*.json")) if org_base.is_dir() else []
+    if crtsh is not None and org_files and not crtsh.upstream_down:
+        names: list[str] = []
+        org_payloads = {p: read_pending(p) for p in org_files}
+        for payload in org_payloads.values():
+            for n in payload.get("pending", []):
+                if n not in names:
+                    names.append(n)
+        todo = [n for n in names if crtsh.cached_org(n) is None]
+        tried = got_org = 0
+        chunk = max(int(getattr(crtsh, "concurrency", 1)), 1)
+        for start in range(0, len(todo), chunk):
+            if deadline is not None and time.monotonic() > deadline:
+                break
+            if crtsh.upstream_down:
+                break
+            for _name, result in crtsh.prefetch_org(todo[start : start + chunk]).items():
+                if result.error_kind != "upstream_down":
+                    tried += 1
+                if not result.error:
+                    got_org += 1
+        left = 0
+        for path, payload in org_payloads.items():
+            payload["pending"] = [n for n in payload.get("pending", [])
+                                  if crtsh.cached_org(n) is None]
+            left += len(payload["pending"])
+            path.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+        report.crtsh_org = {"tried": tried, "got": got_org, "pending_after": left}
 
     for path, payload in files.items():
         pop = payload.get("population") or path.stem

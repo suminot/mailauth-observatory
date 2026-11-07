@@ -544,6 +544,8 @@ const pairRows = PAIR.map((p) => latest.find((d) => d.population_id === p)).filt
 const share = (n, d) => (n == null || !d ? "—" : pct(rate(n, d)));
 const PAIR_ROWS = [
   ["計測に現れた会社 / 母集団", (d) => `${num(d.entities_with_domains)} / ${num(d.total_entities)}`],
+  ["主ドメイン（観測できたもの）", (d) => num(d.observed_domains)],
+  ["見つけたサブドメイン（うち登録ドメインに DMARC があるもの）", (d) => d.subdomains_found == null ? "—" : `${num(d.subdomains_found)}（${share(d.subdomains_found_dmarc, d.subdomains_found)}）`],
   ["DMARC を出している（ドメイン）", (d) => share(d.dmarc_adopted_domains, d.observed_domains)],
   ["DMARC が強制（quarantine・reject、ドメイン）", (d) => share(d.dmarc_enforced_domains, d.observed_domains)],
   ["MX・SPF・DKIM がそろう会社", (d) => share(d.evidence_signed_entities, d.entities_with_domains)],
@@ -574,6 +576,10 @@ display(
 - 1社あたりのドメイン数も違うので、ドメインで数えた割合は会社の数の割合とは
   一致しません
 - DMARC の廃止タグの割合の分母は、DMARC を出しているドメインです
+- 「見つけたサブドメイン」は、証明書の記録やよく使われる名前などで見つけた
+  サブドメインの数です（ウェブ用の名前を含みます）。率の分母は主ドメインで
+  閉じているので、サブドメインは別に数えています。サブドメインまで数える公開
+  調査と比べるときに使ってください
 - 日経225 の列は国内上場の内数です（構成銘柄の一覧の出どころは「方法」のページ）。
   日経平均株価の著作権は日本経済新聞社に帰属します
 

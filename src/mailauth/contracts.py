@@ -990,6 +990,10 @@ class StatsOverall(_Model):
     mail_off_site_entities: int | None = None
     #: 会社とドメインを対応づけた根拠 × メールに使っている証拠の段階のドメイン数（JSON）
     ownership_evidence_dist: str | None = None
+    #: 見つけたサブドメイン（CT・よく使われる名前など。測ったかによらない）と、
+    #: そのうち登録ドメインに DMARC があるもの（継承で守られる）。公開調査と比べるための数
+    subdomains_found: int | None = None
+    subdomains_found_dmarc: int | None = None
     bulk_spf_ok_domains: int = 0
     bulk_dkim_domains: int = 0
     bulk_dmarc_ok_domains: int = 0
@@ -1104,6 +1108,8 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("evidence_none_entities", pa.int32()),
     ("mail_off_site_entities", pa.int32()),
     ("ownership_evidence_dist", pa.string()),
+    ("subdomains_found", pa.int32()),
+    ("subdomains_found_dmarc", pa.int32()),
     ("bulk_spf_ok_domains", pa.int32()),
     ("bulk_dkim_domains", pa.int32()),
     ("bulk_dmarc_ok_domains", pa.int32()),
