@@ -18,7 +18,7 @@ const meta = FileAttachment("../data/meta.json").json();
 ```
 
 ```js
-import { rate, pct } from "../components/format.js";
+import { rate, pct, populationLabel } from "../components/format.js";
 import { table } from "../components/table.js";
 import { vendorLabel } from "../components/vendor.js";
 ```
@@ -28,7 +28,7 @@ import { vendorLabel } from "../components/vendor.js";
 // vendor twice and puts rows with different denominators side by side.
 const populations = [...new Set(platforms.map((d) => d.population_id))];
 const population = view(
-  Inputs.select(populations, { label: "Population", value: populations[0] })
+  Inputs.select(populations, { label: "Population", value: populations[0], format: (d) => populationLabel(d, "en") })
 );
 ```
 
