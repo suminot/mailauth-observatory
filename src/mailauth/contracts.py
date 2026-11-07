@@ -985,6 +985,8 @@ class StatsOverall(_Model):
     evidence_none_entities: int | None = None
     #: 公式サイトのドメインには MX が無いが、同じ会社の別のドメインにはある
     mail_off_site_entities: int | None = None
+    #: 会社とドメインを対応づけた根拠 × メールに使っている証拠の段階のドメイン数（JSON）
+    ownership_evidence_dist: str | None = None
     bulk_spf_ok_domains: int = 0
     bulk_dkim_domains: int = 0
     bulk_dmarc_ok_domains: int = 0
@@ -1098,6 +1100,7 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("evidence_receiving_entities", pa.int32()),
     ("evidence_none_entities", pa.int32()),
     ("mail_off_site_entities", pa.int32()),
+    ("ownership_evidence_dist", pa.string()),
     ("bulk_spf_ok_domains", pa.int32()),
     ("bulk_dkim_domains", pa.int32()),
     ("bulk_dmarc_ok_domains", pa.int32()),

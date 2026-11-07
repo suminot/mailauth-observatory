@@ -38,7 +38,7 @@ from ..paths import gold_dir, gold_root, month_date, phase_dir, phase_output, pr
 from . import delta as delta_mod
 from . import platform as platform_mod
 from . import suppress
-from .metrics import DomainRow, aggregate, park_classes
+from .metrics import DomainRow, aggregate, ownership_tier, park_classes
 
 PHASE = "p7_aggregate"
 OVERALL_FILENAME = "stats_overall.parquet"
@@ -262,6 +262,25 @@ def _text(value: Any) -> str | None:
     return str(value)
 
 
+def ownership_by_domain(domains: list[dict]) -> dict[str, str]:
+    """P3 の domains から domain_id -> 対応づけの根拠の区分。
+
+    経路は P3 の `evidence`（JSON）の `type=discovery` に残っている。
+    """
+    out: dict[str, str] = {}
+    for row in domains:
+        try:
+            evidence = json.loads(row.get("evidence") or "[]")
+        except (TypeError, ValueError):
+            continue
+        methods = [e.get("value") for e in evidence
+                   if isinstance(e, dict) and e.get("type") == "discovery"]
+        tier = ownership_tier(methods)
+        if tier and row.get("domain_id"):
+            out[str(row["domain_id"])] = tier
+    return out
+
+
 def entity_index(entities: list[dict]) -> dict[str, dict]:
     """entity_id -> 集計に必要な属性だけ。
 
@@ -342,11 +361,15 @@ def run(
             )
 
         parks = park_classes(inferences)
+        owners = ownership_by_domain(
+            _rows(read_parquet(phase_output(run_id, "p3_domains", "domains.parquet")))
+        )
         rows: list[DomainRow] = []
         orphan_entity_ids: set[str] = set()
         for fact in facts:
             row = DomainRow.from_fact(fact)
             row.park_class = parks.get(row.domain_id)
+            row.ownership = owners.get(row.domain_id)
             attrs = entities.get(row.entity_id)
             row.is_official = bool(attrs) and row.domain_id == attrs.get("official_domain_id")
             if row.entity_id not in entities:

@@ -208,6 +208,43 @@ display(
 
 </div>
 
+**Per domain, crossing the grounds for tying it to the company with the stage
+of mail-use evidence** gives the following (main domains that were observed).
+
+```js
+const OWN = JSON.parse(current?.ownership_evidence_dist ?? "null");
+const OWN_EN = {
+  company_stated: "stated by the company (website, filings)",
+  certificate: "certificate (organisation name, same certificate)",
+  own_dns: "pointed to by the company's DNS (SPF, DMARC)",
+  web_link: "linked from the website, trade name in the title",
+  other: "other (common names and the like)",
+};
+display(
+  !OWN
+    ? html`<p class="muted">Not yet counted for this month.</p>`
+    : table(
+        Object.keys(OWN_EN).map((k) => ({
+          Grounds: OWN_EN[k],
+          "MX, SPF and DKIM": OWN[k]?.signed ?? 0,
+          "MX and SPF (no DKIM found)": OWN[k]?.sending ?? 0,
+          "MX only": OWN[k]?.receiving ?? 0,
+          "no reachable MX": OWN[k]?.none ?? 0,
+        })),
+        { sort: null }
+      )
+);
+```
+
+<div class="limits">
+
+- The grounds are the strongest of the routes by which the domain was found.
+  A domain can be found by more than one route
+- Domains with "no reachable MX" include those declaring they do not send
+  (Null MX or `v=spf1 -all`) and those used only for websites
+
+</div>
+
 ## Stated versus effective
 
 That a record says `p=reject`, and that the policy actually takes effect, are

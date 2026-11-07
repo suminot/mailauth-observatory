@@ -1409,3 +1409,44 @@ def test_MX_に宛先が無ければ受け取れるとしない():
     deny = DomainRow.from_fact({"domain_id": "d:2", "entity_id": "jp:2", "is_apex": True,
                                 "observed": True, "spf_present": True, "raw_spf": "v=spf1 -all"})
     assert deny.spf_sends is False
+
+
+def test_対応づけの根拠の区分は強いものを採る():
+    from mailauth.p7_aggregate.metrics import ownership_tier
+
+    assert ownership_tier(["site_link", "edinet_koukoku"]) == "company_stated"
+    assert ownership_tier(["ct_org", "site_link"]) == "certificate"
+    assert ownership_tier(["dmarc_rua"]) == "own_dns"
+    assert ownership_tier(["site_link"]) == "web_link"
+    assert ownership_tier(["common_label"]) == "other"
+    assert ownership_tier([]) is None
+
+
+def test_根拠_x_証拠の段階をドメインで数える():
+    import json
+
+    from mailauth.contracts import DkimStatus
+    from mailauth.p7_aggregate.metrics import ownership_evidence
+    from mailauth.p7_aggregate.runner import ownership_by_domain
+
+    owners = ownership_by_domain([
+        {"domain_id": "d:1", "evidence": json.dumps([
+            {"type": "mx", "value": ["mx.example"]},
+            {"type": "discovery", "value": "official_url"},
+        ])},
+        {"domain_id": "d:2", "evidence": json.dumps([{"type": "discovery", "value": "site_link"}])},
+        {"domain_id": "d:3", "evidence": "壊れた JSON"},
+    ])
+    assert owners == {"d:1": "company_stated", "d:2": "web_link"}
+
+    rows = [
+        _row(domain_id="d:1", ownership="company_stated", mx_reachable=True, spf_sends=True,
+             dkim_status=DkimStatus.DETECTED),
+        _row(domain_id="d:2", ownership="web_link", mx_reachable=True),
+        _row(domain_id="d:3"),
+    ]
+    got = json.loads(ownership_evidence(rows))
+    assert got["company_stated"]["signed"] == 1
+    assert got["web_link"]["receiving"] == 1
+    assert sum(sum(v.values()) for v in got.values()) == 2
+    assert ownership_evidence([_row(domain_id="d:9")]) is None
