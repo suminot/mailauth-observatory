@@ -131,3 +131,15 @@ def test_3社以上の親の下に出る法人は子会社として扱わない(
     )
     assert [e.entity_id for e in entities] == ["jp:3000000000002"]  # 合弁（親2社）は残す
     assert stats["many_parents"] == 3
+
+
+def test_同じ親の子会社が3社以上で使うドメインはグループ共通サイトとして外す():
+    group = {("E00001", f"子{i}株式会社"): (f"400000000000{i}", "group.example.com", "found")
+             for i in (1, 2, 3)}
+    group[("E00001", "子4株式会社")] = ("4000000000004", "ko4.example.jp", "found")
+    entities, stats = build_group_entities(
+        group, [p for p in PARENTS if p.listing_status == "上場"], set(),
+        population_id="jp-all-listed-group", run_id=RUN,
+    )
+    assert [e.official_domain for e in entities] == ["ko4.example.jp"]
+    assert stats["group_site"] == 3

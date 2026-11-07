@@ -131,7 +131,9 @@ listed-company figures.
 - Listed subsidiaries (measured as listed companies) and subsidiaries whose
   website is on a listed company's own domain are left out. Corporations named
   under three or more listed companies (such as lenders or trust banks mentioned
-  in the notes) are not subsidiaries and are also left out
+  in the notes) are not subsidiaries and are also left out. Where three or more
+  subsidiaries of the same parent give the same domain as their website, it is
+  taken to be the parent's group site and they are left out
 - **This is not every subsidiary.** It covers the main subsidiaries named in the
   annual securities report that have a website registered in gBizINFO. Overseas
   subsidiaries are not included
