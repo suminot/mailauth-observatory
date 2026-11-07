@@ -252,7 +252,7 @@ resolver:
 confidence:
   # 独立した裏付けと見なす発見経路。
   # spf_redirect と dmarc_rua は DNS 由来なので、DNS 一次実証からは独立でない
-  independent_methods: [official_url, official_alt, ct_log, ct_org, tls_san, site_link, edinet_koukoku, manual]
+  independent_methods: [official_url, official_alt, ct_log, ct_org, tls_san, site_link, sibling_tld, edinet_koukoku, manual]
 
 acceptance:
   # DESIGN.md P2 / P3 の受け入れ基準。満たさなくても止めず manifest に記録する

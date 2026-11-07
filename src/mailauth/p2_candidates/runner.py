@@ -618,6 +618,7 @@ def run(
         # **全社を先に読む。** 多くの会社がリンクしているドメインを第三者として
         # 捨てるので、1社ずつは決められない（site_links.py）
         site_found: dict[str, list[str]] = {}
+        sibling_found: dict[str, list[str]] = {}
         site_stats: dict[str, Any] | None = None
         if discovery.get("site_link"):
             if site_source is None and offline:
@@ -667,6 +668,7 @@ def run(
                     )
                 try:
                     site_found = site_source.discover(companies)
+                    sibling_found = getattr(site_source, "siblings", {}) or {}
                     site_stats = site_source.stats.to_dict()
                 except Exception as exc:  # noqa: BLE001 - 補助の経路で P2 を止めない
                     site_found = {}
@@ -930,6 +932,10 @@ def run(
 
                 for domain in site_found.get(official, []):
                     collector.add(domain, DiscoveryMethod.SITE_LINK, f"link on {official}")
+                for domain in sibling_found.get(official, []):
+                    collector.add(
+                        domain, DiscoveryMethod.SIBLING_TLD, f"same name as {official}, title"
+                    )
 
                 _discover_from_dns(
                     official,

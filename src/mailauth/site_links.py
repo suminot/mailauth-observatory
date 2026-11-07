@@ -74,6 +74,31 @@ def _known_tld(host: str) -> bool:
     return _KNOWN.privatesuffix(host) is not None
 
 
+#: 公式サイトのドメインに MX が無いとき、同じ名前で引いてみる TLD（国ごと）
+SIBLING_TLDS = {"JP": ("co.jp", "com", "jp"), "US": ("com", "net", "co")}
+#: `global.canon` のようなブランド TLD の前に付く、名前でないラベル
+_GENERIC_LABELS = frozenset({"global", "corp", "group", "www", "jp", "japan", "en"})
+
+
+def sibling_candidates(official: str, country: str) -> list[str]:
+    """公式サイトと同じ名前の、別の TLD のドメイン（`global.canon` → `canon.co.jp` など）。
+
+    **ウェブサイトとメールでドメインを分けている会社がある**（2026-11 の国内で、
+    公式サイトのドメインにも他の候補にも MX が無い 216 社の大半。キヤノンは
+    `global.canon` と `canon.co.jp`、富士通は `global.fujitsu` と `fujitsu.com`）。
+    同じ名前の別の会社のこともある（`his.com`）ので、採るのは MX があり、
+    トップページのタイトルにその会社の商号があるものだけ（`SiteLinkSource`）。
+    """
+    reg = etld_plus_one(official)
+    if not reg or "." not in reg:
+        return []
+    label, suffix = reg.split(".", 1)
+    if label in _GENERIC_LABELS and "." not in suffix:
+        label = suffix
+    tlds = SIBLING_TLDS.get(country, ())
+    return [c for c in (f"{label}.{t}" for t in tlds) if c != reg]
+
+
 def link_domains(page: str, own: str) -> list[str]:
     """ページの絶対リンクの登録ドメイン（出てきた順、重複なし、自分と共用ホスティングは除く）。"""
     out: list[str] = []
@@ -115,6 +140,10 @@ class SiteLinkStats:
     entities_with_found: int = 0
     #: 持ち時間を使い切って読まなかった（トップページ・確かめ）。**「無い」ではない**
     budget_skipped: int = 0
+    #: 公式サイトのドメインに MX が無く、同じ名前の別の TLD を確かめに行った会社 /
+    #: 確かめられたドメイン
+    sibling_checked: int = 0
+    sibling_found: int = 0
     elapsed_sec: float = 0.0
     samples: list[str] = field(default_factory=list)
 
@@ -174,6 +203,8 @@ class SiteLinkSource:
         self.clock = clock
         self._deadline: float | None = None
         self.stats = SiteLinkStats()
+        #: 起点ドメイン → 同じ名前の別の TLD で確かめられたドメイン（経路 sibling_tld）
+        self.siblings: dict[str, list[str]] = {}
 
     def _over(self) -> bool:
         return self._deadline is not None and self.clock() > self._deadline
@@ -235,6 +266,21 @@ class SiteLinkSource:
                 cands.append(d)
             tasks.extend((company, d) for d in cands[: self.max_candidates])
 
+        # **公式サイトのドメインに MX が無い会社は、同じ名前の別の TLD も確かめる**
+        sibling_tasks: set[tuple[str, str]] = set()
+        for company in items:
+            if self._over() or self.has_mx(company.official):
+                continue
+            sibs = [
+                d for d in sibling_candidates(company.official, company.country)
+                if d not in officials and (company, d) not in tasks
+            ]
+            if sibs:
+                self.stats.sibling_checked += 1
+            for d in sibs:
+                tasks.append((company, d))
+                sibling_tasks.add((company.official, d))
+
         def check(task: tuple[SiteCompany, str]) -> str:
             company, domain = task
             if self._over():
@@ -254,6 +300,12 @@ class SiteLinkSource:
         ):
             if kind == "budget":
                 self.stats.budget_skipped += 1
+                continue
+            if (company.official, domain) in sibling_tasks:
+                # 同じ名前の別の TLD は、リンク先の数（no_mx など）に混ぜない
+                if kind == "found":
+                    self.siblings.setdefault(company.official, []).append(domain)
+                    self.stats.sibling_found += 1
                 continue
             if kind == "no_mx":
                 self.stats.no_mx += 1

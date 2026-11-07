@@ -48,6 +48,9 @@ class DiscoveryMethod(StrEnum):
     EDINET_KOUKOKU = "edinet_koukoku"
     #: P1 で公式サイトを置き換えたときの、前の公式サイト（Entity.alt_domains）
     OFFICIAL_ALT = "official_alt"
+    #: 公式サイトのドメインに MX が無い会社の、同じ名前の別の TLD
+    #: （`global.canon` → `canon.co.jp`）。MX があり、トップページに商号があるもの
+    SIBLING_TLD = "sibling_tld"
     SPF_REDIRECT = "spf_redirect"
     #: `include:` が自社サブドメインを指している場合のみ。
     #: 他社を指す include は「その基盤を使っている」であって所有ではない
