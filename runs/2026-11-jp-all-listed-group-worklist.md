@@ -8,19 +8,19 @@
 `configs/worklist/unidentified_hosts.yaml` に理由を書いて作業リストから外してください。
 **「調べたが分からなかった」は結論であって、無かったことにはしません。**
 
-## 手を付けるもの（63 件）
+## 手を付けるもの（66 件）
 
 | 登録ドメイン | 件数 | 連続月 | 例 |
 |---|---|---|---|
 | `index.or.jp` | 30 | 1 | `mskigw21.index.or.jp`, `mskigw23.index.or.jp`, `mskigw22.index.or.jp` |
-| `amazonses.com` | 7 | 1 | `feedback-smtp.ap-northeast-1.amazonses.com`, `feedback-smtp.us-east-1.amazonses.com` |
+| `amazonses.com` | 9 | 1 | `feedback-smtp.ap-northeast-1.amazonses.com`, `feedback-smtp.us-east-1.amazonses.com` |
+| `keihin.co.jp` | 8 | 1 | `isgw.keihin.co.jp`, `mail.keihin.co.jp` |
 | `aams6.jp` | 6 | 1 | `mx-1.aams6.jp`, `mx.aams6.jp`, `mx-0.aams6.jp` |
 | `inet-jp.com` | 5 | 1 | `mxvc23.inet-jp.com`, `mxvc25.inet-jp.com`, `mxvc38.inet-jp.com` |
 | `bit-drive.ne.jp` | 4 | 1 | `vcgwp2.bit-drive.ne.jp`, `vcgws4.bit-drive.ne.jp`, `vcgwp1.bit-drive.ne.jp` |
 | `ddreams.jp` | 4 | 1 | `mail-swp2.ddreams.jp`, `mail-swp1.ddreams.jp`, `mail-nk1.ddreams.jp` |
 | `exacttarget.com` | 4 | 1 | `reply.s12.exacttarget.com`, `reply.s11.exacttarget.com` |
 | `fsi.ne.jp` | 4 | 1 | `sagw.fsi.ne.jp`, `argw.fsi.ne.jp` |
-| `keihin.co.jp` | 4 | 1 | `isgw.keihin.co.jp`, `mail.keihin.co.jp` |
 | `uniqlo.co.jp` | 4 | 1 | `mail2.uniqlo.co.jp`, `mail4.uniqlo.co.jp`, `mail1.uniqlo.co.jp` |
 | `mitene.jp` | 3 | 1 | `mx-1.mitene.jp`, `mx-0.mitene.jp`, `mx.mitene.jp` |
 | `msaas.jp` | 3 | 1 | `mail-mgcm.msaas.jp`, `mail-mgcm04.msaas.jp` |
@@ -32,9 +32,14 @@
 | `blks.jp` | 2 | 1 | `control-mail-mta01.blks.jp`, `control-mail-mta02.blks.jp` |
 | `daimaru.co.jp` | 2 | 1 | `maildns2.daimaru.co.jp`, `maildns1.daimaru.co.jp` |
 | `enets.ne.jp` | 2 | 1 | `spamcs1.enets.ne.jp` |
+| `fastretailing.com` | 2 | 1 | `mail.aws.fastretailing.com` |
 | `heimdalsecurity.com` | 2 | 1 | `eu-esec-02.heimdalsecurity.com`, `eu-esec-01.heimdalsecurity.com` |
+| `icho-corp.sakura.ne.jp` | 2 | 1 | `icho-corp.sakura.ne.jp` |
 | `kyusanko.co.jp` | 2 | 1 | `mx1.kyusanko.co.jp`, `mx2.kyusanko.co.jp` |
 | `mcm-cloud.jp` | 2 | 1 | `jnfl-mail-b1.mcm-cloud.jp`, `jnfl-mail-a1.mcm-cloud.jp` |
+| `new-kensin-inc.sakura.ne.jp` | 2 | 1 | `new-kensin-inc.sakura.ne.jp` |
+| `nsk.ne.jp` | 2 | 1 | `fm1.nsk.ne.jp` |
+| `ryucom.ne.jp` | 2 | 1 | `mailgw.ryucom.ne.jp` |
 | `s3od.jp` | 2 | 1 | `mx4.s3od.jp`, `mx3.s3od.jp` |
 | `secu-dity.jp` | 2 | 1 | `bc.secu-dity.jp` |
 | `thalesgroup.com` | 2 | 1 | `mx01.thalesgroup.com`, `mx02.thalesgroup.com` |
@@ -48,7 +53,6 @@
 | `dataholdings.jp` | 1 | 1 | `rsv7.dataholdings.jp` |
 | `domainserver.ne.jp` | 1 | 1 | `ds082-304.domainserver.ne.jp` |
 | `eonet.ne.jp` | 1 | 1 | `mailhosting.eonet.ne.jp` |
-| `fastretailing.com` | 1 | 1 | `mail.aws.fastretailing.com` |
 | `footwork.co.jp` | 1 | 1 | `fwdns.footwork.co.jp` |
 | `gmogaika.com` | 1 | 1 | `mx.gmogaika.com` |
 | `gol.com` | 1 | 1 | `mx.mail.gol.com` |
@@ -66,8 +70,7 @@
 | `mcdonalds.co.jp` | 1 | 1 | `mail2.mcdonalds.co.jp` |
 | `mcnx.jp` | 1 | 1 | `sv2.mcnx.jp` |
 | `mxthunder.com` | 1 | 1 | `tsukuba-milk-co-jp.p10.mxthunder.com` |
-| `nsk.ne.jp` | 1 | 1 | `fm1.nsk.ne.jp` |
-| `ryucom.ne.jp` | 1 | 1 | `mailgw.ryucom.ne.jp` |
+| `naturum.jp` | 1 | 1 | `mail.naturum.jp` |
 | `secure.jp` | 1 | 1 | `bta1361.secure.jp` |
 | `shared-server.net` | 1 | 1 | `mx.red.shared-server.net` |
 | `spnet.ne.jp` | 1 | 1 | `www4.spnet.ne.jp` |
@@ -82,7 +85,7 @@
 
 | 登録ドメイン | 件数 | 理由 | 調査日 |
 |---|---|---|---|
-| `biglobe.ne.jp` | 6 | 公開情報から同定できない | 2026-11-01 |
+| `biglobe.ne.jp` | 8 | 公開情報から同定できない | 2026-11-01 |
 | `conoha.ne.jp` | 2 | 公開情報から同定できない | 2026-11-01 |
 | `s-idc.net` | 2 | 公開情報から同定できない | 2026-11-01 |
 | `secomtrust.net` | 2 | 公開情報から同定できない | 2026-11-01 |
