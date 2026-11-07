@@ -364,12 +364,16 @@ def _index(name: str) -> int:
     raise AssertionError(f"手順「{name}」が無い")
 
 
-def test_補充は月次計測が走っている間は触らない():
-    """向こうも同じ月の CT キャッシュを読み書きしている。"""
+def test_補充は月次計測が_P2_にいる間は触らず_それ以外は組織名だけを引く():
+    """P2 は同じ月の CT キャッシュと積み残しを書く。それ以外の工程の間は、
+    組織名の積み残しだけを引く（ドメインの積み残しと流し直しには触らない）。"""
     restore = _steps()[_index("CT ログのキャッシュを復元")]
     fill = _steps()[_index("補充")]
     for step in (restore, fill):
-        assert "steps.busy.outputs.monthly_running == '0'" in step.get("if", "")
+        assert "steps.busy.outputs.mode != 'skip'" in step.get("if", "")
+    busy = str(_steps()[_index("月次計測が走っていないか確かめる")]["run"])
+    assert "mode=skip" in busy and "*P2*" in busy
+    assert "--org-only" in str(fill["run"])
 
 
 def test_流し直しを頼んだ記録は保存より前に書く():
@@ -914,3 +918,21 @@ def test_組織名のキャッシュが無ければ取りにいかない(tmp_pat
     crtsh = CrtShClient(cache_dir=tmp_path, month=MONTH, qps=0, retries=0,
                         client=httpx.Client(transport=httpx.MockTransport(handler)))
     assert crtsh.cached_org("Nobody Inc.") is None
+
+
+def test_組織名だけの回はドメインの積み残しと流し直しに触らない(tmp_path):
+    from mailauth.ctlog import write_org_pending
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "O" in request.url.params, "ドメインを引いた"
+        return httpx.Response(200, json=[{"name_value": request.url.params["O"],
+                                          "common_name": "www.x-brand.co.jp"}])
+
+    crtsh = CrtShClient(cache_dir=tmp_path, month=MONTH, qps=0, retries=0,
+                        client=httpx.Client(transport=httpx.MockTransport(handler)))
+    write_pending(tmp_path, MONTH, "jp-all-listed", ["a.jp"], total=100)
+    write_org_pending(tmp_path, MONTH, "jp-all-listed", ["Alpha Corp"])
+    report = backfill(tmp_path, MONTH, crtsh=crtsh, certspotter=None, org_only=True)
+    assert report.crtsh_org["got"] == 1
+    assert report.populations == {} and report.ready_for_rerun == []
+    assert read_pending(pending_path(tmp_path, MONTH, "jp-all-listed"))["pending"] == ["a.jp"]

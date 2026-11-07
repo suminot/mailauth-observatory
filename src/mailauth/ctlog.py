@@ -1101,13 +1101,16 @@ def backfill(
     crtsh: CrtShClient | None,
     certspotter: CertSpotterClient | None,
     deadline: float | None = None,
+    org_only: bool = False,
 ) -> BackfillReport:
     """積み残しを取り直す。**crt.sh を先に、だめなら CertSpotter で。**
 
     取れたものは月のキャッシュに入り、積み残しから消える。
     """
     report = BackfillReport(month=month)
-    paths = list_pending(cache_dir, month)
+    # **組織名だけを引く回**（月次計測が走っている間）。ドメインの積み残しと
+    # 流し直しの判断には触らない ── 月次計測の P2 と同じ積み残しを書き合わない
+    paths = [] if org_only else list_pending(cache_dir, month)
     files = {p: read_pending(p) for p in paths}
     wanted: list[str] = []
     for payload in files.values():
