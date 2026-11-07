@@ -1464,5 +1464,8 @@ def test_見つけたサブドメインと_DMARC_で守られる数():
         # 母集団の外
         {"domain_id": "s9", "entity_id": "us:9", "domain": "www.other.com", "is_apex": False},
     ]
-    facts = [{"domain_id": "a1", "dmarc_present": True}, {"domain_id": "a2", "dmarc_present": False}]
+    facts = [
+        {"domain_id": "a1", "dmarc_present": True},
+        {"domain_id": "a2", "dmarc_present": False},
+    ]
     assert subdomain_coverage(p3, facts, {"jp:1"}) == (3, 2)
