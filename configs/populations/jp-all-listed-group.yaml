@@ -39,6 +39,9 @@ source:
       industry: 10
       securities_code: 11
       houjin_bangou: 12
+  # gBizINFO にサイトの登録が無い法人（no_url）は、法人番号で Wikidata（CC0）の
+  # 公式サイトを使う（上場会社と同じクエリ。1回で全件）
+  wikidata_identity_query: configs/populations/_sparql/jp_houjin_identity.rq
   industry:
     primary_scheme: EDINET33
     common_mapping: configs/industry/edinet33_to_common12.csv
@@ -58,3 +61,4 @@ acceptance:
 attribution:
   - "出典：EDINET（金融庁）"
   - "出典：経済産業省gBizINFO"
+  - "Source: Wikidata (CC0)"

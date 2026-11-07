@@ -125,7 +125,9 @@ listed-company figures.
   its annual securities report (EDINET). The website domain comes from the
   company homepage registered in METI's gBizINFO corporate data. **Only names
   matching exactly one corporation are used** (so that a different company with
-  the same name is not measured)
+  the same name is not measured). Where gBizINFO has no homepage for the
+  corporation, the official website recorded in Wikidata (CC0) for that
+  corporate number is used
 - Listed subsidiaries (measured as listed companies) and subsidiaries whose
   website is on a listed company's own domain are left out
 - **This is not every subsidiary.** It covers the main subsidiaries named in the
