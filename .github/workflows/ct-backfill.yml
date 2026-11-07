@@ -123,14 +123,17 @@ jobs:
           restore-keys: |
             crtsh-${{ steps.run.outputs.id }}-
 
+      # **組織名だけの回は 15 分で切り上げる。** 次の月次計測の P2 は、crt.sh を
+      # 倍の頻度で叩かないよう、この工程が終わるのを待つ。長く走ると計測が止まる
       - name: 補充
         if: steps.busy.outputs.mode != 'skip'
         id: fill
         run: |
           ORG_ONLY=""
-          if [ "${{ steps.busy.outputs.mode }}" = "org" ]; then ORG_ONLY="--org-only"; fi
+          MINUTES=45
+          if [ "${{ steps.busy.outputs.mode }}" = "org" ]; then ORG_ONLY="--org-only"; MINUTES=15; fi
           mailauth ct-backfill --run "${{ steps.run.outputs.id }}" $ORG_ONLY \
-            --max-minutes 45 \
+            --max-minutes "$MINUTES" \
             --certspotter-requests "${{ github.event.inputs.certspotter_requests || '9' }}" \
             > /tmp/backfill.json
           cat /tmp/backfill.json

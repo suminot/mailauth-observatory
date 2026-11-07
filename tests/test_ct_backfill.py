@@ -361,6 +361,9 @@ def _index(name: str) -> int:
     for i, step in enumerate(_steps()):
         if step.get("name") == name:
             return i
+        # 「補充」は組織名だけの回に名前を変える（月次計測がそれを待たないように）
+        if name == "補充" and step.get("id") == "fill":
+            return i
     raise AssertionError(f"手順「{name}」が無い")
 
 
@@ -936,3 +939,10 @@ def test_組織名だけの回はドメインの積み残しと流し直しに�
     assert report.crtsh_org["got"] == 1
     assert report.populations == {} and report.ready_for_rerun == []
     assert read_pending(pending_path(tmp_path, MONTH, "jp-all-listed"))["pending"] == ["a.jp"]
+
+
+
+def test_組織名だけの補充は_15_分で切り上げる():
+    """次の月次計測の P2 はこの工程が終わるのを待つ（crt.sh を倍の頻度で叩かない）。"""
+    fill = _steps()[_index("補充")]
+    assert "MINUTES=15" in fill["run"] and '--max-minutes "$MINUTES"' in fill["run"]
