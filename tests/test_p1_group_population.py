@@ -102,3 +102,17 @@ def test_一覧が無ければ黙らない(monkeypatch, tmp_path):
     result = run_p1(config=CONFIG, run_id=RUN, offline=True, rows=PARENTS)
     assert "GROUP_LIST_EMPTY" in {w["code"] for w in result["warnings"]}
     assert result["counts"]["success"] == 0
+
+
+def test_gBizINFOにサイトが無い法人は法人番号でWikidataのサイトを使う():
+    group = {("E00001", "子電機ロジ株式会社"): ("2000000000005", "", "no_url"),
+             ("E00001", "子電機サイト無し株式会社"): ("2000000000006", "", "no_url")}
+    entities, stats = build_group_entities(
+        group, [p for p in PARENTS if p.listing_status == "上場"], set(),
+        population_id="jp-all-listed-group", run_id=RUN,
+        sites={"2000000000005": "https://www.kodenki-logi.co.jp/"},
+    )
+    assert [(e.entity_id, e.official_domain) for e in entities] == [
+        ("jp:2000000000005", "kodenki-logi.co.jp"),
+    ]
+    assert stats["from_wikidata"] == 1

@@ -21,7 +21,12 @@ from collections.abc import Iterable
 from typing import Any
 
 from ..contracts import Entity
-from ..normalize import normalize_houjin_bangou, normalize_name, normalize_securities_code
+from ..normalize import (
+    domain_from_url,
+    normalize_houjin_bangou,
+    normalize_name,
+    normalize_securities_code,
+)
 
 
 def build_group_entities(
@@ -32,6 +37,7 @@ def build_group_entities(
     population_id: str,
     run_id: str,
     country: str = "JP",
+    sites: dict[str, str] | None = None,
 ) -> tuple[list[Entity], dict[str, int]]:
     """子会社の Entity を組み立てる。
 
@@ -44,12 +50,22 @@ def build_group_entities(
         n for n in (normalize_houjin_bangou(r.houjin_bangou) for r in by_code.values()) if n
     }
     stats = {
-        "rows": 0, "found": 0, "parent_not_listed": 0, "listed_company": 0,
+        "rows": 0, "found": 0, "from_wikidata": 0, "parent_not_listed": 0, "listed_company": 0,
         "listed_domain": 0, "duplicate_number": 0, "entities": 0,
     }
+    sites = sites or {}
     entities: dict[str, Entity] = {}
     for (code, name), (number, domain, status) in sorted(group_rows.items()):
         stats["rows"] += 1
+        # **gBizINFO にサイトの登録が無い法人は、法人番号で Wikidata の公式サイトを
+        # 使う**（P3225 → P856、CC0）。商号の一致は gBizINFO で確かめ済み
+        if status == "no_url" and number:
+            hb0 = normalize_houjin_bangou(number)
+            site = sites.get(hb0 or "")
+            wd = domain_from_url(site) if site else None
+            if wd:
+                domain, status = wd, "found"
+                stats["from_wikidata"] += 1
         if status != "found" or not domain or not number:
             continue
         stats["found"] += 1

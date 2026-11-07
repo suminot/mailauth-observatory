@@ -1175,6 +1175,7 @@ def run(
                 out_dir=out_dir,
                 limit=limit,
                 dry_run=dry_run,
+                offline=offline,
                 source_file=source_file,
                 rows=rows,
             )
@@ -1343,6 +1344,7 @@ def _run_group(
     out_dir: Path,
     limit: int | None,
     dry_run: bool,
+    offline: bool = False,
     source_file: str | Path | None = None,
     rows: list[Any] | None = None,
 ) -> dict[str, Any]:
@@ -1384,9 +1386,28 @@ def _run_group(
     listed_domains = {
         d for _doc, domains, _on in read_scan(config_path(SCAN_CSV)).values() for d in domains
     }
+    # gBizINFO にサイトの登録が無い法人は、法人番号で Wikidata の公式サイトを使う
+    sites: dict[str, str] = {}
+    query_path = getattr(cfg.source, "wikidata_identity_query", None)
+    if query_path and not offline and not dry_run:
+        from .wikidata import WikidataError, fetch_identity
+
+        try:
+            identity, _wd_stats = fetch_identity(query_path, key="houjin_bangou")
+            sites = {k: v["website"] for k, v in identity.items() if v.get("website")}
+        except WikidataError as exc:
+            manifest.add_warning("ENRICH_FAILED_WIKIDATA", message=str(exc))
+    elif query_path:
+        manifest.add_warning(
+            "ENRICH_SKIPPED_WIKIDATA",
+            message=(
+                "Wikidata を引いていない（offline / dry_run）。"
+                "「無い」のではなく「引いていない」"
+            ),
+        )
     entities, stats = build_group_entities(
         group_rows, parents, listed_domains, population_id=cfg.id, run_id=run_id,
-        country=cfg.country,
+        country=cfg.country, sites=sites,
     )
     manifest.counts.input = stats["found"]
     if limit:
