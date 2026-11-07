@@ -981,10 +981,11 @@ def test_crtshを使わない母集団は補充を待たない():
     )
     steps = {s.get("name"): s for s in wf["jobs"]["measure"]["steps"]}
     head = steps["CT の補充が終わるのを待つ"]["run"].split("busy() {")[0]
-    for pop, want in (("jp-all-listed-group", "0"), ("jp-all-listed", "1")):
+    for pop, waits in (("jp-all-listed-group", False), ("jp-all-listed", True)):
         script = (head.replace("${{ steps.run.outputs.pop }}", pop)
                   .replace('>> "$GITHUB_STEP_SUMMARY"', "")
                   .replace("python -", f"{sys.executable} -"))
-        out = subprocess.run(["bash", "-c", script + "\necho \"uses_ct=$uses_ct\""],
+        out = subprocess.run(["bash", "-c", script + "\necho WAITS"],
                              capture_output=True, text=True, cwd=repo_root())
-        assert f"uses_ct={want}" in out.stdout, (pop, out.stdout, out.stderr)
+        assert ("WAITS" in out.stdout) is waits, (pop, out.stdout, out.stderr)
+        assert ("待たない" in out.stdout) is not waits
