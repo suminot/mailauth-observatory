@@ -124,6 +124,27 @@ def _psl():
     return PublicSuffixList()
 
 
+_HOST_LABEL = re.compile(r"^[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?$")
+
+
+def is_valid_hostname(host: str) -> bool:
+    """DNS に問い合わせられるホスト名か（英数字・`-`・`_`、ラベル 63・全体 253 まで）。
+
+    国際化ドメイン名は IDNA で ASCII にしてから見る。**URL や HTML から取った
+    文字列には バックスラッシュ・空白・全角・途中で切れた名前が混じる**（2026-11-06 の
+    `www.murata.coｍ`、2026-11-07 の BadEscape）。ここで落とす。
+    """
+    h = host.strip().lower().rstrip(".")
+    if not h or len(h) > 253:
+        return False
+    if not h.isascii():
+        try:
+            h = h.encode("idna").decode("ascii")
+        except (UnicodeError, ValueError):
+            return False
+    return all(_HOST_LABEL.match(label) for label in h.split("."))
+
+
 def normalize_hostname(host: str | None) -> str | None:
     """ホスト名を比較できる形に揃える。丸めない。
 
@@ -134,7 +155,7 @@ def normalize_hostname(host: str | None) -> str | None:
     if not host:
         return None
     h = host.strip().lower().rstrip(".")
-    if not h or "." not in h:
+    if not h or "." not in h or not is_valid_hostname(h):
         return None
     return h
 
@@ -155,7 +176,7 @@ def etld_plus_one(host: str) -> str | None:
     if not host:
         return None
     h = host.strip().lower().rstrip(".")
-    if not h or "." not in h:
+    if not h or "." not in h or not is_valid_hostname(h):
         return None
     return _psl().privatesuffix(h) or None
 
