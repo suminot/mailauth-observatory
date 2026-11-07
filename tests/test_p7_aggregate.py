@@ -1301,3 +1301,25 @@ def test_rua_の無い_DMARC_と_BIMI_の証明書を数える():
     s = _agg(rows)
     assert (s.dmarc_no_rua_domains, s.dmarc_none_no_rua_domains) == (2, 1)
     assert (s.bimi_domains, s.bimi_vmc_domains) == (2, 1)
+
+
+def test_大口送信者の要件のうち_DNS_で見られる部分を送信しているドメインで数える():
+    from mailauth.contracts import DkimStatus
+
+    full = dict(park_class=ParkClass.ACTIVE_SENDING, spf_present=True, dmarc_present=True,
+                dmarc_p="none", dkim_status=DkimStatus.DETECTED)
+    stats = _agg([
+        _row(domain_id="d:1", **full),
+        # SPF が2つある・上限を超える
+        _row(domain_id="d:2", **{**full, "spf_error": "multiple_records"}),
+        _row(domain_id="d:3", **{**full, "spf_total_exceeds": True}),
+        # DKIM が見つからない
+        _row(domain_id="d:4", **{**full, "dkim_status": DkimStatus.NOT_FOUND_IN_KNOWN_SELECTORS}),
+        # DMARC が無効
+        _row(domain_id="d:5", **{**full, "dmarc_p": "bogus"}),
+        # 送信していないドメインは分母に入れない
+        _row(domain_id="d:6", **{**full, "park_class": ParkClass.HARDENED_PARKED}),
+    ])
+    assert stats.sending_domains == 5
+    assert (stats.bulk_spf_ok_domains, stats.bulk_dkim_domains, stats.bulk_dmarc_ok_domains,
+            stats.bulk_ready_domains) == (3, 4, 4, 1)

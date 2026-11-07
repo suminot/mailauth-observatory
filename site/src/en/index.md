@@ -491,6 +491,43 @@ display(
 );
 ```
 
+### The DNS-visible part of bulk-sender requirements
+
+Gmail and Yahoo (February 2024) and Microsoft Outlook.com (May 2025) ask
+senders of 5,000 or more messages a day to have SPF, DKIM and DMARC (`p=none`
+is enough). Among sending domains (with MX), these are the counts that meet
+the part visible in DNS.
+
+```js
+display(
+  current?.bulk_ready_domains === undefined
+    ? html`<p class="muted">Not yet counted for this month. <strong>This is not zero.</strong></p>`
+    : table(
+        [
+          { Item: "Sending domains", Domains: current?.sending_domains, Share: "" },
+          { Item: "SPF present and evaluates without error", Domains: current?.bulk_spf_ok_domains, Share: pct(rate(current?.bulk_spf_ok_domains, current?.sending_domains)) },
+          { Item: "DKIM key found", Domains: current?.bulk_dkim_domains, Share: pct(rate(current?.bulk_dkim_domains, current?.sending_domains)) },
+          { Item: "DMARC present with a valid record", Domains: current?.bulk_dmarc_ok_domains, Share: pct(rate(current?.bulk_dmarc_ok_domains, current?.sending_domains)) },
+          { Item: "All three", Domains: current?.bulk_ready_domains, Share: pct(rate(current?.bulk_ready_domains, current?.sending_domains)) },
+        ],
+        { sort: null }
+      )
+);
+```
+
+<div class="limits">
+
+- The requirements apply to senders of large volumes; **not every domain sends
+  that much.** Missing items do not by themselves mean mail is refused
+- SPF/DKIM alignment with DMARC, reverse DNS of sending IPs, TLS, one-click
+  unsubscribe and complaint rates are not visible in DNS and are not counted
+- DKIM counts only keys found under the selectors this project tried. Domains
+  where none was found may still have keys, so this row reads low
+- "Evaluates without error" means a single `v=spf1` record that stays within
+  the limit of 10 lookups counted through `include` targets
+
+</div>
+
 ## Domains that do not send
 
 Most of the domains expanded in the candidate set are not used for sending.

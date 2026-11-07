@@ -480,6 +480,44 @@ display(
 );
 ```
 
+### 大口送信者の要件のうち、DNS で見られる部分
+
+Gmail と Yahoo（2024 年 2 月）、Microsoft の Outlook.com（2025 年 5 月）は、
+1日に 5,000 通以上を送る送信者に、SPF・DKIM・DMARC（`p=none` でよい）を
+そろえることを求めています。送信しているドメイン（MX がある）のうち、
+DNS で見られる範囲でそろっているものの数です。
+
+```js
+display(
+  current?.bulk_ready_domains === undefined
+    ? html`<p class="muted">この月はまだ集計していません。<strong>0 ではありません。</strong></p>`
+    : table(
+        [
+          { 項目: "送信しているドメイン", ドメイン: current?.sending_domains, 割合: "" },
+          { 項目: "SPF があり、評価がエラーにならない", ドメイン: current?.bulk_spf_ok_domains, 割合: pct(rate(current?.bulk_spf_ok_domains, current?.sending_domains)) },
+          { 項目: "DKIM の鍵が見つかった", ドメイン: current?.bulk_dkim_domains, 割合: pct(rate(current?.bulk_dkim_domains, current?.sending_domains)) },
+          { 項目: "DMARC があり、レコードが有効", ドメイン: current?.bulk_dmarc_ok_domains, 割合: pct(rate(current?.bulk_dmarc_ok_domains, current?.sending_domains)) },
+          { 項目: "3つともそろっている", ドメイン: current?.bulk_ready_domains, 割合: pct(rate(current?.bulk_ready_domains, current?.sending_domains)) },
+        ],
+        { sort: null }
+      )
+);
+```
+
+<div class="limits">
+
+- 要件は大量に送る送信者に向けたもので、**どのドメインも大量に送っている
+  わけではありません。** そろっていないことが、そのまま受け取りを断られる
+  ことを意味するものではありません
+- 要件のうち、SPF・DKIM と DMARC の整合（alignment）、送信元 IP の逆引き、
+  TLS、ワンクリックの配信停止、苦情率は、DNS からは見えないので数えていません
+- DKIM は、こちらで試したセレクタで見つかったものだけです。見つからない
+  ドメインにも鍵があることがあります（この行は少なめに出ます）
+- 「評価がエラーにならない」は、`v=spf1` が1つだけで、`include` の先まで
+  数えて上限 10 を超えないものです
+
+</div>
+
 ## 送信していないドメインの扱い
 
 網羅的に展開したドメインの大半は送信に使われていません。送信実績がなく

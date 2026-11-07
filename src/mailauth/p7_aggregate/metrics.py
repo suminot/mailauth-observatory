@@ -104,6 +104,20 @@ TXT_UDP_SAFE_BYTES = 1232
 SPF_IP4_BROAD = 65536
 
 
+def _spf_usable(r) -> bool:
+    """SPF があり、評価がエラーで終わらない（2つある・上限超えを除く）。"""
+    return (
+        r.spf_present
+        and r.spf_error not in ("multiple_records", "permerror")
+        and r.spf_total_exceeds is not True
+    )
+
+
+def _dmarc_usable(r) -> bool:
+    """DMARC があり、レコードが有効（1つだけ、p= が正しい）。p=none でよい。"""
+    return r.dmarc_present and not r.dmarc_multiple_records and r.dmarc_p in _VALID_DMARC_P
+
+
 def _count_true(rows, base, value) -> int | None:
     """`base` を満たす行のうち `value` が True の数。**値が1つも無ければ None**。"""
     vals = [value(r) for r in rows if base(r)]
@@ -341,6 +355,16 @@ def aggregate(
     hardened = sum(1 for r in parked if r.park_class == ParkClass.HARDENED_PARKED)
     defended = sum(1 for r in parked if r.park_class == ParkClass.DEFENDED_PARKED)
     sending = [r for r in observed if r.park_class == ParkClass.ACTIVE_SENDING]
+    # **大口送信者の要件のうち DNS で見られる部分**（Gmail・Yahoo 2024-02、
+    # Microsoft 2025-05）。SPF と DKIM と DMARC（p=none でよい）がそろって
+    # いるか。整合（alignment）・PTR・TLS・配信停止・苦情率は DNS では見えない
+    bulk_spf = [r for r in sending if _spf_usable(r)]
+    bulk_dkim = [r for r in sending if r.dkim_status == DkimStatus.DETECTED]
+    bulk_dmarc = [r for r in sending if _dmarc_usable(r)]
+    bulk_ready = [
+        r for r in sending
+        if _spf_usable(r) and r.dkim_status == DkimStatus.DETECTED and _dmarc_usable(r)
+    ]
 
     return StatsOverall(
         measured_month=measured_month,
@@ -501,6 +525,10 @@ def aggregate(
             {str(k): stages.get(k, 0) for k in range(5)}, sort_keys=True
         ),
         sending_domains=len(sending),
+        bulk_spf_ok_domains=len(bulk_spf),
+        bulk_dkim_domains=len(bulk_dkim),
+        bulk_dmarc_ok_domains=len(bulk_dmarc),
+        bulk_ready_domains=len(bulk_ready),
         sending_enforced=sum(1 for r in sending if r.dmarc_enforced),
         parked_domains=len(parked),
         parked_hardened=hardened,
