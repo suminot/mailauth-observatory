@@ -86,6 +86,9 @@ _GENERIC_LABELS = frozenset(
 _HOLDING_SUFFIXES = (
     "-holdings", "holdings", "-hd", "hd", "-grp", "grp", "-group", "group",
     "-global", "global", "world", "-fg", "fg",
+    # 米国（2026-11-07：dovercorporation.com、carnivalcorp.com、
+    # cathaygeneralbancorp.com、afginc.com）
+    "-corporation", "corporation", "-corp", "corp", "-inc", "inc", "bancorp",
 )
 
 
@@ -104,11 +107,18 @@ def sibling_candidates(official: str, country: str) -> list[str]:
     label, suffix = reg.split(".", 1)
     if label in _GENERIC_LABELS and "." not in suffix:
         label = suffix
-    labels = [label] + [
-        label[: -len(s)].rstrip("-")
-        for s in _HOLDING_SUFFIXES
-        if label.endswith(s) and len(label) - len(s) >= 3
-    ]
+    # 接尾辞は2段まで外す（toolgroup → tool は外しすぎなので1段ずつ確かめる）。
+    # 先頭の the も外す（thegenerationessentials.com）
+    labels = [label]
+    if label.startswith("the") and len(label) > 6:
+        labels.append(label[3:])
+    for _ in range(2):
+        for name in list(labels):
+            for s in _HOLDING_SUFFIXES:
+                if name.endswith(s) and len(name) - len(s) >= 3:
+                    cut = name[: -len(s)].rstrip("-")
+                    if cut not in labels:
+                        labels.append(cut)
     tlds = SIBLING_TLDS.get(country, ())
     out: list[str] = []
     for name in dict.fromkeys(labels):
