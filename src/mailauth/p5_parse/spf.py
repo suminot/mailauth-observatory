@@ -6,6 +6,7 @@ records.py が「読み取り」なのに対し、ここは「仕様に照らし
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -68,6 +69,48 @@ class SpfResult:
     #: 専用 include を持たない事業者を拾うために保持する（DESIGN.md P6）
     mechanisms: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+
+
+@dataclass
+class SpfAddressSpace:
+    """そのレコードが **通す**（修飾子 `+` か無し）と書いた IP アドレスの広さ。
+
+    重なりは1つに数える。`-ip4:` などの通さない項は数えない。include の先は
+    数えない（大手の送信基盤の範囲で、どの会社も同じ大きさになるため）。
+    """
+
+    ip4_addresses: int = 0
+    #: いちばん広い範囲のプレフィックス長（/8 なら 8）。無ければ None
+    ip4_widest_prefix: int | None = None
+    ip6_widest_prefix: int | None = None
+
+
+def address_space(terms: list[str]) -> SpfAddressSpace:
+    nets4: list[ipaddress.IPv4Network] = []
+    nets6: list[ipaddress.IPv6Network] = []
+    for term in terms:
+        if term[:1] in "-~?":
+            continue
+        bare = term.lstrip("+")
+        name, sep, value = bare.partition(":")
+        name = name.lower()
+        if not sep or name not in ("ip4", "ip6"):
+            continue
+        try:
+            net = ipaddress.ip_network(value.strip(), strict=False)
+        except ValueError:
+            continue
+        if name == "ip4" and isinstance(net, ipaddress.IPv4Network):
+            nets4.append(net)
+        elif name == "ip6" and isinstance(net, ipaddress.IPv6Network):
+            nets6.append(net)
+    out = SpfAddressSpace()
+    if nets4:
+        out.ip4_addresses = sum(n.num_addresses for n in ipaddress.collapse_addresses(nets4))
+        out.ip4_widest_prefix = min(n.prefixlen for n in nets4)
+    if nets6:
+        out.ip6_widest_prefix = min(n.prefixlen for n in nets6)
+    return out
 
 
 def count_lookups(record: str) -> int:

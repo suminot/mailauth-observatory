@@ -25,6 +25,8 @@ months:
       - ドメインの候補に、国内企業が有価証券報告書の公告掲載方法に書いている自社ドメインを足した（公告の掲載を引き受ける事業者のドメインは除く）。
       - 国内企業の公式サイトは、有価証券報告書に会社が書いた自社ドメインを優先するようにした。会社のものでないページ（企業情報サイトなど）が公式サイトとして入っていた企業がある。
       - 米国企業の公式サイトは、会社が年次報告書に書いたサイトを優先するようにした（社名変更の前のサイトのままの企業があった）。前の公式サイトも候補のドメインとして残す。
+      - SPF の include・redirect の先のドメインが登録されていないもの、主ドメインの TXT の応答が 1,232 バイトを超える見積りのもの、DKIM の鍵が Ed25519 だけのもの、DMARC に RFC 9989 で無くなったタグがあるものの数を足した。
+      - 主ドメインの SPF が通すと書いた IPv4 アドレスが 65,536 を超えるドメインの数を足した（include の先は数えない）。
     en:
       - The outbound front-end check now includes the names that Proofpoint, Mimecast, Barracuda, Cisco, Trend Micro and others ask customers to publish in SPF for sending (only names found in each vendor's documentation). The number of US companies with an outbound front-end rose largely because of this.
       - Rules were added for DKIM CNAME targets (SendGrid, HubSpot, Constant Contact, Salesforce and others) and SPF includes (KnowBe4, Mailgun, Oracle and Japanese delivery services). The rise in sending-service counts comes from this.
@@ -41,3 +43,5 @@ months:
       - The company's own domain that Japanese companies give as their method of public notice in the annual securities report was added as a candidate domain (domains of providers that post notices for others are excluded).
       - For Japanese companies, the company's own domain given in the annual securities report now takes precedence as the official site. Some companies had a page that is not their own (such as a company-profile site) recorded as their official site.
       - For US companies, the site the company states in its annual report now takes precedence (some still had the site from before a name change). The earlier site is kept as a candidate domain.
+      - Counts were added for domains where an SPF include or redirect target's domain is not registered, where the apex TXT response is estimated to exceed 1,232 bytes, where the DKIM keys found are Ed25519 only, and where DMARC carries tags removed in RFC 9989.
+      - A count was added for domains whose apex SPF record lets through more than 65,536 IPv4 addresses (include targets are not counted).
