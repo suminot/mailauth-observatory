@@ -231,11 +231,15 @@ const POPULATION_LABELS = {
     "jp-all-listed": "国内上場（全市場）",
     "us-all-listed": "米国上場",
     "jp-nikkei225": "日経平均株価の構成銘柄（国内上場の内数）",
+    "jp-all-listed-group": "国内上場の会社のグループ会社（国内子会社の一部・上場会社とは別に数える）",
+    "jp-nikkei225-group": "日経平均株価の構成銘柄のグループ会社（国内子会社の一部）",
   },
   en: {
     "jp-all-listed": "Japan-listed (all markets)",
     "us-all-listed": "US-listed",
     "jp-nikkei225": "Nikkei 225 constituents (within Japan-listed)",
+    "jp-all-listed-group": "Group companies of Japan-listed firms (some domestic subsidiaries, counted separately)",
+    "jp-nikkei225-group": "Group companies of Nikkei 225 constituents (some domestic subsidiaries)",
   },
 };
 

@@ -469,6 +469,19 @@ def run(
                 f"{entities_path} がありません。先に p1-population を実行してください"
             )
 
+        # **母集団ごとの上書き**（candidates.yaml の per_population）。グループ会社
+        # （jp-all-listed-group）は数が多く、CT やリンク先を読むと P2 が終わらない
+        override = (cfg.get("per_population") or {}).get(_population_of(entities)) or {}
+        if override:
+            for key in ("discovery", "limits", "subdomains"):
+                if isinstance(override.get(key), dict):
+                    cfg[key] = {**(cfg.get(key) or {}), **override[key]}
+            discovery = cfg.get("discovery", {})
+            limits = cfg.get("limits", {})
+            manifest.set_breakdown(per_population_override=sorted(
+                f"{k}.{kk}" for k, v in override.items() if isinstance(v, dict) for kk in v
+            ))
+
         # 計測対象からの除外。**読めなければ止める。** 外してほしいと言った
         # 相手を測ってしまうのは取り返しがつかない（exclusions.py 参照）
         excluded = load_exclusions()

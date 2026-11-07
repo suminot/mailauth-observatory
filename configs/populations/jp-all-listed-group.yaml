@@ -1,0 +1,60 @@
+# グループ会社（国内上場会社の国内子会社）── BACKLOG 52
+#
+# **上場会社の率には混ぜない。別の母集団として別に数える。** 子会社のメールは
+# 親会社が管理していないことがあり、混ぜると「上場会社の何割が」の意味が変わる。
+#
+# 子会社名は有報の「関係会社の状況」（koukoku-scan --subsidiaries-max）、
+# ドメインは gBizINFO の企業ホームページ（group-domains）から。商号が完全に
+# 一致する法人が1つだけのものしか採っていない。**子会社の全部ではない**
+# （有報に名前の出る主要な子会社のうち、gBizINFO にサイトの登録があるもの）。
+#
+# 上場会社そのもの（上場子会社）と、上場会社の自社ドメインをサイトにしている
+# 子会社は外す（group_population.py）。
+id: jp-all-listed-group
+label: 国内上場企業のグループ会社（国内子会社）
+country: JP
+enabled: true
+implemented: true
+
+source:
+  primary: group_list
+  # 親（上場会社）の法人番号と証券コードを引くためだけに読む
+  edinet_code_list:
+    url: https://disclosure2dl.edinet-fsa.go.jp/searchdocument/codelist/Edinetcode.zip
+    send_subscription_key: true
+    subscription_key_param: Subscription-Key
+    encoding: cp932
+    header_row: 1
+    columns:
+      edinet_code: 0
+      submitter_type: 1
+      listing_status: 2
+      consolidated: 3
+      capital: 4
+      fiscal_year_end: 5
+      name: 6
+      name_en: 7
+      name_kana: 8
+      address: 9
+      industry: 10
+      securities_code: 11
+      houjin_bangou: 12
+  industry:
+    primary_scheme: EDINET33
+    common_mapping: configs/industry/edinet33_to_common12.csv
+
+refresh:
+  cadence: monthly
+  method: api
+  cache_ttl_hours: 24
+
+acceptance:
+  # 一覧は koukoku-scan と group-domains が少しずつ埋める。下限は置かない
+  expected_count_min: 0
+  max_missing_rate:
+    houjin_bangou: 0.0
+    official_url: 0.0
+
+attribution:
+  - "出典：EDINET（金融庁）"
+  - "出典：経済産業省gBizINFO"

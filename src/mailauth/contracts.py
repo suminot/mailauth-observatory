@@ -301,6 +301,11 @@ class Entity(_Model):
     status: str = EntityStatus.ACTIVE
     change_note: str | None = None
 
+    #: グループ会社（jp-all-listed-group）だけ。親の上場会社の entity_id と
+    #: 証券コード（BACKLOG 52）。上場会社そのものでは None
+    parent_entity_id: str | None = None
+    parent_securities_code: str | None = None
+
 
 ENTITY_ARROW_SCHEMA = pa.schema(
     [
@@ -333,6 +338,8 @@ ENTITY_ARROW_SCHEMA = pa.schema(
         ("last_seen_month", pa.date32()),
         ("status", pa.string()),
         ("change_note", pa.string()),
+        ("parent_entity_id", pa.string()),
+        ("parent_securities_code", pa.string()),
     ]
 )
 

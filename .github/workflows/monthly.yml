@@ -35,6 +35,7 @@ on:
         options:
           - configs/populations/jp-all-listed.yaml
           - configs/populations/us-all-listed.yaml
+          - configs/populations/jp-all-listed-group.yaml
           - configs/populations/jp-prime.yaml
           - configs/populations/jp-standard.yaml
           - configs/populations/jp-growth.yaml

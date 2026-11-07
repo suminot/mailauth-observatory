@@ -1953,3 +1953,22 @@ def test_p2_は起点のある会社にも組織名検索のキャッシュを�
     # 起点のある会社は**取りにいっていない**（キャッシュだけ）
     assert name not in ct.org_calls
     assert out["breakdown"]["ct_org"]["seeded_cached"] == 1
+
+
+def test_p2_グループ会社の母集団はCTとリンク先を読まない(seeded_run):
+    """candidates.yaml の per_population（BACKLOG 52）。起点が数千ある
+    グループ会社で crt.sh を引くと、P2 が終わらず補充の枠も食う。"""
+    df = pd.read_parquet(seeded_run)
+    df["population_ids"] = [["jp-all-listed-group"] for _ in range(len(df))]
+    pq.write_table(
+        pa.Table.from_pandas(df, schema=ENTITY_ARROW_SCHEMA, preserve_index=False),
+        seeded_run,
+        compression="zstd",
+    )
+    result = _run_p2()
+    methods = result["breakdown"]["by_discovery_method"]
+    assert methods["official_url"] == 3
+    assert not methods.get("ct_log")
+    assert "discovery.ct_log" in result["breakdown"]["per_population_override"]
+    # メールの痕跡は引く
+    assert methods["spf_redirect"] == 1
