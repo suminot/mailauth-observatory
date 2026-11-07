@@ -18,7 +18,7 @@ const overall = FileAttachment("../data/stats_overall.json").json();
 ```
 
 ```js
-import { rate, pct, band, BAND_COLORS, checklist, indicators, entityIndicators, num } from "../components/format.js";
+import { rate, pct, band, BAND_COLORS, checklist, indicators, entityIndicators, num, populationLabel } from "../components/format.js";
 import { coverageRing } from "../components/gauge.js";
 import { table } from "../components/table.js";
 ```
@@ -29,7 +29,7 @@ const latest = overall.filter((d) => d.measured_month === `${meta.latest_month}-
 const population = view(
   Inputs.select(
     [...new Set(overall.map((d) => d.population_id))],
-    { label: "Population", value: latest[0]?.population_id }
+    { label: "Population", value: latest[0]?.population_id, format: (d) => populationLabel(d, "en") }
   )
 );
 ```

@@ -223,3 +223,22 @@ export function num(value) {
   if (value === null || value === undefined) return "—";
   return value.toLocaleString("ja-JP");
 }
+
+
+/** 母集団の名前。**内部の ID のまま見せない**（jp-nikkei225 など） */
+const POPULATION_LABELS = {
+  ja: {
+    "jp-all-listed": "国内上場（全市場）",
+    "us-all-listed": "米国上場",
+    "jp-nikkei225": "日経平均株価の構成銘柄（国内上場の内数）",
+  },
+  en: {
+    "jp-all-listed": "Japan-listed (all markets)",
+    "us-all-listed": "US-listed",
+    "jp-nikkei225": "Nikkei 225 constituents (within Japan-listed)",
+  },
+};
+
+export function populationLabel(id, lang = "ja") {
+  return (POPULATION_LABELS[lang] ?? POPULATION_LABELS.ja)[id] ?? id;
+}

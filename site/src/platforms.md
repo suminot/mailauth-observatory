@@ -11,7 +11,7 @@ const meta = FileAttachment("data/meta.json").json();
 ```
 
 ```js
-import { rate, pct } from "./components/format.js";
+import { rate, pct, populationLabel } from "./components/format.js";
 import { table } from "./components/table.js";
 import { vendorLabel } from "./components/vendor.js";
 ```
@@ -21,7 +21,7 @@ import { vendorLabel } from "./components/vendor.js";
 // 2行に出るうえ、分母が違うものが並ぶ
 const populations = [...new Set(platforms.map((d) => d.population_id))];
 const population = view(
-  Inputs.select(populations, { label: "母集団", value: populations[0] })
+  Inputs.select(populations, { label: "母集団", value: populations[0], format: (d) => populationLabel(d, "ja") })
 );
 ```
 

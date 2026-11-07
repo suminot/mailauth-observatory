@@ -7,7 +7,7 @@ const sectors = FileAttachment("data/stats_by_sector.json").json();
 ```
 
 ```js
-import { rate, pct, indicators, entityIndicators } from "./components/format.js";
+import { rate, pct, indicators, entityIndicators, populationLabel } from "./components/format.js";
 import { table } from "./components/table.js";
 ```
 
@@ -20,7 +20,7 @@ const populations = [...new Set(overall.map((d) => d.population_id))];
 
 ```js
 const population = view(
-  Inputs.select(populations, { label: "母集団", value: populations[0] })
+  Inputs.select(populations, { label: "母集団", value: populations[0], format: (d) => populationLabel(d, "ja") })
 );
 ```
 
