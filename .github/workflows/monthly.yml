@@ -896,6 +896,24 @@ jobs:
             -f publish=yes
           echo "月初の自動実行なので、続けて米国の計測を頼んだ" >> "$GITHUB_STEP_SUMMARY"
 
+      # **米国の後にグループ会社（BACKLOG 52）。** 国内の月初の実行が頼んだ米国の
+      # 実行（bot が起こしたもの）からだけ頼む ── 手で起こした米国の実行や、
+      # グループ会社の実行そのものからは頼まない（頼み続けない）。crt.sh は
+      # 使わない母集団なので、補充と重なっても本数は増えない
+      - name: グループ会社の計測を頼む
+        if: >-
+          always() && github.event_name == 'workflow_dispatch'
+          && github.triggering_actor == 'github-actions[bot]'
+          && endsWith(github.event.inputs.population, 'us-all-listed.yaml')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run monthly.yml --repo "$GITHUB_REPOSITORY" --ref main \
+            -f run_id="${{ steps.run.outputs.id }}" \
+            -f population=configs/populations/jp-all-listed-group.yaml \
+            -f publish=yes
+          echo "月初に頼まれた米国の実行なので、続けてグループ会社の計測を頼んだ" >> "$GITHUB_STEP_SUMMARY"
+
       # **CT の積み残しがあれば、補充を頼む。** 補充は月次計測が走っている間は
       # 何もしない。毎時の schedule が起動しないこともあるので（2026-11-01）、
       # 終わったここから再開させる。--limit の動作確認では頼まない

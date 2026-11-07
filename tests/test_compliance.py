@@ -2268,6 +2268,19 @@ def test_月初の自動実行は続けて米国を頼む():
     assert text.index("- name: 米国の計測を頼む") < text.index("- name: CT の補充を頼む")
 
 
+def test_月初に頼まれた米国の後にグループ会社を頼む():
+    """BACKLOG 52。国内 → 米国 → グループ会社の順。手で起こした実行からは頼まない。"""
+    text = (repo_root() / ".github" / "workflows" / "monthly.yml").read_text(
+        encoding="utf-8"
+    )
+    step = text[text.index("- name: グループ会社の計測を頼む") :]
+    step = step[: step.index("- name:", 10)]
+    assert "github.triggering_actor == 'github-actions[bot]'" in step
+    assert "us-all-listed.yaml" in step
+    assert "population=configs/populations/jp-all-listed-group.yaml" in step
+    assert 'run_id="${{ steps.run.outputs.id }}"' in step
+
+
 def test_資格情報つきの確認も配り終わるまで待つ():
     """**認証なしの 401 は関数が返すので、中身より先に返る。**
 
