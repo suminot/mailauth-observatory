@@ -33,6 +33,8 @@ from ..contracts import (
 )
 from ..io import read_parquet, write_parquet
 from ..manifest import RunManifest
+from ..normalize import normalize_securities_code
+from ..p1_population.index_members import load_derived
 from ..p3_domains.runner import domain_id as p3_domain_id
 from ..paths import gold_dir, gold_root, month_date, phase_dir, phase_output, previous_run_id
 from . import delta as delta_mod
@@ -281,6 +283,37 @@ def ownership_by_domain(domains: list[dict]) -> dict[str, str]:
     return out
 
 
+def add_derived_populations(entities: dict[str, dict], derived, manifest=None) -> dict[str, int]:
+    """親の母集団の会社のうち、一覧にある証券コードの会社に、派生の母集団の印を付ける。
+
+    **計測し直さずに別の切り口で数える**（日経平均株価の構成銘柄など）。
+    一覧と突き合わせた数が見込みと違えば警告する ── 一覧が古い・上場廃止・
+    コードの読み違いのどれか。
+    """
+    matched: dict[str, int] = {}
+    for d in derived:
+        codes = d.codes()
+        n = 0
+        for attrs in entities.values():
+            if d.parent in attrs["population_ids"] and attrs.get("securities_code") in codes:
+                if d.id not in attrs["population_ids"]:
+                    attrs["population_ids"] = [*attrs["population_ids"], d.id]
+                n += 1
+        matched[d.id] = n
+        parent_present = any(d.parent in a["population_ids"] for a in entities.values())
+        if manifest is not None and parent_present and d.expected_size and n != d.expected_size:
+            manifest.add_warning(
+                "DERIVED_POPULATION_SIZE",
+                count=n,
+                sample=[d.id],
+                message=(
+                    f"{d.id} の一覧（{len(codes)} 件）と突き合わせて {n} 社だった"
+                    f"（見込み {d.expected_size}）。一覧が古いか、上場廃止・コードの違いがある"
+                ),
+            )
+    return matched
+
+
 def entity_index(entities: list[dict]) -> dict[str, dict]:
     """entity_id -> 集計に必要な属性だけ。
 
@@ -295,6 +328,7 @@ def entity_index(entities: list[dict]) -> dict[str, dict]:
             "common12_code": _text(row.get("common12_code")),
             "common12_label": _text(row.get("common12_label")),
             "status": _text(row.get("status")) or EntityStatus.ACTIVE,
+            "securities_code": normalize_securities_code(_text(row.get("securities_code"))),
             # 公式サイトのドメインの domain_id（P3 と同じ作り方）。メールが
             # 公式サイトと別のドメインにある会社を数えるため
             "official_domain_id": (
@@ -348,6 +382,7 @@ def run(
 
         facts = _rows(facts_frame)
         entities = entity_index(_rows(entities_frame))
+        add_derived_populations(entities, load_derived(), manifest)
         inferences = _rows(read_parquet(phase_output(run_id, "p6_infer", "inferences.parquet")))
         manifest.counts.input = len(facts)
 
