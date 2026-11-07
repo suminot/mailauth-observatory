@@ -170,6 +170,7 @@ display(
         [
           { 段階: "受け取れる MX・SPF の送信元・DKIM の鍵がそろう", 企業: current.evidence_signed_entities, 割合: pct(rate(current.evidence_signed_entities, current.entities_with_domains)) },
           { 段階: "MX と SPF の送信元はあるが、DKIM の鍵は見つからない", 企業: current.evidence_sending_entities, 割合: pct(rate(current.evidence_sending_entities, current.entities_with_domains)) },
+          ...(current.evidence_dkim_hint_entities == null ? [] : [{ 段階: "　うち _domainkey の配下に名前がある（試していないセレクタで署名していそう）", 企業: current.evidence_dkim_hint_entities, 割合: pct(rate(current.evidence_dkim_hint_entities, current.entities_with_domains)) }]),
           { 段階: "MX はあるが、SPF に送信元を書いていない", 企業: current.evidence_receiving_entities, 割合: pct(rate(current.evidence_receiving_entities, current.entities_with_domains)) },
           { 段階: "どのドメインにも受け取れる MX が無い", 企業: current.evidence_none_entities, 割合: pct(rate(current.evidence_none_entities, current.entities_with_domains)) },
         ],

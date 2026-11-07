@@ -207,7 +207,8 @@ def mail_evidence(observed: list[DomainRow]) -> dict[str, int]:
     for r in observed:
         if r.entity_id:
             by_entity[r.entity_id].append(r)
-    out = {"signed": 0, "sending": 0, "receiving": 0, "none": 0, "off_site": 0}
+    out = {"signed": 0, "sending": 0, "receiving": 0, "none": 0, "off_site": 0,
+           "sending_dkim_hint": 0}
     for rs in by_entity.values():
         mx = any(r.mx_reachable for r in rs)
         send = mx and any(r.spf_sends for r in rs)
@@ -216,6 +217,9 @@ def mail_evidence(observed: list[DomainRow]) -> dict[str, int]:
             out["signed"] += 1
         elif send:
             out["sending"] += 1
+            # そのうち `_domainkey` の配下に名前がある（試していないセレクタの鍵がありそう）
+            if any(r.dkim_domainkey_exists is True for r in rs):
+                out["sending_dkim_hint"] += 1
         elif mx:
             out["receiving"] += 1
         else:
@@ -692,6 +696,11 @@ def aggregate(
         ),
         evidence_signed_entities=evidence["signed"],
         evidence_sending_entities=evidence["sending"],
+        evidence_dkim_hint_entities=(
+            evidence["sending_dkim_hint"]
+            if any(r.dkim_domainkey_exists is not None for r in observed)
+            else None
+        ),
         evidence_receiving_entities=evidence["receiving"],
         evidence_none_entities=evidence["none"],
         mail_off_site_entities=evidence["off_site"],

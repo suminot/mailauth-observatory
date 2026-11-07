@@ -1397,6 +1397,7 @@ def test_会社ごとのメールに使っている証拠の段階():
     ]
     assert mail_evidence(rows) == {
         "signed": 1, "sending": 1, "receiving": 1, "none": 1, "off_site": 1,
+        "sending_dkim_hint": 0,
     }
 
 
@@ -1469,3 +1470,19 @@ def test_見つけたサブドメインと_DMARC_で守られる数():
         {"domain_id": "a2", "dmarc_present": False},
     ]
     assert subdomain_coverage(p3, facts, {"jp:1"}) == (3, 2)
+
+
+def test_DKIM_未検出のうち_domainkey_の配下に名前がある会社を内数で数える():
+    from mailauth.p7_aggregate.metrics import mail_evidence
+
+    rows = [
+        _row(domain_id="d:1", entity_id="jp:1", mx_reachable=True, spf_sends=True,
+             dkim_domainkey_exists=True),
+        _row(domain_id="d:2", entity_id="jp:2", mx_reachable=True, spf_sends=True,
+             dkim_domainkey_exists=False),
+    ]
+    got = mail_evidence(rows)
+    assert (got["sending"], got["sending_dkim_hint"]) == (2, 1)
+    assert _agg(rows).evidence_dkim_hint_entities == 1
+    assert _agg([_row(domain_id="d:3", mx_reachable=True, spf_sends=True)]
+                ).evidence_dkim_hint_entities is None
