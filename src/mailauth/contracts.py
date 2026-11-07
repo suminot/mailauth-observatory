@@ -552,6 +552,9 @@ class Fact(_Model):
     spf_ip4_addresses: int | None = None
     spf_ip4_widest_prefix: int | None = None
     spf_ip6_widest_prefix: int | None = None
+    #: SPF に `ptr` がある（RFC 7208 5.5 が使わないよう求めている。遅く、
+    #: 受け手によっては評価しない）。SPF が無い・2つあるときは None
+    spf_has_ptr: bool | None = None
     #: `_domainkey.<ドメイン>` の配下に名前がある（NOERROR）/ 無い（NXDOMAIN）
     dkim_domainkey_exists: bool | None = None
     #: 最後に効く all の修飾子（redirect で任せていれば任せた先の all）
@@ -697,6 +700,7 @@ FACT_ARROW_SCHEMA = pa.schema(
         ("spf_ip4_addresses", pa.int64()),
         ("spf_ip4_widest_prefix", pa.int32()),
         ("spf_ip6_widest_prefix", pa.int32()),
+        ("spf_has_ptr", pa.bool_()),
         ("dkim_domainkey_exists", pa.bool_()),
         ("spf_all_effective", pa.string()),
         ("spf_all_unknown", pa.bool_()),
@@ -977,6 +981,10 @@ class StatsOverall(_Model):
     dmarc_historic_tags_domains: int | None = None
     #: SPF（自分のレコード）が通すと書いた IPv4 アドレスが 65,536（/16 1つ分）を超える
     spf_ip4_broad_domains: int | None = None
+    #: SPF に `ptr` がある（RFC 7208 5.5）。列の無い過去の run は None
+    spf_ptr_domains: int | None = None
+    #: DMARC に失敗レポートの宛先（ruf）がある。宛先の中身は出さない（数だけ）
+    dmarc_ruf_domains: int | None = None
     #: 送信しているドメイン（sending_domains）のうち、大口送信者の要件のうち
     #: DNS で見られる部分：SPF が評価できる / DKIM を検出 / DMARC が有効 / 3つとも
     #: DMARC に np=（存在しないサブドメインへの方針、RFC 9989）がある
@@ -1108,6 +1116,8 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("dkim_other_selector_domains", pa.int32()),
     ("dmarc_historic_tags_domains", pa.int32()),
     ("spf_ip4_broad_domains", pa.int32()),
+    ("spf_ptr_domains", pa.int32()),
+    ("dmarc_ruf_domains", pa.int32()),
     ("rua_placeholder_domains", pa.int32()),
     ("reject_with_rua_domains", pa.int32()),
     ("dmarc_np_domains", pa.int32()),

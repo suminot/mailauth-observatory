@@ -39,6 +39,7 @@ months:
       - 日経平均株価の構成銘柄（225 社）を、国内上場の計測を測り直さずに別に集計するようにした。一覧は Wikipedia の記事（CC BY-SA 4.0）の証券コードを使う。
       - 証明書の組織名でドメインを探す経路を、公式サイトのある会社にも広げた（月のあいだに補充で引いたものを使う）。見つけたサブドメインの数と、そのうち登録ドメインに DMARC があるものの数を足した。
       - 国内上場の会社の国内子会社（有価証券報告書の関係会社のうち、gBizINFO に企業サイトの登録があるもの）を、上場会社とは別の母集団として測るようにした。上場会社の数字には混ぜていない。
+      - SPF に ptr があるドメインと、DMARC に失敗レポートの宛先（ruf）があるドメインの数を足した（宛先は出さない）。
     en:
       - The outbound front-end check now includes the names that Proofpoint, Mimecast, Barracuda, Cisco, Trend Micro and others ask customers to publish in SPF for sending (only names found in each vendor's documentation). The number of US companies with an outbound front-end rose largely because of this.
       - Rules were added for DKIM CNAME targets (SendGrid, HubSpot, Constant Contact, Salesforce and others) and SPF includes (KnowBe4, Mailgun, Oracle and Japanese delivery services). The rise in sending-service counts comes from this.
@@ -69,3 +70,4 @@ months:
       - The Nikkei 225 constituents (225 companies) are now counted separately from the Japan-listed measurement without measuring again. The list uses the securities codes in a Wikipedia article (CC BY-SA 4.0).
       - The route that finds domains by the organization name in certificates now also covers companies with a website (using results filled in during the month). Counts of subdomains found, and of those whose registrable domain has DMARC, were added.
       - Domestic subsidiaries of Japan-listed companies (affiliates named in the annual securities report with a website registered in gBizINFO) are now measured as a population separate from the listed companies. They are not mixed into the listed-company figures.
+      - Counts were added for domains whose SPF uses ptr, and for domains whose DMARC gives a failure report destination (ruf); destinations are not shown.

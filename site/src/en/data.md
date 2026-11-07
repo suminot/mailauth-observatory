@@ -221,6 +221,8 @@ The main columns used in the tables above.
 | `spf_dangling_domains` | among SPF `include` or `redirect` targets with no SPF record, one whose registrable domain was confirmed unregistered (anyone registering it could send mail that passes SPF). Domains with targets that could not be looked up are not counted. Empty in months without the column |
 | `txt_apex_oversize_domains` | the estimated size of the apex TXT response exceeds 1,232 bytes. Not the actual response size. Empty in months without the column |
 | `spf_ip4_broad_domains` | the IPv4 addresses the apex SPF record lets through (`ip4:`, overlaps counted once, `include` targets not counted) exceed 65,536 (one /16). Empty in months without the column |
+| `spf_ptr_domains` | the apex SPF record uses `ptr` (RFC 7208 section 5.5 asks that it not be used; it is slow and some receivers do not evaluate it). Empty in months without the column |
+| `dmarc_ruf_domains` | DMARC gives a failure report destination (`ruf`). Destinations are not shown (count only). Many receivers do not send failure reports |
 | `rua_placeholder_domains` | the DMARC rua destination is a name reserved for examples (`example.com` and the like, RFC 2606 and 6761) |
 | `reject_with_rua_domains` | `p=reject` with a rua destination (names reserved for examples excluded) |
 | `dmarc_np_domains` | DMARC carries a valid `np=` (policy for non-existent subdomains, RFC 9989) |
