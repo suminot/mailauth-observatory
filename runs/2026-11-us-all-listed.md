@@ -1,22 +1,22 @@
 # 月次計測 2026-11（us-all-listed）
 
 - 母集団: `us-all-listed`
-- 状態: **partial**
-- 集計時刻: 2026-11-04T20:14:46+00:00
-- 警告: 25 件
+- 状態: **failed**
+- 集計時刻: 2026-11-07T07:06:46+00:00
+- 警告: 24 件
 
 ## 工程
 
 | 工程 | 状態 | 入力 | 成功 | 失敗 | スキップ | 秒 |
 |---|---|---|---|---|---|---|
-| p1_population 母集団確定 | success | 6059 | 5254 | 0 | 0 | 1790.462 |
-| p2_candidates ドメイン候補生成 | partial | 5254 | 5197 | 29 | 57 | 5744.155 |
-| p3_domains メールドメイン確定 | partial | 11848 | 11044 | 142 | 804 | 1777.505 |
-| p4_measure DNS計測 | success | 11044 | 0 | 0 | 10904 | 9.017 |
-| p5_parse パース | success | 452008 | 10801 | 0 | 0 | 964.014 |
-| p6_infer 推察 | success | 10801 | 36329 | 0 | 0 | 7.938 |
-| p7_aggregate 集計 | success | 10801 | 13 | 0 | 0 | 2.021 |
-| p8_publish 公開 | success | 305 | 2221 | 0 | 0 | 0.147 |
+| p1_population 母集団確定 | success | 6059 | 5254 | 0 | 0 | 1683.825 |
+| p2_candidates ドメイン候補生成 | partial | 5254 | 5202 | 33 | 52 | 7379.59 |
+| p3_domains メールドメイン確定 | failed | 22456 | 0 | 37 | 0 | 547.585 |
+| p4_measure DNS計測 | success | 11044 | 0 | 0 | 10904 | 9.42 |
+| p5_parse パース | success | 452008 | 10801 | 0 | 0 | 965.771 |
+| p6_infer 推察 | success | 10801 | 36329 | 0 | 0 | 8.547 |
+| p7_aggregate 集計 | success | 10801 | 13 | 0 | 0 | 2.169 |
+| p8_publish 公開 | success | 305 | 2221 | 0 | 0 | 0.162 |
 
 ## 工程間の件数
 
@@ -27,8 +27,8 @@
 | 前 | 後 | 前の成功 | 後の入力 | 差 |
 |---|---|---|---|---|
 | p1_population | p2_candidates | 5254 | 5254 | 0 |
-| p2_candidates | p3_domains | 5197 | 11848 | 6651 |
-| p3_domains | p4_measure | 11044 | 11044 | 0 |
+| p2_candidates | p3_domains | 5202 | 22456 | 17254 |
+| p3_domains | p4_measure | 0 | 11044 | 11044 |
 | p4_measure | p5_parse | 0 | 452008 | 452008 |
 | p5_parse | p6_infer | 10801 | 10801 | 0 |
 | p6_infer | p7_aggregate | 36329 | 10801 | -25528 |
@@ -39,21 +39,20 @@
 ### p1_population
 
 - `NON_OPERATING_EXCLUDED` ×805: 事業会社でないもの（SPAC・ファンド・ETF）を母集団から外した。**「測れなかった」ではなく「測らないと決めた」**。名前と理由は excluded_entities.parquet に残し、公開する
-- `WIKIDATA_NAME_MISMATCH` ×143: ticker で鍵は当たったが社名が一致しない項目を 143 件使わなかった。**別の会社のサイトを紐づけないための歯止めである。**多すぎるなら鍵か国の絞り込みを見直すこと
-- `ENRICH_FAILED_SEC_PRESS_RELEASE`: プレスリリースを取得できなかったものがある。**「書いていなかった」ではなく「読めなかった」**（原則5）
+- `WIKIDATA_NAME_MISMATCH` ×142: ticker で鍵は当たったが社名が一致しない項目を 142 件使わなかった。**別の会社のサイトを紐づけないための歯止めである。**多すぎるなら鍵か国の絞り込みを見直すこと
 - `INDUSTRY_NOT_PROVIDED` ×52: 一次情報（SEC）に業種が入っていない企業がある。**写像を足しても直らない。** ファンド・投資信託や ADR の提出者で、SEC 側に業種が無いか 0000 / 8880 が入っている
 - `NO_PREVIOUS_RUN`: 前月 2026-10 の entities.parquet が無いため差分を計算していない
 
 ### p2_candidates
 
 - `SHARED_RUA_DOMAIN_DROPPED` ×6: 複数企業の rua 宛先になっているドメインを候補から落とした。**第三者のレポート処理サービスを企業のドメインとして計測しない。** ベンダー名が分かれば configs/vendors/dmarc_rua_vendors.yaml に、本当にグループ共用なら configs/domains/manual_domains.csv に足すこと
-- `DOMAIN_SHARED_BY_ENTITIES` ×93: 同一ドメインが複数企業に紐づいている。持株会社・グループ共用の可能性
-- `UNALIGNED_RUA_TARGET` ×262: 自社ドメインでない rua 宛先があった。**候補にしていない。** 第三者のレポート処理サービスであり、その企業の送信ドメインではない。ベンダー名が分かれば configs/vendors/dmarc_rua_vendors.yaml に足すと P6 の dmarc_vendor 推定が埋まる
+- `DOMAIN_SHARED_BY_ENTITIES` ×91: 同一ドメインが複数企業に紐づいている。持株会社・グループ共用の可能性
+- `UNALIGNED_RUA_TARGET` ×264: 自社ドメインでない rua 宛先があった。**候補にしていない。** 第三者のレポート処理サービスであり、その企業の送信ドメインではない。ベンダー名が分かれば configs/vendors/dmarc_rua_vendors.yaml に足すと P6 の dmarc_vendor 推定が埋まる
 
 ### p4_measure
 
 - `RESUMED_FROM_EXISTING_BRONZE` ×10904: 同じ run の bronze に 10904 ドメインぶんが既にあったため測り直していない。**「観測していない」のではなく「前回の実行で観測済み」である**
-- `BRONZE_APPENDED_TO_EXISTING` ×20: 同じ run に既存の bronze があったため、上書きせず新しいパートに追記した（bronze は不変・追記のみ）。--resume なので、既に測り終えたドメインは測り直していない
+- `BRONZE_APPENDED_TO_EXISTING` ×21: 同じ run に既存の bronze があったため、上書きせず新しいパートに追記した（bronze は不変・追記のみ）。--resume なので、既に測り終えたドメインは測り直していない
 
 ### p5_parse
 
@@ -82,3 +81,8 @@
 
 - `TIER2_DISABLED`: 第2層は無効。個社名付き明細は出力していない。有効化には事前通知から最低 30 日の訂正期間とアクセス制御の設定が必要
 
+
+## 失敗した工程
+
+- **p3_domains**: dns.name.BadEscape: An escaped code in a text format of DNS name is invalid.
+  - SERVFAIL: 37
