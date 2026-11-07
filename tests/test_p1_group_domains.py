@@ -105,3 +105,16 @@ def test_引き方が古い一覧は_found_以外を引き直す(tmp_path):
     write_csv(path, data)
     from mailauth.p1_population.group_domains import QUERY_VERSION
     assert csv_query_version(path) == QUERY_VERSION
+
+
+def test_同じ商号は有報の住所の都道府県で絞る(tmp_path):
+    hits = {"株式会社サンプル": [
+        {"corporate_number": "1", "name": "株式会社サンプル", "location": "東京都港区芝",
+         "company_url": "https://tokyo.example.co.jp"},
+        {"corporate_number": "2", "name": "株式会社サンプル", "location": "大阪府大阪市北区",
+         "company_url": "https://osaka.example.jp"},
+    ]}
+    s = _search(tmp_path, hits)
+    assert s.lookup("株式会社サンプル", "大阪府") == ("2", "example.jp", "found")
+    assert s.lookup("株式会社サンプル") == (None, None, "ambiguous")
+    assert s.lookup("株式会社サンプル", "北海道") == (None, None, "ambiguous")

@@ -26,9 +26,10 @@ from .enrich import GBIZINFO_ENDPOINT, USER_AGENT
 
 GROUP_CSV = "configs/domains/subsidiary_domains.csv"
 GROUP_FIELDS = ("edinet_code", "subsidiary", "corporate_number", "domain", "status", "query")
-#: 引き方の版。上がったら、found 以外の名前を引き直す（2：exist_flg をやめ、件数を
-#: 増やし、法人の種類で絞り、閉鎖した法人を除く。2026-11-08）
-QUERY_VERSION = 2
+#: 引き方の版。上がったら、found・no_url 以外の名前を引き直す（2：exist_flg をやめ、件数を
+#: 増やし、法人の種類で絞り、閉鎖した法人を除く。3：同じ商号が複数あれば、有報の表の
+#: 住所の都道府県で絞る。2026-11-08）
+QUERY_VERSION = 3
 CACHE_VERSION = QUERY_VERSION
 #: 1回の検索で受け取る件数。部分一致なので、ありふれた商号（「日本道路株式会社」）は
 #: 50 件では完全一致の法人が入らないことがあった
@@ -83,15 +84,20 @@ class GbizNameSearch:
         except ValueError:
             return None
 
-    def _cache(self, name: str) -> Path | None:
+    def _cache(self, name: str, prefecture: str | None = None) -> Path | None:
         if self.cache_dir is None:
             return None
-        key = hashlib.sha256(_norm(name).encode()).hexdigest()[:24]
+        key = hashlib.sha256(f"{_norm(name)}|{prefecture or ''}".encode()).hexdigest()[:24]
         return self.cache_dir / "names" / f"{key}.json"
 
-    def lookup(self, name: str) -> tuple[str | None, str | None, str]:
-        """(法人番号, ドメイン, 状態)。状態は found / no_url / ambiguous / not_found / error。"""
-        path = self._cache(name)
+    def lookup(
+        self, name: str, prefecture: str | None = None
+    ) -> tuple[str | None, str | None, str]:
+        """(法人番号, ドメイン, 状態)。状態は found / no_url / ambiguous / not_found / error。
+
+        同じ商号の法人が複数あれば、`prefecture`（有報の表の住所）で絞る。
+        """
+        path = self._cache(name, prefecture)
         if path is not None and path.exists():
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
@@ -99,7 +105,7 @@ class GbizNameSearch:
                     return data["number"], data["domain"], data["status"]
             except (OSError, ValueError, KeyError):
                 pass
-        result = self._lookup(name)
+        result = self._lookup(name, prefecture)
         if path is not None and result[2] != "error":
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps({"version": CACHE_VERSION, "number": result[0],
@@ -107,7 +113,9 @@ class GbizNameSearch:
                             encoding="utf-8")
         return result
 
-    def _lookup(self, name: str) -> tuple[str | None, str | None, str]:
+    def _lookup(
+        self, name: str, prefecture: str | None = None
+    ) -> tuple[str | None, str | None, str]:
         # **`exist_flg` は付けない。** 「閉鎖していない」ではなく「法人活動情報（届出・
         # 補助金・調達など）がある」に絞るパラメータで（API 仕様、2026-11-08 に確認）、
         # 子会社の多くがこれで落ちて not_found になっていた（3,000 件中 1,635 件）
@@ -123,6 +131,12 @@ class GbizNameSearch:
                 if _norm(h.get("name")) == _norm(name) and not h.get("close_date")]
         if not hits:
             return None, None, "not_found"
+        if len({h.get("corporate_number") for h in hits}) > 1 and prefecture:
+            # **同じ商号は、有報の表に書かれた住所の都道府県で絞る。** 1つに決まる
+            # ときだけ採る
+            hits = [h for h in hits if str(h.get("location") or "").startswith(prefecture)]
+            if not hits:
+                return None, None, "ambiguous"
         if len({h.get("corporate_number") for h in hits}) > 1:
             return None, None, "ambiguous"
         hit = hits[0]
@@ -183,6 +197,7 @@ def scan(
     *,
     max_lookups: int,
     queried_with: int | None = QUERY_VERSION,
+    places: dict[tuple[str, str], str] | None = None,
 ) -> tuple[dict[tuple[str, str], tuple[str, str, str]], dict[str, int]]:
     """子会社名を順に引く。**引き終えた名前（error 以外）は引き直さない。**
 
@@ -199,7 +214,9 @@ def scan(
         stats["names"] += 1
         prev = existing.get((code, name))
         # 引き方が古ければ、found 以外は引き直す（見つからなかった理由が引き方かもしれない）
-        stale = queried_with != QUERY_VERSION and bool(prev) and prev[2] != "found"
+        # no_url は法人が1つに決まっている（引き方を変えても結果は変わらない）
+        stale = (queried_with != QUERY_VERSION and bool(prev)
+                 and prev[2] not in ("found", "no_url"))
         if prev and prev[2] and prev[2] != "error" and not stale:
             stats["already"] += 1
             continue
@@ -211,7 +228,7 @@ def scan(
         if stats["looked_up"] >= max_lookups:
             stats["deferred"] += 1
             continue
-        number, domain, status = search.lookup(name)
+        number, domain, status = search.lookup(name, (places or {}).get((code, name)))
         stats["looked_up"] += 1
         stats[status] += 1
         out[(code, name)] = (number or "", domain or "", status)
