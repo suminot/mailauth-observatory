@@ -545,6 +545,49 @@ display(
 
 </div>
 
+### Japan and the US side by side
+
+The Japan-listed and US-listed populations for the same month. **The table does not order
+or score them.**
+
+```js
+const PAIR = ["jp-all-listed", "us-all-listed"];
+const pairRows = PAIR.map((p) => latest.find((d) => d.population_id === p)).filter(Boolean);
+const share = (n, d) => (n == null || !d ? "—" : pct(rate(n, d)));
+const PAIR_ROWS = [
+  ["companies measured / population", (d) => `${num(d.entities_with_domains)} / ${num(d.total_entities)}`],
+  ["publishes DMARC (domains)", (d) => share(d.dmarc_adopted_domains, d.observed_domains)],
+  ["DMARC enforcing (quarantine, reject; domains)", (d) => share(d.dmarc_enforced_domains, d.observed_domains)],
+  ["companies with MX, SPF and DKIM in place", (d) => share(d.evidence_signed_entities, d.entities_with_domains)],
+  ["companies receiving mail on a domain other than the website's", (d) => d.mail_off_site_entities == null ? "—" : num(d.mail_off_site_entities)],
+  ["DNS-visible part of bulk-sender requirements met (sending domains)", (d) => share(d.bulk_ready_domains, d.sending_domains)],
+  ["apex TXT over 1,232 bytes (domains)", (d) => share(d.txt_apex_oversize_domains, d.observed_domains)],
+  ["DMARC carries removed tags (domains)", (d) => share(d.dmarc_historic_tags_domains, d.dmarc_adopted_domains)],
+];
+display(
+  pairRows.length < 2
+    ? html`<p class="muted">Both populations are not available for this month.</p>`
+    : table(
+        PAIR_ROWS.map(([label, f]) => ({
+          Item: label,
+          "Japan-listed": f(pairRows[0]),
+          "US-listed": f(pairRows[1]),
+        })),
+        { sort: null }
+      )
+);
+```
+
+<div class="limits">
+
+- The populations are built differently (Japan: all listed companies; US:
+  operating companies filing with the SEC, excluding SPACs, funds and the like)
+- The number of domains per company also differs, so shares counted by domain
+  do not match shares counted by company
+- The share with removed DMARC tags uses domains publishing DMARC as the denominator
+
+</div>
+
 ## Over time
 
 ```js
