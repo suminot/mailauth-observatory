@@ -64,6 +64,11 @@ subdomains:
   common_labels: [mail, email]
   # どの経路で見つけた apex の下で引くか。主ドメイン（公式サイト・手動辞書）だけ
   common_labels_under: [official_url, manual]
+  # **公式サイトの証明書の記録（CT）に載っていた、メール用らしい名前**（`news.`・
+  # `mail2.` など、ctlog.MAIL_NAME_LABELS）もサブドメインの候補にする（BACKLOG 52、
+  # 2026-11-08）。推測ではなく実在する名前。P3 が自分の MX か `_dmarc` を持つものだけ
+  # 測る。CT のキャッシュに名前を残すようにしたので、効くのは次に CT を引いた月から
+  ct_mail_names: true
 
 manual_domains: configs/domains/manual_domains.csv
 
@@ -256,7 +261,7 @@ resolver:
 confidence:
   # 独立した裏付けと見なす発見経路。
   # spf_redirect と dmarc_rua は DNS 由来なので、DNS 一次実証からは独立でない
-  independent_methods: [official_url, official_alt, ct_log, ct_org, tls_san, site_link, sibling_tld, edinet_koukoku, manual]
+  independent_methods: [official_url, official_alt, ct_log, ct_org, ct_mail_name, tls_san, site_link, sibling_tld, edinet_koukoku, manual]
 
 acceptance:
   # DESIGN.md P2 / P3 の受け入れ基準。満たさなくても止めず manifest に記録する

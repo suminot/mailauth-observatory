@@ -1972,3 +1972,20 @@ def test_p2_グループ会社の母集団はCTとリンク先を読まない(se
     assert "discovery.ct_log" in result["breakdown"]["per_population_override"]
     # メールの痕跡は引く
     assert methods["spf_redirect"] == 1
+
+
+def test_p2_CTのメール用らしい名前をサブドメインの候補にする(seeded_run):
+    from mailauth.ctlog import StaticCtSource
+
+    ct = StaticCtSource(
+        {"sample-info.co.jp": ["sample-info.co.jp"]},
+        mail_names={"sample-info.co.jp": ["news.sample-info.co.jp", "mail.unrelated.jp"]},
+    )
+    result = run_p2(run_id=RUN, resolver=StaticResolver(ANSWERS), ct_source=ct)
+    df = candidates()
+    subs = df[df["domain"] == "news.sample-info.co.jp"]
+    assert list(subs["discovery_method"]) == ["ct_mail_name"]
+    assert not subs.iloc[0]["is_apex"]
+    # 所有の裏付けの無い apex の配下は足さない
+    assert not (df["domain"] == "mail.unrelated.jp").any()
+    assert result["breakdown"]["ct_mail_name_candidates"] >= 1

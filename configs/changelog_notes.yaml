@@ -40,6 +40,7 @@ months:
       - 証明書の組織名でドメインを探す経路を、公式サイトのある会社にも広げた（月のあいだに補充で引いたものを使う）。見つけたサブドメインの数と、そのうち登録ドメインに DMARC があるものの数を足した。
       - 国内上場の会社の国内子会社（有価証券報告書の関係会社のうち、gBizINFO に企業サイトの登録があるもの）を、上場会社とは別の母集団として測るようにした。上場会社の数字には混ぜていない。
       - SPF に ptr があるドメインと、DMARC に失敗レポートの宛先（ruf）があるドメインの数を足した（宛先は出さない）。
+      - 公式サイトの証明書の記録（CT）に載っているメール用らしい名前のサブドメイン（news.・mail2. など）を、サブドメインの候補に足した（自分の MX か _dmarc があるものだけ測る）。効くのは次に CT を引く月からで、サブドメインの数はそれより前の月と比べられない。
     en:
       - The outbound front-end check now includes the names that Proofpoint, Mimecast, Barracuda, Cisco, Trend Micro and others ask customers to publish in SPF for sending (only names found in each vendor's documentation). The number of US companies with an outbound front-end rose largely because of this.
       - Rules were added for DKIM CNAME targets (SendGrid, HubSpot, Constant Contact, Salesforce and others) and SPF includes (KnowBe4, Mailgun, Oracle and Japanese delivery services). The rise in sending-service counts comes from this.
@@ -71,3 +72,4 @@ months:
       - The route that finds domains by the organization name in certificates now also covers companies with a website (using results filled in during the month). Counts of subdomains found, and of those whose registrable domain has DMARC, were added.
       - Domestic subsidiaries of Japan-listed companies (affiliates named in the annual securities report with a website registered in gBizINFO) are now measured as a population separate from the listed companies. They are not mixed into the listed-company figures.
       - Counts were added for domains whose SPF uses ptr, and for domains whose DMARC gives a failure report destination (ruf); destinations are not shown.
+      - Subdomains with mail-like names (news., mail2. and the like) found in the certificate transparency records for the official site were added as subdomain candidates (only those with their own MX or _dmarc are measured). This takes effect from the next month in which CT is queried, and subdomain counts are not comparable with earlier months.
