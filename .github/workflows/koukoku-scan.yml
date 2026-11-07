@@ -44,7 +44,8 @@ defaults:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # 子会社名を全社ぶん読み終えるまでは、1回で多く読む（1秒1本で 1,500 本 ≈ 1時間半）
+    timeout-minutes: 240
     env:
       MAILAUTH_EDINET_SUBSCRIPTION_KEY: ${{ secrets.MAILAUTH_EDINET_SUBSCRIPTION_KEY }}
       MAILAUTH_GBIZINFO_TOKEN: ${{ secrets.MAILAUTH_GBIZINFO_TOKEN }}

@@ -153,8 +153,12 @@ def scan(
     *,
     max_lookups: int,
 ) -> tuple[dict[tuple[str, str], tuple[str, str, str]], dict[str, int]]:
-    """子会社名を順に引く。**引き終えた名前（error 以外）は引き直さない。**"""
-    out = dict(existing)
+    """子会社名を順に引く。**引き終えた名前（error 以外）は引き直さない。**
+
+    子会社名の一覧から消えた名前（読み方を直して落ちた地の文など）は残さない。
+    """
+    current = {(code, name) for code, (_d, names, _o) in subsidiaries.items() for name in names}
+    out = {k: v for k, v in existing.items() if k in current}
     stats = {"names": 0, "already": 0, "looked_up": 0, "deferred": 0,
              "found": 0, "no_url": 0, "ambiguous": 0, "not_found": 0, "error": 0}
     pairs: Iterable[tuple[str, str]] = (
