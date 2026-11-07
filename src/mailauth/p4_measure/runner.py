@@ -32,8 +32,9 @@ from ..records import mx_hosts as extract_mx_hosts
 from ..resolver import DnsResolver, shuffled
 from .backends.base import to_raw_response
 from .backends.dnspython_backend import DnspythonBackend
-from .bronze import BronzeWriter, measured_domains
+from .bronze import BronzeWriter, measured_domains, measured_purposes
 from .plan import (
+    allowed_purposes,
     build_dane_queries,
     build_plan,
     estimate_queries,
@@ -93,6 +94,24 @@ class MissingInputError(RuntimeError):
 
 class UnknownBackendError(RuntimeError):
     pass
+
+
+#: 他の答えに依らず1本で引ける種類。測り終えたドメインに後から足せる
+TOPUP_PURPOSES = frozenset({
+    QueryPurpose.DMARC_SUBDOMAIN,
+    QueryPurpose.DKIM_WILDCARD,
+    QueryPurpose.DKIM_CONTROL,
+    QueryPurpose.DKIM_PARENT,
+    QueryPurpose.MTA_STS,
+    QueryPurpose.TLS_RPT,
+    QueryPurpose.BIMI,
+})
+
+
+def _planned_for_tier(purpose: str, tier: str) -> bool:
+    """その階層の計画に入る種類か（`build_plan` と同じ区切り）。"""
+    c_tier = {QueryPurpose.DMARC_SUBDOMAIN, QueryPurpose.DKIM_WILDCARD}
+    return tier == MeasureTier.A or purpose in c_tier
 
 
 def make_backend(method: str, measure_cfg: dict):
@@ -242,10 +261,30 @@ def run(
         planned = len(targets)
         already: set[str] = set()
         resumed_rows = 0
+        topped_up = 0
         if resume:
             already, resumed_rows = measured_domains(bronze_dir(run_id), method)
             if already:
-                targets = [t for t in targets if t["domain"] not in already]
+                # **後から足した種類だけを足す。** 測り終えたドメインでも、いまの
+                # 計画にある単独の問い合わせ（他の答えに依らないもの）が bronze に
+                # 無ければ、その種類だけを引く
+                seen = measured_purposes(bronze_dir(run_id), method)
+                kept = []
+                for t in targets:
+                    if t["domain"] not in already:
+                        kept.append(t)
+                        continue
+                    allowed = allowed_purposes(t["tier"], measure_cfg)
+                    missing = sorted(
+                        p for p in TOPUP_PURPOSES
+                        if (allowed is None or p in allowed)
+                        and p not in seen.get(t["domain"], set())
+                        and _planned_for_tier(p, t["tier"])
+                    )
+                    if missing:
+                        kept.append({**t, "only_purposes": missing})
+                        topped_up += 1
+                targets = kept
 
         manifest.counts.input = planned
 
@@ -281,6 +320,15 @@ def run(
                     f"同じ run の bronze に {len(already)} ドメインぶんが既にあったため"
                     "測り直していない。**「観測していない」のではなく"
                     "「前回の実行で観測済み」である**"
+                ),
+            )
+        if topped_up:
+            manifest.add_warning(
+                "TOPPED_UP_NEW_QUERY_TYPES",
+                count=topped_up,
+                message=(
+                    f"測り終えた {topped_up} ドメインに、後から計画に足した種類の"
+                    "問い合わせだけを引いて足した（測り直してはいない）"
                 ),
             )
         if resume and not already:
@@ -350,6 +398,27 @@ def run(
             """
             domain = target["domain"]
             out: list[tuple[object, object]] = []
+
+            only = target.get("only_purposes")
+            if only:
+                # 測り終えたドメインに、後から足した種類だけを足す
+                plan = [
+                    q
+                    for q in build_plan(
+                        domain,
+                        target["tier"],
+                        selectors=[],
+                        extras=extras,
+                        dkim_control=bool(dkim_cfg.get("negative_control", True)),
+                        dkim_wildcard=bool(dkim_cfg.get("wildcard_selector_probe", True)),
+                    )
+                    if q.purpose in only
+                ]
+                for query in restrict_to_configured(plan, target["tier"], measure_cfg):
+                    if stopping.is_set():
+                        return _Measured(domain, out, False, False, complete=False)
+                    out.append((query, backend.query(query)))
+                return _Measured(domain, out, False, False)
 
             # まず MX と SPF を引いて L2 のセレクタ推定に使う。
             # DANE の TLSA も MX ホストが分かってからでないと組めない。

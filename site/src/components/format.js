@@ -96,7 +96,7 @@ const L = {
     rSpf: "Publishes SPF",
     rDkim: "DKIM found among known selectors",
     rDkimNote: "not finding it is not proof it is unset",
-    rDkimOther: (n) => `not finding it is not proof it is unset (of those not found, ${n.toLocaleString()} domains have names under _domainkey, likely keys under selectors not tried)`,
+    rDkimOther: (n) => `not finding it is not proof it is unset (among domains without a key found, ${n.toLocaleString()} have names under _domainkey, likely keys under selectors not tried)`,
     rDkim2048: "of which every DKIM key is 2048 bits or longer",
     rDkim2048Note: (n1024, nShort) =>
       `by the shortest RSA key found: ${n1024} at 1024 bits, ${nShort} under 1024 bits`,

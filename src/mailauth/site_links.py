@@ -266,10 +266,26 @@ class SiteLinkSource:
                 cands.append(d)
             tasks.extend((company, d) for d in cands[: self.max_candidates])
 
-        # **公式サイトのドメインに MX が無い会社は、同じ名前の別の TLD も確かめる**
+        # **公式サイトのドメインに MX が無い会社は、同じ名前の別の TLD も確かめる。**
+        # リンク先より**先に**確かめる ── メールのドメインが1つも見つかって
+        # いない会社のための経路で、後ろに並べると持ち時間で読まれない
+        # （2026-11-07 の国内：247 社が対象で、持ち時間切れで 0 件だった）
+        def official_has_mx(company: SiteCompany) -> bool | None:
+            if self._over():
+                return None
+            try:
+                return bool(self.has_mx(company.official))
+            except Exception:  # noqa: BLE001 - 引けなければ見に行かない
+                return None
+
         sibling_tasks: set[tuple[str, str]] = set()
-        for company in items:
-            if self._over() or self.has_mx(company.official):
+        first: list[tuple[SiteCompany, str]] = []
+        for company, mx in zip(
+            items,
+            in_input_order(official_has_mx, items, concurrency=self.concurrency, window=256),
+            strict=True,
+        ):
+            if mx is not False:
                 continue
             sibs = [
                 d for d in sibling_candidates(company.official, company.country)
@@ -278,8 +294,9 @@ class SiteLinkSource:
             if sibs:
                 self.stats.sibling_checked += 1
             for d in sibs:
-                tasks.append((company, d))
+                first.append((company, d))
                 sibling_tasks.add((company.official, d))
+        tasks = first + tasks
 
         def check(task: tuple[SiteCompany, str]) -> str:
             company, domain = task

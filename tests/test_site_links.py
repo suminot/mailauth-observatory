@@ -217,3 +217,22 @@ def test_公式サイトに_MX_が無ければ同じ名前の別の_TLD_を商�
     assert src.siblings == {"global.canon": ["canon.co.jp"]}
     assert (src.stats.sibling_checked, src.stats.sibling_found) == (1, 1)
     assert "https://www.hasmx.com/" not in web.fetched
+
+
+def test_同じ名前の別の_TLD_はリンク先より先に確かめる():
+    """持ち時間が少なくても、メールのドメインが見つかっていない会社を先にする。"""
+    t = [0.0]
+    links = [f"https://www.link{i}.co.jp/" for i in range(10)]
+    pages = {"https://www.global.canon/": _page("キヤノン株式会社", links),
+             "https://www.canon.co.jp/": _page("キヤノン株式会社")}
+
+    def fetch(url):
+        t[0] += 1
+        return pages.get(url) or _page("株式会社別会社")
+
+    mx = {"canon.co.jp"} | {f"link{i}.co.jp" for i in range(10)}
+    src = SiteLinkSource(fetch, lambda d: d in mx, concurrency=1, budget_sec=4,
+                         clock=lambda: t[0])
+    src.discover([SiteCompany("global.canon", "キヤノン株式会社", None, "JP")])
+    assert src.siblings == {"global.canon": ["canon.co.jp"]}
+    assert src.stats.budget_skipped > 0

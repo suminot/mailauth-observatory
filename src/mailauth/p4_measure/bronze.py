@@ -216,6 +216,28 @@ def measured_domains(bronze_dir: Path, method: str) -> tuple[set[str], int]:
     return domains, rows
 
 
+def measured_purposes(bronze_dir: Path, method: str) -> dict[str, set[str]]:
+    """測り終えたドメインごとの、bronze にある用途（purpose）。
+
+    **同じ月に後から足した種類の問い合わせを、測り直さずに足すため。**
+    2026-11-07 に `_domainkey.<ドメイン>`（dkim_parent）を足したが、国内の
+    6,481 ドメインは同じ月の bronze を引き継いで測り直されず、新しい列は
+    2 ドメインにしか付かなかった。
+    """
+    root = Path(bronze_dir) / f"method={method}"
+    out: dict[str, set[str]] = {}
+    for part in sorted(root.glob("part-*.jsonl.zst")):
+        records, truncated = _read_tolerant(part)
+        if truncated and records:
+            last = str(records[-1].get("domain") or "")
+            records = [r for r in records if str(r.get("domain") or "") != last]
+        for r in records:
+            name = str(r.get("domain") or "")
+            if name:
+                out.setdefault(name, set()).add(str(r.get("purpose") or ""))
+    return out
+
+
 def iter_bronze_files(bronze_dir: Path) -> list[Path]:
     root = Path(bronze_dir)
     if not root.is_dir():
