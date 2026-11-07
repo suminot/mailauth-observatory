@@ -2789,7 +2789,7 @@ disney.com / thewaltdisneycompany.com）。
 - 公式サイトのドメインでは DKIM が見つからず、別のドメインで見つかる会社が 127 社
 - 「MX が無い」216 社は、メールのドメインをまだ見つけられていない候補。194 社は
   公式サイトのドメイン1つだけで MX が無い（キヤノン `global.canon`、富士通
-  `global.fujitsu`、商船三井 `mol.co.jp` など、ウェブとメールでドメインを分けている）
+  `global.fujitsu` など、ウェブとメールでドメインを分けている）
   - 公式サイトの mailto のドメイン：12 社で試して 0（問い合わせはフォーム）
   - **同じ名前の別の TLD**：20 社で試すと 14 社で MX のあるドメインがある
     （`canon.co.jp` `fujitsu.com` `zett.co.jp` …）。ただし `his.com` `mol.com` の
