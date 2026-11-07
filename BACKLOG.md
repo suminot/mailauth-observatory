@@ -2762,9 +2762,8 @@ disney.com / thewaltdisneycompany.com）。
   （Czybik ら、IMC 2023「Lazy Gatekeepers」：10 万を超えるドメインが 34.7%）。
   こちらは自分のレコードだけ（大手の送信基盤で全社が同じ大きさになるため）。
   展開した分布は別の列として足す余地がある
-- rua の宛先の質：雛形のままの宛先（`dmarc@example.com` など）、
-  宛先の集中（上位5社で約3割）
-- `p=reject` かつ rua がある（EasyDMARC の 2026 年の報告が使う厳しい基準）
+- ~~rua の雛形の宛先~~ **入れた**（`rua_placeholder_domains`、予約名だけ）。宛先の集中（上位5社で約3割）は未
+- ~~`p=reject` かつ rua がある~~ **入れた**（`reject_with_rua_domains`）
 - セレクタを知らずに DKIM を使っているかの手がかり：`_domainkey.<ドメイン>` が
   NOERROR（internet.nl）。応答を誤る DNS があるので補助の扱い
 - 同じ会社だけで比べる（両方の月に測った会社だけの差）。上場・上場廃止で

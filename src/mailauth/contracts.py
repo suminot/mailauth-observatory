@@ -962,6 +962,10 @@ class StatsOverall(_Model):
     #: 送信しているドメイン（sending_domains）のうち、大口送信者の要件のうち
     #: DNS で見られる部分：SPF が評価できる / DKIM を検出 / DMARC が有効 / 3つとも
     #: DMARC に np=（存在しないサブドメインへの方針、RFC 9989）がある
+    #: DMARC の rua の宛先に、例示用に予約されたドメイン（example.com など）がある
+    rua_placeholder_domains: int = 0
+    #: p=reject で、rua の宛先がある（雛形の宛先は除く）
+    reject_with_rua_domains: int = 0
     dmarc_np_domains: int = 0
     #: DMARC に t=y（試行中。受け手は1段弱く扱う、RFC 9989）がある
     dmarc_testing_domains: int = 0
@@ -1068,6 +1072,8 @@ _STATS_METRIC_FIELDS: list[tuple[str, pa.DataType]] = [
     ("dkim_ed25519_only_domains", pa.int32()),
     ("dmarc_historic_tags_domains", pa.int32()),
     ("spf_ip4_broad_domains", pa.int32()),
+    ("rua_placeholder_domains", pa.int32()),
+    ("reject_with_rua_domains", pa.int32()),
     ("dmarc_np_domains", pa.int32()),
     ("dmarc_testing_domains", pa.int32()),
     ("bulk_spf_ok_domains", pa.int32()),

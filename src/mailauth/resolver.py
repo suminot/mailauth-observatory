@@ -267,6 +267,23 @@ class DnsResolver:
         """
         started = time.monotonic()
         rdtype = dns.rdatatype.from_text(rtype)
+        # **DNS の名前として書けないものは問い合わせずに返す。** 米国 2026-11-07
+        # の P3 が `dns.name.BadEscape`（`\999` のような書き方）1件で丸ごと
+        # 止まった。名前が無いのではなく「引けなかった」として返す（原則5）
+        try:
+            dns.name.from_text(name)
+        except dns.exception.DNSException as exc:
+            self._bump("bad_names")
+            self._note_error("BADNAME", f"{type(exc).__name__}: {name[:80]!r}")
+            return DnsAnswer(
+                name=name,
+                rtype=rtype,
+                observed=False,
+                record_present=None,
+                rcode="BADNAME",
+                error=f"DNS の名前として書けない: {type(exc).__name__}"[:300],
+                duration_ms=_ms(started),
+            )
         last_error: str | None = None
         last_rcode = "TIMEOUT"
 

@@ -191,6 +191,8 @@ display(
           { 区分: "DMARC を出している", ドメイン: current?.dmarc_adopted_domains },
           { 区分: "うち rua（集計レポートの宛先）が無い", ドメイン: current?.dmarc_no_rua_domains },
           { 区分: "うち p=none で rua も無い", ドメイン: current?.dmarc_none_no_rua_domains },
+          { 区分: "うち rua の宛先が example.com などの例示用の名前", ドメイン: current?.rua_placeholder_domains ?? "未集計" },
+          { 区分: "うち p=reject で rua がある", ドメイン: current?.reject_with_rua_domains ?? "未集計" },
         ],
         { sort: null }
       )
@@ -202,6 +204,10 @@ display(
 - 見ているのは主ドメインの `_dmarc` だけです。レポートを別の仕組み（受け手の
   管理画面など）で見ている会社もあります
 - `ruf=`（失敗の個別レポート）の有無は見ていません
+- 「例示用の名前」は、例に使うために予約された名前（`example.com`
+  `example.net` `example.org` と、`.example` `.test` `.invalid` `.localhost`）
+  だけです。設定の雛形を写したままと思われますが、`yourdomain.com` のように
+  誰かが登録していることのある名前は数えていません
 
 </div>
 

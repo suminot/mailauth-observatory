@@ -198,6 +198,8 @@ display(
           { Category: "publishes DMARC", Domains: current?.dmarc_adopted_domains },
           { Category: "of which rua (aggregate report destination) is absent", Domains: current?.dmarc_no_rua_domains },
           { Category: "of which p=none with no rua", Domains: current?.dmarc_none_no_rua_domains },
+          { Category: "of which rua points to a name reserved for examples (example.com etc.)", Domains: current?.rua_placeholder_domains ?? "not counted" },
+          { Category: "of which p=reject with rua", Domains: current?.reject_with_rua_domains ?? "not counted" },
         ],
         { sort: null }
       )
@@ -209,6 +211,10 @@ display(
 - Only the `_dmarc` record of the main domain is read. Some companies see
   reports through other means, such as a receiver's dashboard
 - Whether `ruf=` (individual failure reports) is present is not checked
+- "Names reserved for examples" are only `example.com`, `example.net`,
+  `example.org` and the `.example`, `.test`, `.invalid` and `.localhost`
+  names. These look like a template copied as is; names such as
+  `yourdomain.com`, which someone may have registered, are not counted
 
 </div>
 

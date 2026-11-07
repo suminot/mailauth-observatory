@@ -104,6 +104,21 @@ TXT_UDP_SAFE_BYTES = 1232
 SPF_IP4_BROAD = 65536
 
 
+#: 例示用に予約された名前（RFC 2606・RFC 6761）。**これだけを雛形とみなす。**
+#: `yourdomain.com` のような名前は誰かが登録していることがあり、断定できない
+_RESERVED_EXAMPLE = frozenset({"example.com", "example.net", "example.org"})
+_RESERVED_TLDS = frozenset({"example", "invalid", "test", "localhost"})
+
+
+def is_placeholder_domain(domain: str) -> bool:
+    d = domain.strip().lower().rstrip(".")
+    if not d:
+        return False
+    if d in _RESERVED_EXAMPLE or any(d.endswith("." + x) for x in _RESERVED_EXAMPLE):
+        return True
+    return d.rsplit(".", 1)[-1] in _RESERVED_TLDS
+
+
 def _spf_usable(r) -> bool:
     """SPF があり、評価がエラーで終わらない（2つある・上限超えを除く）。"""
     return (
@@ -182,6 +197,8 @@ class DomainRow:
     dkim_min_key_bits: int | None = None
     #: DMARC の rua= に宛先が1つでもあるか
     dmarc_has_rua: bool = False
+    #: rua の宛先に、例示用に予約されたドメイン（RFC 2606・6761）がある
+    rua_placeholder: bool = False
 
     @classmethod
     def from_fact(cls, fact: dict) -> DomainRow:
@@ -234,6 +251,8 @@ class DomainRow:
             dmarc_multiple_records=_truthy(fact.get("dmarc_multiple_records")),
             dkim_min_key_bits=_min_int(fact.get("dkim_key_bits")),
             dmarc_has_rua=_nonempty(fact.get("dmarc_rua")),
+            rua_placeholder=_nonempty(fact.get("dmarc_rua"))
+            and any(is_placeholder_domain(str(d)) for d in fact.get("dmarc_rua")),
         )
 
     @property
@@ -397,6 +416,17 @@ def aggregate(
         # 分からない。p=none（観察する方針）でこれだと、観察もしていない
         dmarc_no_rua_domains=sum(
             1 for r in observed if r.dmarc_present and not r.dmarc_has_rua
+        ),
+        # rua の宛先が雛形のまま（例示用に予約されたドメイン）。レポートは誰にも届かない
+        rua_placeholder_domains=sum(
+            1 for r in observed if r.dmarc_present and r.rua_placeholder
+        ),
+        # **p=reject で、集計レポートも受け取っている**（EasyDMARC の報告の基準）
+        reject_with_rua_domains=sum(
+            1
+            for r in observed
+            if r.dmarc_present and not r.dmarc_multiple_records and r.dmarc_p == "reject"
+            and r.dmarc_has_rua and not r.rua_placeholder
         ),
         dmarc_none_no_rua_domains=sum(
             1
