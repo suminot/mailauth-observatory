@@ -406,6 +406,21 @@ jobs:
         # 確かめ終えて「補充」がまだ終わっていない実行だけを数える
         # （月次計測を見て止めた実行は「補充」が skipped で終わる）
         run: |
+          # **crt.sh を使わない母集団は待たない。** グループ会社（BACKLOG 52）は
+          # candidates.yaml の per_population で CT を切っている。待つと P2 の前で
+          # 24 分止まった（2026-11-07、P2 そのものは 6 分）
+          uses_ct=$(python - <<'PY'
+          import yaml
+          cfg = yaml.safe_load(open("configs/candidates.yaml", encoding="utf-8"))
+          over = ((cfg.get("per_population") or {}).get("${{ steps.run.outputs.pop }}") or {})
+          disc = {**(cfg.get("discovery") or {}), **(over.get("discovery") or {})}
+          print("1" if disc.get("ct_log") or disc.get("ct_org") else "0")
+          PY
+          )
+          if [ "$uses_ct" = "0" ]; then
+            echo "この母集団は crt.sh を使わないので、CT の補充を待たない" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           busy() {
             local n=0 id
             for id in $(gh run list --repo "$GITHUB_REPOSITORY" --workflow ct-backfill.yml \
