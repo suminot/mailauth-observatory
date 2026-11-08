@@ -8,7 +8,7 @@
 `configs/worklist/unidentified_hosts.yaml` に理由を書いて作業リストから外してください。
 **「調べたが分からなかった」は結論であって、無かったことにはしません。**
 
-## 手を付けるもの（70 件）
+## 手を付けるもの（73 件）
 
 | 登録ドメイン | 件数 | 連続月 | 例 |
 |---|---|---|---|
@@ -22,6 +22,7 @@
 | `exacttarget.com` | 4 | 1 | `reply.s12.exacttarget.com`, `reply.s11.exacttarget.com` |
 | `fsi.ne.jp` | 4 | 1 | `sagw.fsi.ne.jp`, `argw.fsi.ne.jp` |
 | `thalesgroup.com` | 4 | 1 | `mx01.thalesgroup.com`, `mx02.thalesgroup.com` |
+| `hetemail.jp` | 3 | 1 | `mx.hetemail.jp` |
 | `mitene.jp` | 3 | 1 | `mx-1.mitene.jp`, `mx-0.mitene.jp`, `mx.mitene.jp` |
 | `msaas.jp` | 3 | 1 | `mail-mgcm.msaas.jp`, `mail-mgcm04.msaas.jp` |
 | `mxthunder.net` | 3 | 1 | `tsukuba-milk-co-jp.p30.mxthunder.net`, `tsukuba-milk-co-jp.p40.mxthunder.net`, `tsukuba-milk-co-jp.p20.mxthunder.net` |
@@ -29,6 +30,7 @@
 | `smbcnikko.co.jp` | 3 | 1 | `y1maildrv11.mail.smbcnikko.co.jp`, `y1maildrv12.mail.smbcnikko.co.jp`, `o1maildrv11.mail.smbcnikko.co.jp` |
 | `twex.jp` | 3 | 1 | `mail.twex.jp` |
 | `wdb.com` | 3 | 1 | `mail3.wdb.com` |
+| `aams4.jp` | 2 | 1 | `mx-1.aams4.jp`, `mx-0.aams4.jp` |
 | `amazonaws.com` | 2 | 1 | `ksec-eelb-mail-nlb-prd-id-m1-9c8879efc4ddfbfa.elb.ap-northeast-1.amazonaws.com` |
 | `blks.jp` | 2 | 1 | `control-mail-mta01.blks.jp`, `control-mail-mta02.blks.jp` |
 | `daimaru.co.jp` | 2 | 1 | `maildns2.daimaru.co.jp`, `maildns1.daimaru.co.jp` |
@@ -46,6 +48,7 @@
 | `zaq.ne.jp` | 2 | 1 | `mgw1.mx.zaq.ne.jp`, `mgw2.mx.zaq.ne.jp` |
 | `aeon-ecbo.biz` | 1 | 1 | `mm-mail.aeon-ecbo.biz` |
 | `aics.ne.jp` | 1 | 1 | `amxi.aics.ne.jp` |
+| `anshin-sv.jp` | 1 | 1 | `wps101r.anshin-sv.jp` |
 | `casio.jp` | 1 | 1 | `mnm1.casio.jp` |
 | `coda.ne.jp` | 1 | 1 | `mx1.coda.ne.jp` |
 | `ctc.ad.jp` | 1 | 1 | `mail2.dc.ctc.ad.jp` |
@@ -58,7 +61,6 @@
 | `gmogaika.com` | 1 | 1 | `mx.gmogaika.com` |
 | `gol.com` | 1 | 1 | `mx.mail.gol.com` |
 | `google.com` | 1 | 1 | `alt5.aspmx.l.google.com` |
-| `hetemail.jp` | 1 | 1 | `mx.hetemail.jp` |
 | `hikari.co.jp` | 1 | 1 | `mprg.hikari.co.jp` |
 | `hoshizaki-tokai.sakura.ne.jp` | 1 | 1 | `hoshizaki-tokai.sakura.ne.jp` |
 | `hostmasteris.me` | 1 | 1 | `adpub.hostmasteris.me` |
@@ -66,6 +68,7 @@
 | `imatrix.co.jp` | 1 | 1 | `mxacloud02.imatrix.co.jp` |
 | `joetsu-p.co.jp` | 1 | 1 | `mail.joetsu-p.co.jp` |
 | `jpserve.jp` | 1 | 1 | `mailsecurity.jpserve.jp` |
+| `ktk-sol.co.jp` | 1 | 1 | `mx.ktk-sol.co.jp` |
 | `mail.toray` | 1 | 1 | `igw-jp-mt.mail.toray` |
 | `mailslurp.com` | 1 | 1 | `mx.mailslurp.com` |
 | `marketingsuite.jp` | 1 | 1 | `ims.marketingsuite.jp` |
