@@ -25,9 +25,13 @@ on:
         description: "実行ID（YYYY-MM）。既定は当月"
         required: false
       certspotter_requests:
-        description: "CertSpotter に投げる本数の上限（鍵なしは1時間に10本まで）"
+        description: "CertSpotter の名前1つの検索の本数の上限（Small プランは1時間に 100 本）"
         required: false
-        default: "9"
+        default: "100"
+      certspotter_sub_requests:
+        description: "CertSpotter のサブドメイン込みの検索の本数の上限（Small プランは1時間に 10 本）"
+        required: false
+        default: "10"
 
 concurrency:
   # 補充どうしが同じキャッシュを書き合わないように
@@ -123,6 +127,27 @@ jobs:
           restore-keys: |
             crtsh-${{ steps.run.outputs.id }}-
 
+      # **CertSpotter でサブドメインの名前を取る順番が無ければ、silver から作る**
+      # （BACKLOG 52）。次の月からは P2 が書く。日経225 の会社を前に置く
+      - name: サブドメインの名前を取る順番を用意する
+        if: steps.busy.outputs.mode != 'skip'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          M="${{ steps.run.outputs.id }}"
+          for POP in jp-all-listed us-all-listed; do
+            [ -f "data/cache/crtsh/month=$M/_mail_queue/$POP.json" ] && continue
+            NAME="silver-$POP-$M"
+            RUN=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$NAME&per_page=20" \
+                    --jq '[.artifacts[] | select(.expired | not) | .workflow_run.id] | .[0] // empty')
+            [ -n "$RUN" ] || continue
+            TMP=$(mktemp -d)
+            gh run download "$RUN" --repo "$GITHUB_REPOSITORY" -n "$NAME" -D "$TMP" || continue
+            mailauth ct-mail-queue --run "$M" --entities "$TMP/p1_population/entities.parquet" \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+          done
+
       # **組織名だけの回は 15 分で切り上げる。** 次の月次計測の P2 は、crt.sh を
       # 倍の頻度で叩かないよう、この工程が終わるのを待つ。長く走ると計測が止まる
       - name: 補充
@@ -134,12 +159,14 @@ jobs:
           if [ "${{ steps.busy.outputs.mode }}" = "org" ]; then ORG_ONLY="--org-only"; MINUTES=15; fi
           mailauth ct-backfill --run "${{ steps.run.outputs.id }}" $ORG_ONLY \
             --max-minutes "$MINUTES" \
-            --certspotter-requests "${{ github.event.inputs.certspotter_requests || '9' }}" \
+            --certspotter-requests "${{ github.event.inputs.certspotter_requests || '100' }}" \
+            --certspotter-sub-requests "${{ github.event.inputs.certspotter_sub_requests || '10' }}" \
             > /tmp/backfill.json
           cat /tmp/backfill.json
           # **組織名検索で取れた分も数える。** 数えないと、組織名だけ取れた回で
           # キャッシュを保存しない（下の「保存」は got が 0 だと動かない）
-          got=$(jq '[.crtsh.got // 0, .certspotter.got // 0, .crtsh_org.got // 0] | add' /tmp/backfill.json)
+          # CertSpotter でサブドメインの名前を取ったページも数える（キャッシュを書き換える）
+          got=$(jq '[.crtsh.got // 0, .certspotter.got // 0, .crtsh_org.got // 0, .certspotter_sub.pages // 0] | add' /tmp/backfill.json)
           echo "got=$got" >> "$GITHUB_OUTPUT"
           echo "ready=$(jq -r '.ready_for_rerun | join(" ")' /tmp/backfill.json)" >> "$GITHUB_OUTPUT"
           echo "pending=$(jq '([.populations[].pending_after // 0] | add // 0) + (.crtsh_org.pending_after // 0)' /tmp/backfill.json)" >> "$GITHUB_OUTPUT"
