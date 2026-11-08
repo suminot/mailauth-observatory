@@ -1077,3 +1077,30 @@ def test_crtshで名前まで取った月はサブドメインの検索をしな
 
     stats = subdomain_names_pass(_certspotter(tmp_path, handler), tmp_path, MONTH)
     assert stats["requests"] == 0
+
+
+def test_certspotterだけで埋める積み残しはcrtshに投げない(tmp_path):
+    """グループ会社の起点（`via: certspotter`）は CertSpotter の名前1つの検索で埋める。"""
+    from mailauth.ctlog import backfill, read_pending, write_pending
+
+    write_pending(tmp_path, MONTH, "jp-all-listed-group", ["ko.example.jp"], total=1,
+                  via="certspotter")
+
+    class NoCrtSh:
+        concurrency = 1
+        upstream_down = False
+
+        def prefetch(self, batch, **kw):  # pragma: no cover - 呼ばれない
+            raise AssertionError("crt.sh に投げない")
+
+        def response_stats(self):
+            return {}
+
+    def handler(request):
+        assert request.url.params["include_subdomains"] == "false"
+        return httpx.Response(200, json=[_issuance(1, "ko.example.jp", "ko-brand.jp")])
+
+    cs = _certspotter(tmp_path, handler, include_subdomains=False)
+    report = backfill(tmp_path, MONTH, crtsh=NoCrtSh(), certspotter=cs)
+    assert report.certspotter["got"] == 1
+    assert read_pending(pending_path(tmp_path, MONTH, "jp-all-listed-group"))["pending"] == []

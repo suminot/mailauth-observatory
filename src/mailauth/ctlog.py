@@ -759,6 +759,48 @@ def _extract(domain: str, rows: list[dict]) -> CtResult:
                     mail_names=_collect_mail_names(names_seen, own_apex))
 
 
+class CacheOnlyCt:
+    """**月のキャッシュだけを読む** CT の取得口（取りにいかない）。
+
+    グループ会社（BACKLOG 52）は起点が千を超え、crt.sh（0.5 qps・応答 1 本 1 分前後）
+    で引くと P2 が終わらない。キャッシュは補充が CertSpotter の名前1つの検索（100 本/時
+    の枠）で埋める。キャッシュに無い起点は error_kind="not_cached" で返し、P2 は
+    積み残し（`via: certspotter`）として書く。
+    """
+
+    def __init__(self, cache_dir: Path, month: str) -> None:
+        self.cache_dir = cache_dir
+        self.month = month
+        self.upstream_down = False
+
+    def _path(self, domain: str) -> Path:
+        return self.cache_dir / f"month={self.month}" / f"{domain.replace('/', '_')}.json"
+
+    def search(self, domain: str) -> CtResult:
+        path = self._path(domain)
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return CtResult(domain=domain, error="月のキャッシュに無い", error_kind="not_cached")
+        return CtResult(
+            domain=domain,
+            found=payload.get("found", []),
+            raw_names=payload.get("raw_names", 0),
+            mail_names=payload.get("mail_names", []),
+            from_cache=True,
+            cache_month=payload.get("month"),
+            source=payload.get("source", "crtsh"),
+        )
+
+    def prefetch(self, domains, *, on_result=None) -> dict[str, CtResult]:
+        out = {}
+        for d in domains:
+            out[d] = self.search(d)
+            if on_result is not None:
+                on_result(d, out[d])
+        return out
+
+
 class StaticCtSource:
     """テスト用。ネットワークに出ない。"""
 
@@ -873,8 +915,13 @@ def write_pending(
     total: int,
     config: str | None = None,
     now: str | None = None,
+    via: str | None = None,
 ) -> Path:
-    """P2 が取れなかった起点ドメインを書く。**流し直しの回数は引き継ぐ。**"""
+    """P2 が取れなかった起点ドメインを書く。**流し直しの回数は引き継ぐ。**
+
+    `via="certspotter"` の積み残しは、補充が crt.sh を使わず CertSpotter の名前1つの
+    検索だけで埋める（グループ会社）。
+    """
     path = pending_path(cache_dir, month, population)
     before = read_pending(path)
     payload = {
@@ -888,6 +935,8 @@ def write_pending(
         # 補充が済んで流し直しを頼んだ回数。**頼み続けない**ための数
         "reruns_requested": int(before.get("reruns_requested", 0)),
     }
+    if via:
+        payload["via"] = via
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
     return path
@@ -1350,10 +1399,14 @@ def backfill(
     paths = [] if org_only else list_pending(cache_dir, month)
     files = {p: read_pending(p) for p in paths}
     wanted: list[str] = []
+    #: crt.sh を使わず CertSpotter だけで埋める起点（`via: certspotter`、グループ会社）
+    cs_only: set[str] = set()
     for payload in files.values():
         for d in payload.get("pending", []):
             if d not in wanted:
                 wanted.append(d)
+            if payload.get("via") == "certspotter":
+                cs_only.add(d)
 
     got: set[str] = set()
 
@@ -1364,7 +1417,8 @@ def backfill(
     remaining = [d for d in wanted if not _cached(d)]
     got.update(d for d in wanted if _cached(d))
 
-    if crtsh is not None and remaining:
+    crtsh_remaining = [d for d in remaining if d not in cs_only]
+    if crtsh is not None and crtsh_remaining:
         tried = 0
         # **応答待ちだけを重ねる**（P2 と同じ `prefetch`）。1本ずつ待つと、
         # 応答の中央値 11 秒に対して qps 0.5 の上限の1割も使えず、1回 45 分で
@@ -1372,12 +1426,12 @@ def backfill(
         # まま全スレッドで共有するので、crt.sh から見た本数は変わらない。
         # 持ち時間と「落ちている」の判定は、同時本数ぶんの塊ごとに見る
         chunk = max(int(getattr(crtsh, "concurrency", 1)), 1)
-        for start in range(0, len(remaining), chunk):
+        for start in range(0, len(crtsh_remaining), chunk):
             if deadline is not None and time.monotonic() > deadline:
                 break
             if crtsh.upstream_down:
                 break
-            batch = remaining[start : start + chunk]
+            batch = crtsh_remaining[start : start + chunk]
             for domain, result in crtsh.prefetch(batch).items():
                 # 落ちていると見切った後の分は投げていない。本数に数えない
                 if result.error_kind != "upstream_down":
@@ -1386,7 +1440,7 @@ def backfill(
                     got.add(domain)
         report.crtsh = {
             "tried": tried,
-            "got": sum(1 for d in remaining if d in got),
+            "got": sum(1 for d in crtsh_remaining if d in got),
             "upstream_down": crtsh.upstream_down,
             "response": crtsh.response_stats(),
         }

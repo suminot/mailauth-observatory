@@ -493,11 +493,12 @@ def run(
         # （jp-all-listed-group）は数が多く、CT やリンク先を読むと P2 が終わらない
         override = (cfg.get("per_population") or {}).get(_population_of(entities)) or {}
         if override:
-            for key in ("discovery", "limits", "subdomains"):
+            for key in ("discovery", "limits", "subdomains", "ct"):
                 if isinstance(override.get(key), dict):
                     cfg[key] = {**(cfg.get(key) or {}), **override[key]}
             discovery = cfg.get("discovery", {})
             limits = cfg.get("limits", {})
+            ct_cfg = cfg.get("ct", {})
             manifest.set_breakdown(per_population_override=sorted(
                 f"{k}.{kk}" for k, v in override.items() if isinstance(v, dict) for kk in v
             ))
@@ -540,6 +541,12 @@ def run(
                     "**「証明書が無かった」ではなく「引いていない」**（原則5）"
                 ),
             )
+        #: **キャッシュだけを読む**（グループ会社。補充が CertSpotter で埋める）
+        ct_cache_only = bool(ct_cfg.get("cache_only"))
+        if ct_source is None and ct_cache_only and discovery.get("ct_log"):
+            from ..ctlog import CacheOnlyCt
+
+            ct_source = CacheOnlyCt(cache_root() / "crtsh", run_id)
         if ct_source is None:
             ct_source = (
                 CrtShClient(
@@ -968,7 +975,11 @@ def run(
                             ct_stats["stale_cache"] += 1
                         if getattr(ct, "source", "crtsh") == "certspotter":
                             ct_stats["from_certspotter"] += 1
-                    if ct.error:
+                    if ct.error and ct.error_kind == "not_cached":
+                        # 取りにいっていない（キャッシュだけを読む母集団）。失敗ではない。
+                        # 積み残しとして書き、補充が埋める
+                        ct_stats["not_cached"] = ct_stats.get("not_cached", 0) + 1
+                    elif ct.error:
                         ct_stats["errors"] += 1
                         # **失敗を一語にまとめない。** 時間切れなら待ち方、
                         # HTTP エラーなら頼み方を変えることになる
@@ -1384,6 +1395,7 @@ def run(
                 pending,
                 total=len(all_seeds),
                 config=f"configs/populations/{population}.yaml",
+                via="certspotter" if ct_cache_only else None,
             )
             manifest.set_breakdown(
                 ct_pending={
