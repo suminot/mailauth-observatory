@@ -388,12 +388,16 @@ def test_流し直しを頼んだ記録は保存より前に書く():
 
 
 def test_補充は相手の上限の内側で投げる():
-    """CertSpotter の鍵なしは1時間に10本。毎時9本までなら内側。"""
+    """CertSpotter の Small プランは、名前1つの検索が1時間に 100 本、サブドメイン込みの
+    検索が 10 本（2026-11-08 に確認）。既定値をその内側にし、使い切ったら止める
+    （`x-ratelimit-remaining` が 0・HTTP 429）。"""
     wf = _workflow()
     on = wf.get("on") or wf.get(True)
     minute, hour = on["schedule"][0]["cron"].split()[:2]
     assert minute.isdigit() and hour == "*", "1時間に1回より多く動かさない"
-    assert on["workflow_dispatch"]["inputs"]["certspotter_requests"]["default"] == "9"
+    inputs = on["workflow_dispatch"]["inputs"]
+    assert int(inputs["certspotter_requests"]["default"]) <= 100
+    assert int(inputs["certspotter_sub_requests"]["default"]) <= 10
     text = str(_steps()[_index("補充")]["run"])
     assert "--certspotter-requests" in text
     # **IP や経路を変えて制限をすり抜けない**
@@ -989,3 +993,87 @@ def test_crtshを使わない母集団は補充を待たない():
                              capture_output=True, text=True, cwd=repo_root())
         assert ("WAITS" in out.stdout) is waits, (pop, out.stdout, out.stderr)
         assert ("待たない" in out.stdout) is not waits
+
+
+# -- CertSpotter の2つの枠（Small プラン、2026-11-08） -----------------------------
+
+
+def test_起点の補充は名前1つの検索の枠を使う(tmp_path):
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["include_subdomains"] == "false"
+        assert request.url.params["match_wildcards"] == "true"
+        return httpx.Response(200, json=[_issuance(1, "example.co.jp", "brand.jp")],
+                              headers={"x-ratelimit-limit": "100",
+                                       "x-ratelimit-remaining": "99"})
+
+    cs = _certspotter(tmp_path, handler, include_subdomains=False)
+    assert cs.search("example.co.jp").found == ["brand.jp", "example.co.jp"]
+    assert cs.limit_seen == 100
+
+
+def test_サブドメインの名前は1本1ページずつ順番の前から引き続きを覚える(tmp_path):
+    import json
+
+    from mailauth.ctlog import (
+        CERTSPOTTER_PAGE_SIZE,
+        subdomain_names_pass,
+        write_mail_queue,
+    )
+
+    base = tmp_path / f"month={MONTH}"
+    base.mkdir(parents=True)
+    for d in ("first.co.jp", "second.co.jp"):
+        (base / f"{d}.json").write_text(json.dumps({"found": [d], "month": MONTH,
+                                                    "source": "crtsh"}))
+    write_mail_queue(tmp_path, MONTH, "jp-all-listed",
+                     ["first.co.jp", "second.co.jp", "notcached.co.jp"])
+    calls: list[tuple[str, str | None]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        d = request.url.params["domain"]
+        after = request.url.params.get("after")
+        calls.append((d, after))
+        assert request.url.params["include_subdomains"] == "true"
+        if d == "first.co.jp" and after is None:
+            rows = [_issuance(i, f"host{i}.first.co.jp") for i in range(CERTSPOTTER_PAGE_SIZE - 1)]
+            rows.append(_issuance(999, "news.first.co.jp", "mail2.first.co.jp"))
+            return httpx.Response(200, json=rows, headers={"x-ratelimit-limit": "10"})
+        if d == "first.co.jp":
+            return httpx.Response(200, json=[_issuance(1000, "em.first.co.jp", "x.other.jp")])
+        return httpx.Response(200, json=[_issuance(5, "info.second.co.jp")])
+
+    cs = _certspotter(tmp_path, handler, max_requests=2)
+    stats = subdomain_names_pass(cs, tmp_path, MONTH)
+    # まだ1ページも引いていないドメインを先に（続きは後回し）
+    assert calls == [("first.co.jp", None), ("second.co.jp", None)]
+    first = json.loads((base / "first.co.jp.json").read_text())
+    assert first["mail_names"] == ["mail2.first.co.jp", "news.first.co.jp"]
+    assert first["cs_sub_after"] == "1999" and not first.get("cs_sub_done")
+    second = json.loads((base / "second.co.jp.json").read_text())
+    assert second["cs_sub_done"] and second["mail_names"] == ["info.second.co.jp"]
+    assert stats["queue_left"] == 1 and stats["ratelimit_limit"] == 10
+
+    # 次の回は続きから
+    cs2 = _certspotter(tmp_path, handler, max_requests=5)
+    subdomain_names_pass(cs2, tmp_path, MONTH)
+    first = json.loads((base / "first.co.jp.json").read_text())
+    assert first["cs_sub_done"] and "em.first.co.jp" in first["mail_names"]
+    assert "other.jp" in first["found"]
+
+
+def test_crtshで名前まで取った月はサブドメインの検索をしない(tmp_path):
+    import json
+
+    from mailauth.ctlog import subdomain_names_pass, write_mail_queue
+
+    base = tmp_path / f"month={MONTH}"
+    base.mkdir(parents=True)
+    (base / "a.co.jp.json").write_text(json.dumps({"found": ["a.co.jp"], "mail_names": [],
+                                                   "month": MONTH, "source": "crtsh"}))
+    write_mail_queue(tmp_path, MONTH, "jp-all-listed", ["a.co.jp"])
+
+    def handler(request):  # pragma: no cover - 呼ばれない
+        raise AssertionError("引かない")
+
+    stats = subdomain_names_pass(_certspotter(tmp_path, handler), tmp_path, MONTH)
+    assert stats["requests"] == 0

@@ -164,9 +164,22 @@ def ct_backfill_cmd(
         int,
         typer.Option(
             "--certspotter-requests",
-            help="CertSpotter に投げる本数の上限。鍵なしは1時間に10本まで。0 で使わない",
+            help=(
+                "CertSpotter の名前1つの検索の本数の上限（Small プランは1時間に 100 本）。"
+                "0 で使わない"
+            ),
         ),
-    ] = 9,
+    ] = 100,
+    certspotter_sub_requests: Annotated[
+        int,
+        typer.Option(
+            "--certspotter-sub-requests",
+            help=(
+                "CertSpotter のサブドメイン込みの検索の本数の上限（Small プランは1時間に"
+                " 10 本）。メール用らしいサブドメインの名前を取る。0 で使わない"
+            ),
+        ),
+    ] = 10,
     mark_rerun: Annotated[
         str | None,
         typer.Option("--mark-rerun", help="この母集団の流し直しを頼んだと記録して終わる"),
@@ -233,8 +246,21 @@ def ct_backfill_cmd(
             month=run_id,
             api_key=certspotter_key,
             max_requests=certspotter_requests,
+            # 起点ドメインの補充は名前1つの検索（100 本/時の枠）で足りる
+            include_subdomains=False,
         )
         if certspotter_requests > 0 and certspotter_key
+        else None
+    )
+    # サブドメインの名前はもう1つの枠（サブドメイン込みの検索、10 本/時）で取る
+    certspotter_sub = (
+        CertSpotterClient(
+            cache_dir=cache_dir,
+            month=run_id,
+            api_key=certspotter_key,
+            max_requests=certspotter_sub_requests,
+        )
+        if certspotter_sub_requests > 0 and certspotter_key
         else None
     )
     if certspotter_requests > 0 and not certspotter_key:
@@ -251,8 +277,49 @@ def ct_backfill_cmd(
         certspotter=None if org_only else certspotter,
         deadline=time.monotonic() + max_minutes * 60,
         org_only=org_only,
+        certspotter_sub=certspotter_sub,
     )
     typer.echo(json.dumps(report.to_dict(), ensure_ascii=False, indent=1))
+
+
+@app.command("ct-mail-queue")
+def ct_mail_queue_cmd(
+    entities: Annotated[str, typer.Option("--entities", help="P1 の entities.parquet（silver）")],
+    run: RunOption = "",
+) -> None:
+    """CertSpotter でサブドメインの名前を取る順番を、silver の企業一覧から書く。
+
+    次の月からは P2 が書く。**その月の P2 が済んだあと**に順番を作るためのもの
+    （日経225 の会社の公式サイトを前に置く）。
+    """
+    import pandas as pd
+
+    from .ctlog import write_mail_queue
+    from .normalize import normalize_securities_code
+    from .p1_population.index_members import load_derived
+    from .paths import cache_root
+
+    run_id = validate_run_id(run or default_run_id())
+    df = pd.read_parquet(entities)
+    pops = {str(p) for v in df.get("population_ids", []) for p in (v if v is not None else [])}
+    population = sorted(pops)[0] if len(pops) == 1 else "mixed"
+    first: set[str] = set()
+    for d in load_derived():
+        if d.parent == population and d.match == "securities_code":
+            first |= d.codes()
+    ranked = []
+    for n, (_, row) in enumerate(df.iterrows()):
+        dom = row.get("official_domain")
+        if not isinstance(dom, str) or not dom or row.get("status") == "delisted":
+            continue
+        sec = row.get("securities_code")
+        code = normalize_securities_code(sec if isinstance(sec, str) else None)
+        ranked.append((0 if code in first else 1, n, dom))
+    path = write_mail_queue(cache_root() / "crtsh", run_id, population,
+                            [d for _, _, d in sorted(ranked)])
+    typer.echo(json.dumps({"population": population, "domains": len(ranked),
+                           "first": sum(1 for r in ranked if r[0] == 0), "path": str(path)},
+                          ensure_ascii=False))
 
 
 @app.command("p3-domains")

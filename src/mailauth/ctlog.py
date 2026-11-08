@@ -912,6 +912,145 @@ def write_org_pending(cache_dir: Path, month: str, population: str, names: Itera
     return path
 
 
+MAIL_QUEUE_DIRNAME = "_mail_queue"
+#: サブドメインの名前を、1ドメインあたり何ページまで引くか（1ページ = 枠の1本）
+SUB_MAX_PAGES = 5
+#: 1ドメインで残すメール用らしい名前の上限（ページをまたいで）
+SUB_MAX_NAMES = 50
+
+
+def mail_queue_path(cache_dir: Path, month: str, population: str) -> Path:
+    return cache_dir / f"month={month}" / MAIL_QUEUE_DIRNAME / f"{population}.json"
+
+
+def write_mail_queue(cache_dir: Path, month: str, population: str, domains: Iterable[str]) -> Path:
+    """CertSpotter でサブドメインの名前を取る順番（先に引きたい会社を前に）。"""
+    path = mail_queue_path(cache_dir, month, population)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"month": month, "population": population,
+               "domains": list(dict.fromkeys(d for d in domains if d))}
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+    return path
+
+
+def read_mail_queue(cache_dir: Path, month: str) -> list[str]:
+    base = cache_dir / f"month={month}" / MAIL_QUEUE_DIRNAME
+    out: list[str] = []
+    for p in sorted(base.glob("*.json")) if base.is_dir() else []:
+        try:
+            out.extend(json.loads(p.read_text(encoding="utf-8")).get("domains", []))
+        except (OSError, ValueError):
+            continue
+    return list(dict.fromkeys(out))
+
+
+def subdomain_names_pass(
+    certspotter: CertSpotterClient,
+    cache_dir: Path,
+    month: str,
+    *,
+    deadline: float | None = None,
+) -> dict:
+    """**CertSpotter のサブドメイン込みの検索で、メール用らしい名前を取る**（BACKLOG 52）。
+
+    crt.sh のキャッシュには登録ドメインしか残っておらず（#247 まで）、名前を取り
+    直すと crt.sh を同じ本数だけ叩くことになる。CertSpotter の Small プランは
+    サブドメイン込みの検索が 1 時間 10 本なので、**1本 = 1ページ**ずつ、順番の
+    一覧（P2 が日経225 の会社を前に置く）の前から進める。まだ1ページも引いて
+    いないドメインを先に、続きのあるドメインはその後に。進み具合（`cs_sub_after`・
+    `cs_sub_done`）は月の CT キャッシュに書くので、回をまたいで続きから引ける。
+
+    **月のキャッシュにあるドメインだけ**を扱う（無いドメインに書くと、crt.sh で
+    取ったことにしてしまう）。
+    """
+    from .tls_san import SHARED_CERT_LIMIT
+
+    base = cache_dir / f"month={month}"
+    queue = read_mail_queue(cache_dir, month)
+    stats = {"queue": len(queue), "requests": 0, "pages": 0, "domains_started": 0,
+             "domains_done": 0, "names_added": 0, "apexes_added": 0, "errors": 0}
+
+    def _load(domain: str) -> tuple[Path, dict] | None:
+        path = base / f"{domain.replace('/', '_')}.json"
+        if not path.is_file():
+            return None
+        try:
+            return path, json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+
+    def _todo() -> list[str]:
+        fresh, cont = [], []
+        for d in queue:
+            got = _load(d)
+            if got is None:
+                continue
+            payload = got[1]
+            if payload.get("cs_sub_done"):
+                continue
+            # crt.sh（`%.ドメイン`）で取った月は、名前も一緒に残っている（#247 以降）
+            if payload.get("source", "crtsh") == "crtsh" and "mail_names" in payload \
+                    and "cs_sub_pages" not in payload:
+                continue
+            pages = int(payload.get("cs_sub_pages") or 0)
+            if pages >= SUB_MAX_PAGES:
+                continue
+            (cont if payload.get("cs_sub_after") else fresh).append(d)
+        return fresh + cont
+
+    for domain in _todo():
+        if deadline is not None and time.monotonic() > deadline:
+            break
+        if certspotter.stopped or certspotter.requests >= certspotter.max_requests:
+            break
+        path, payload = _load(domain) or (None, None)
+        if path is None:
+            continue
+        after = payload.get("cs_sub_after")
+        rows, err = certspotter.page(domain, after)
+        stats["requests"] += 1
+        if rows is None:
+            if certspotter.stopped:
+                break
+            stats["errors"] += 1
+            continue
+        stats["pages"] += 1
+        if not after:
+            stats["domains_started"] += 1
+        own = etld_plus_one(domain)
+        names = list(payload.get("mail_names") or [])
+        found = list(payload.get("found") or [])
+        for row in rows:
+            fqdns = [str(f).strip().lstrip("*.").rstrip(".").lower()
+                     for f in (row.get("dns_names") or [])]
+            fqdns = [f for f in fqdns if f and " " not in f]
+            apexes = {a for a in (etld_plus_one(f) for f in fqdns) if a}
+            if len(apexes) > SHARED_CERT_LIMIT:
+                continue  # 共用の証明書（CDN）からは拾わない
+            for a in sorted(apexes):
+                if a not in found:
+                    found.append(a)
+                    stats["apexes_added"] += 1
+            for n in _collect_mail_names(fqdns, own):
+                if n not in names and len(names) < SUB_MAX_NAMES:
+                    names.append(n)
+                    stats["names_added"] += 1
+        payload["mail_names"] = sorted(names)
+        payload["found"] = sorted(found)
+        payload["cs_sub_pages"] = int(payload.get("cs_sub_pages") or 0) + 1
+        if len(rows) < CERTSPOTTER_PAGE_SIZE:
+            payload["cs_sub_done"] = True
+            payload.pop("cs_sub_after", None)
+            stats["domains_done"] += 1
+        else:
+            payload["cs_sub_after"] = str(rows[-1].get("id"))
+        path.write_text(json.dumps(payload), encoding="utf-8")
+    stats["queue_left"] = len(_todo())
+    stats["stopped"] = certspotter.stopped
+    stats["ratelimit_limit"] = certspotter.limit_seen
+    return stats
+
+
 def list_pending(cache_dir: Path, month: str) -> list[Path]:
     base = cache_dir / f"month={month}" / PENDING_DIRNAME
     return sorted(base.glob("*.json")) if base.is_dir() else []
@@ -952,8 +1091,16 @@ class CertSpotterClient:
         min_interval: float = 2.0,
         timeout: float = 60.0,
         client: httpx.Client | None = None,
+        include_subdomains: bool = True,
     ) -> None:
         self.cache_dir = cache_dir
+        #: **枠が2つある**（Small プラン：名前1つの検索 100 本/時、サブドメイン込みの
+        #: 検索 10 本/時。sslmate.com/pricing/ct_search_api、2026-11-08 に確認）。
+        #: 起点ドメインの補充は名前1つの検索（`match_wildcards` 付き）で足りる ──
+        #: 公式サイトのドメインそのものの証明書の SAN から別の登録ドメインを拾う
+        self.include_subdomains = include_subdomains
+        #: 応答の `x-ratelimit-limit`（プランの枠を確かめる。鍵は出さない）
+        self.limit_seen: int | None = None
         self.month = month
         self.api_key = api_key
         self.max_requests = max(int(max_requests), 0)
@@ -985,6 +1132,9 @@ class CertSpotterClient:
             headers["Authorization"] = f"Bearer {self.api_key}"
         resp = client.get(CERTSPOTTER_ENDPOINT, params=params, headers=headers)
         remaining = resp.headers.get("x-ratelimit-remaining")
+        limit = resp.headers.get("x-ratelimit-limit")
+        if limit is not None and limit.strip().isdigit():
+            self.limit_seen = int(limit.strip())
         if resp.status_code == 429:
             retry = resp.headers.get("retry-after")
             self.stopped = f"CertSpotter の上限に達した（HTTP 429、Retry-After={retry}）"
@@ -992,6 +1142,34 @@ class CertSpotterClient:
             # **使い切ったら、次の1本を投げて断られる前にやめる**
             self.stopped = "CertSpotter の1時間あたりの上限を使い切った"
         return resp
+
+    def page(self, domain: str, after: str | None) -> tuple[list[dict] | None, str | None]:
+        """サブドメイン込みの検索を **1ページだけ** 引く。(行, 失敗の理由)。
+
+        枠が小さい（Small で 10 本/時）ので、1本ごとに進み具合をキャッシュに書く
+        （`subdomain_names_pass`）。
+        """
+        own = self._client is None
+        client = self._client or httpx.Client(timeout=self.timeout, follow_redirects=True)
+        params = {"domain": domain, "include_subdomains": "true", "expand": "dns_names"}
+        if after:
+            params["after"] = after
+        try:
+            resp = self._get(client, params)
+        except httpx.HTTPError as exc:
+            return None, f"transport: {exc}"[:200]
+        finally:
+            if own:
+                client.close()
+        if resp is None:
+            return None, self.stopped or "budget"
+        if resp.status_code != 200:
+            return None, f"http {resp.status_code}"
+        try:
+            rows = resp.json()
+        except ValueError:
+            return None, "decode"
+        return list(rows or []), None
 
     def search(self, domain: str) -> CtResult:
         cached = self._cache_path(domain)
@@ -1021,9 +1199,11 @@ class CertSpotterClient:
             while True:
                 params = {
                     "domain": domain,
-                    "include_subdomains": "true",
+                    "include_subdomains": "true" if self.include_subdomains else "false",
                     "expand": "dns_names",
                 }
+                if not self.include_subdomains:
+                    params["match_wildcards"] = "true"
                 if after:
                     params["after"] = after
                 try:
@@ -1123,6 +1303,8 @@ class BackfillReport:
     ready_for_rerun: list[str] = field(default_factory=list)
     #: 組織名検索の積み残しを引いた結果
     crtsh_org: dict = field(default_factory=dict)
+    #: CertSpotter でサブドメインの名前を取った結果（BACKLOG 52）
+    certspotter_sub: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -1131,6 +1313,7 @@ class BackfillReport:
             "crtsh": self.crtsh,
             "certspotter": self.certspotter,
             "crtsh_org": self.crtsh_org,
+            "certspotter_sub": self.certspotter_sub,
             "ready_for_rerun": self.ready_for_rerun,
         }
 
@@ -1155,6 +1338,7 @@ def backfill(
     certspotter: CertSpotterClient | None,
     deadline: float | None = None,
     org_only: bool = False,
+    certspotter_sub: CertSpotterClient | None = None,
 ) -> BackfillReport:
     """積み残しを取り直す。**crt.sh を先に、だめなら CertSpotter で。**
 
@@ -1228,9 +1412,17 @@ def backfill(
             "tried": tried,
             "got": sum(1 for d in remaining if d in got),
             "requests": certspotter.requests,
+            "ratelimit_limit": certspotter.limit_seen,
             "errors_by_kind": dict(sorted(errors.items())),
             "stopped": certspotter.stopped,
         }
+
+    # **CertSpotter のもう1つの枠（サブドメイン込みの検索）で、メール用らしい名前を
+    # 取る。** crt.sh を使わないので、組織名の補充と時間を取り合わない（先に回す）
+    if certspotter_sub is not None:
+        report.certspotter_sub = subdomain_names_pass(
+            certspotter_sub, cache_dir, month, deadline=deadline
+        )
 
     # **組織名の積み残しは、ドメインの積み残しを片づけた残りの時間で引く。**
     # 同じ crt.sh のクライアント（0.5 qps）を使うので、本数の上限は変わらない。

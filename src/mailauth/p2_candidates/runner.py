@@ -39,6 +39,7 @@ from ..ctlog import (
     CtResult,
     CtSource,
     DisabledCtSource,
+    write_mail_queue,
     write_org_pending,
     write_pending,
 )
@@ -1365,6 +1366,17 @@ def run(
                     1 for p, _ in org_pending_names if p == 0
                 )
                 ct_org_stats["org_pending_path"] = str(org_path)
+            # **CertSpotter でサブドメインの名前を取る順番**（補充が引く）。派生の
+            # 母集団（日経225）の会社の起点を前に置く
+            def _first(i: int) -> int:
+                sec = rows.iloc[i].get("securities_code")
+                code = normalize_securities_code(sec if isinstance(sec, str) else None)
+                return 0 if code in org_first_codes else 1
+
+            ranked = sorted(
+                ((_first(i), n, d) for n, i in enumerate(order) if (d := _seed(i))),
+            )
+            write_mail_queue(Path(ct_cache_dir), run_id, population, [d for _, _, d in ranked])
             path = write_pending(
                 Path(ct_cache_dir),
                 run_id,
