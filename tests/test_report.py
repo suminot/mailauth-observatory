@@ -156,3 +156,22 @@ def test_every_phase_can_be_reported(phase):
     _manifest(phase)
     report = collect(RUN)
     assert any(p.phase == phase and p.ran for p in report.phases)
+
+
+def test_P1の起点ドメインの内訳は件数だけを出す():
+    """ステップの要約は残らないので、推測で何社埋まったかを実行記録に残す。"""
+    with RunManifest(run_id=RUN, phase="p1_population",
+                     out_dir=phase_dir(RUN, "p1_population")) as m:
+        m.counts.input = m.counts.success = 3
+        m.set_breakdown(group_co_jp_guess={
+            "targets": 5, "found": 2, "sample_found": ["a.co.jp ← 株式会社A"],
+            "gbizinfo": {"with_reading": 4}, "guesser": {"dns_queries": 9, "sample_found": []},
+        })
+    report = collect(RUN)
+    assert report.p1_breakdown == {"group_co_jp_guess": {
+        "targets": 5, "found": 2, "gbizinfo.with_reading": 4, "guesser.dns_queries": 9,
+    }}
+    md = to_markdown(report)
+    assert "## P1 の起点ドメインの内訳" in md
+    assert "- `group_co_jp_guess`: targets 5・found 2" in md
+    assert "株式会社A" not in md

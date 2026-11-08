@@ -8,6 +8,12 @@ name: 起動漏れの見張り
 # **見張り役も schedule なので、それ自体が抜けることがある。** 補充の毎時の
 # schedule（41 分）・連鎖・作業セッションの定期チェックと重ねる。分をずらして
 # 1時間に2回（11 分・46 分）起動する。
+#
+# **schedule はほとんど来ない**（2026-11-08 の実測：11 分・46 分の起動は、加えて
+# から 2 時間で1回も無かった。補充の毎時の schedule も、その日は 24 時間で2回）。
+# なので**見張り役は終わり際に、25 分待って次の見張り役を頼む**（連鎖）。
+# 待てる依頼は1本だけ（concurrency）なので、手で頼んだ分と重なっても連鎖は
+# 1本に戻る。連鎖が切れても、schedule と作業セッションの定期チェックが拾い直す。
 
 on:
   schedule:
@@ -29,7 +35,7 @@ defaults:
 jobs:
   watch:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 40
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -66,3 +72,11 @@ jobs:
             gh workflow run "$wf" --repo "$GITHUB_REPOSITORY" --ref main $args
             echo "- $wf を頼んだ：$reason" >> "$GITHUB_STEP_SUMMARY"
           done < /tmp/actions.jsonl
+
+      # 次の見張り役を頼む（上の説明）。見張りが失敗しても頼む
+      - name: 次の見張りを頼む
+        if: always()
+        run: |
+          sleep 1500
+          gh workflow run watchdog.yml --repo "$GITHUB_REPOSITORY" --ref main
+          echo "25 分後の見張りを頼んだ" >> "$GITHUB_STEP_SUMMARY"

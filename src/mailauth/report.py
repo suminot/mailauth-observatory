@@ -63,6 +63,8 @@ class RunReport:
     phases: list[PhaseReport] = field(default_factory=list)
     #: 工程間の件数変化。どこで落ちたかを追うための主要な材料
     flow: list[dict[str, Any]] = field(default_factory=list)
+    #: P1 で起点ドメインをどこから埋めたかの件数（`P1_BREAKDOWN_KEYS`）
+    p1_breakdown: dict[str, dict[str, int]] = field(default_factory=dict)
 
     @property
     def ran_phases(self) -> list[PhaseReport]:
@@ -144,6 +146,7 @@ def collect(run_id: str) -> RunReport:
             if phase == "p1_population":
                 pop = (manifest.get("params") or {}).get("population_id")
                 report.population_id = str(pop) if pop else None
+                report.p1_breakdown = _p1_counts(manifest.get("breakdown") or {})
         report.phases.append(item)
 
     # 工程間の件数変化。実行した工程だけを順に並べる
@@ -212,6 +215,13 @@ def to_markdown(report: RunReport, *, now: dt.datetime | None = None) -> str:
                 f"| {_n(f['delta'])} |"
             )
 
+    if report.p1_breakdown:
+        # **件数だけを出す**（見本の社名・ドメインは成果物の manifest にある）。
+        # ステップの要約は残らないので、どこから埋めたかを後から追えるようにする
+        lines += ["", "## P1 の起点ドメインの内訳", ""]
+        for key, counts in report.p1_breakdown.items():
+            body = "・".join(f"{k} {v:,}" for k, v in counts.items())
+            lines.append(f"- `{key}`: {body}")
     warned = [p for p in report.phases if p.warnings]
     if warned:
         lines += ["", "## 警告", ""]
@@ -253,3 +263,29 @@ def _n(value: Any) -> str:
 
 def exists(run_id: str) -> bool:
     return run_dir(run_id).is_dir()
+
+
+#: 内訳を出す P1 の breakdown のキー
+P1_BREAKDOWN_KEYS = ("group", "group_co_jp_guess", "co_jp_homepage", "wikidata_identity")
+
+
+def _p1_counts(breakdown: dict[str, Any]) -> dict[str, dict[str, int]]:
+    """P1 の breakdown から件数（整数）だけを取る。入れ子は1段だけ `親.子` にする。"""
+    out: dict[str, dict[str, int]] = {}
+    for key in P1_BREAKDOWN_KEYS:
+        value = breakdown.get(key)
+        if not isinstance(value, dict):
+            continue
+        counts: dict[str, int] = {}
+        for k, v in value.items():
+            if isinstance(v, bool):
+                continue
+            if isinstance(v, int):
+                counts[k] = v
+            elif isinstance(v, dict):
+                for k2, v2 in v.items():
+                    if isinstance(v2, int) and not isinstance(v2, bool):
+                        counts[f"{k}.{k2}"] = v2
+        if counts:
+            out[key] = counts
+    return out

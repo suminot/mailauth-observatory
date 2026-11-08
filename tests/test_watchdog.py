@@ -78,3 +78,21 @@ def test_見張り役は補充と違う分に1時間に2回起動する():
     b_minute = bon["schedule"][0]["cron"].split()[0]
     minutes = cron.split()[0].split(",")
     assert len(minutes) == 2 and b_minute not in minutes
+
+
+def test_見張り役は終わり際に次の見張り役を頼む():
+    """schedule はほとんど来ないので、連鎖でつなぐ（2026-11-08）。"""
+    import yaml
+
+    from mailauth.paths import repo_root
+
+    wf = yaml.safe_load((repo_root() / ".github/workflows/watchdog.yml").read_text())
+    job = wf["jobs"]["watch"]
+    last = job["steps"][-1]
+    assert last.get("if") == "always()"
+    assert "gh workflow run watchdog.yml" in last["run"]
+    sleep = int(last["run"].split("sleep ")[1].split()[0])
+    # 待つ時間が job の上限に収まる（収まらないと次を頼む前に落ちる）
+    assert sleep + 10 * 60 < job["timeout-minutes"] * 60
+    assert wf["concurrency"]["group"] == "watchdog"
+    assert wf["concurrency"]["cancel-in-progress"] is False
