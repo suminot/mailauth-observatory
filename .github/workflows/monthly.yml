@@ -414,7 +414,9 @@ jobs:
           cfg = yaml.safe_load(open("configs/candidates.yaml", encoding="utf-8"))
           over = ((cfg.get("per_population") or {}).get("${{ steps.run.outputs.pop }}") or {})
           disc = {**(cfg.get("discovery") or {}), **(over.get("discovery") or {})}
-          print("1" if disc.get("ct_log") or disc.get("ct_org") else "0")
+          ct = {**(cfg.get("ct") or {}), **(over.get("ct") or {})}
+          # キャッシュだけを読む母集団は crt.sh を引かない
+          print("1" if (disc.get("ct_log") and not ct.get("cache_only")) or disc.get("ct_org") else "0")
           PY
           )
           if [ "$uses_ct" = "0" ]; then

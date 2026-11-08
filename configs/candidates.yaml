@@ -283,8 +283,12 @@ per_population:
   # メールの痕跡（SPF / rua）と、主ドメインの下のよく使う名前は引く
   jp-all-listed-group:
     discovery:
-      ct_log: false
+      # **CT はキャッシュだけを読む**（2026-11-08）。キャッシュは補充が CertSpotter の
+      # 名前1つの検索（Small プランで 100 本/時の枠）で埋める。crt.sh は引かない
+      ct_log: true
       ct_org: false
       site_link: false
       edinet_koukoku: false
       official_alt: false
+    ct:
+      cache_only: true

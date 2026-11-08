@@ -1965,11 +1965,26 @@ def test_p2_グループ会社の母集団はCTとリンク先を読まない(se
         seeded_run,
         compression="zstd",
     )
-    result = _run_p2()
+    # CT は月のキャッシュだけを読む（crt.sh は引かない。補充が CertSpotter で埋める）
+    import json
+
+    from mailauth.ctlog import pending_path
+    from mailauth.paths import cache_root
+
+    cached = cache_root() / "crtsh" / f"month={RUN}" / "sample-info.co.jp.json"
+    cached.parent.mkdir(parents=True, exist_ok=True)
+    cached.write_text(json.dumps({"found": ["sample-info.co.jp", "sample-info-mail.jp"],
+                                  "month": RUN, "source": "certspotter"}))
+    result = run_p2(run_id=RUN, resolver=StaticResolver(ANSWERS))
     methods = result["breakdown"]["by_discovery_method"]
     assert methods["official_url"] == 3
-    assert not methods.get("ct_log")
-    assert "discovery.ct_log" in result["breakdown"]["per_population_override"]
+    assert methods.get("ct_log") == 2  # キャッシュにあった1社ぶんだけ
+    assert "ct.cache_only" in result["breakdown"]["per_population_override"]
+    assert result["breakdown"]["ct"]["not_cached"] == 2
+    assert result["status"] == "success"
+    pend = json.loads(pending_path(cache_root() / "crtsh", RUN,
+                                   "jp-all-listed-group").read_text())
+    assert pend["via"] == "certspotter" and len(pend["pending"]) == 2
     # メールの痕跡は引く
     assert methods["spf_redirect"] == 1
 
