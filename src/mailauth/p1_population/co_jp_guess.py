@@ -82,7 +82,7 @@ MIN_CORE_CHARS = 3
 
 #: 推測と確かめ方を変えたら上げる。**結果を月のあいだ持ち越すので**（runner の
 #: `CO_JP_CACHE_DAYS`）、上げないと新しい読み方が次の月まで効かない
-GUESS_VERSION = 1
+GUESS_VERSION = 2
 
 #: 社名の芯がこの長さ以下なら、ページ全体ではなくタイトルで確かめる
 SHORT_CORE_CHARS = 4
@@ -270,15 +270,21 @@ _KANA = dict(
 _KANA_DROP = ("カブシキガイシャ", "カブシキカイシャ", "ホールディングス", "グループ")
 
 
+def _kana_text(kana: str | None) -> str:
+    """NFKC・ひらがなをカタカナに・社名の語でないもの（株式会社など）を落とす。"""
+    text = unicodedata.normalize("NFKC", kana or "")
+    text = "".join(chr(ord(c) + 0x60) if "ぁ" <= c <= "ゖ" else c for c in text)
+    for word in _KANA_DROP:
+        text = text.replace(word, "")
+    return text
+
+
 def kana_to_romaji(kana: str | None) -> str:
     """カナ（ひらがなも可）をヘボン式でつなげる。読めない文字は落とす。
 
     長音（ー）は落とす。促音（ッ）は次の子音を重ねる（ッチ → tchi）。
     """
-    text = unicodedata.normalize("NFKC", kana or "")
-    text = "".join(chr(ord(c) + 0x60) if "ぁ" <= c <= "ゖ" else c for c in text)
-    for word in _KANA_DROP:
-        text = text.replace(word, "")
+    text = _kana_text(kana)
     out: list[str] = []
     double = False
     i = 0
@@ -309,13 +315,104 @@ def kana_guesses(kana: str | None) -> list[str]:
     """読みから推測する .co.jp。**長音を詰めた形 → 詰めない形** の順。
 
     ドメインでは「ou」「uu」を詰めることが多い（dengyou → dengyo、
-    kyouto → kyoto）。3文字未満は使わない。
+    kyouto → kyoto）。3文字未満は使わない。**外来語を含む読みは、綴りに
+    戻した形（つなげる → ハイフン）を先に**試し、ヘボン式は詰めた形だけ
+    残す（sabisu のような綴りのドメインはまず無い）。
     """
     full = kana_to_romaji(kana)
     if len(full) < 3:
         return []
-    short = full.replace("ou", "o").replace("uu", "u").replace("oo", "o")
-    return list(dict.fromkeys(f"{f}.co.jp" for f in (short, full) if len(f) >= 3))
+    short = _shorten(full)
+    loan = loanword_forms(kana)
+    forms = [*loan, short] if loan else [short, full]
+    return list(dict.fromkeys(f"{f}.co.jp" for f in forms if len(f) >= 3))[:MAX_GUESSES]
+
+
+def _shorten(romaji: str) -> str:
+    return romaji.replace("ou", "o").replace("uu", "u").replace("oo", "o")
+
+
+#: **よく社名に使う外来語の読み → 綴り**（2026-11-08）。子会社の推測 4,460 社の
+#: 84% は、読みをヘボン式にしたドメインが DNS に無かった（sougousabisu.com・
+#: raifukea.com・kemisuto.com）。「サービス」は sabisu ではなく service と綴る。
+#: 長いものから当てる。**短く、和語の中にも出る読み（サン・アイ・ケイ）は入れない**
+_LOANWORDS: dict[str, str] = {
+    "サービス": "service", "システムズ": "systems", "システム": "system",
+    "ソリューションズ": "solutions", "ソリューション": "solution",
+    "テクノロジーズ": "technologies", "テクノロジー": "technology", "テクノ": "techno",
+    "エンジニアリング": "engineering", "ロジスティクス": "logistics", "ロジテック": "logitech",
+    "ファイナンス": "finance", "リース": "lease", "ライフ": "life", "ケア": "care",
+    "メディカル": "medical", "ファーマ": "pharma", "ケミカル": "chemical", "ケミスト": "chemist",
+    "フーズ": "foods", "フード": "food", "トレーディング": "trading",
+    "マネジメント": "management", "コンサルティング": "consulting",
+    "ネットワークス": "networks", "ネットワーク": "network", "デザイン": "design",
+    "クリエイティブ": "creative", "クリエイト": "create", "パートナーズ": "partners",
+    "ビジネス": "business", "サポート": "support", "テック": "tech", "データ": "data",
+    "デジタル": "digital", "インターナショナル": "international", "グローバル": "global",
+    "ジャパン": "japan", "エナジー": "energy", "エネルギー": "energy", "パワー": "power",
+    "マテリアルズ": "materials", "マテリアル": "material", "プロダクツ": "products",
+    "プロダクト": "product", "インダストリーズ": "industries", "インダストリー": "industry",
+    "エンタープライズ": "enterprise", "オフィス": "office", "スタッフ": "staff",
+    "エージェンシー": "agency", "マーケティング": "marketing",
+    "コミュニケーションズ": "communications", "コミュニケーション": "communication",
+    "メディア": "media", "ソフトウェア": "software", "ソフト": "soft", "ウェブ": "web",
+    "モバイル": "mobile", "セキュリティ": "security", "ファクトリー": "factory",
+    "ステーション": "station", "センター": "center", "トラベル": "travel", "ホテル": "hotel",
+    "リゾート": "resort", "ファーム": "farm", "アグリ": "agri", "ペット": "pet",
+    "ビルディング": "building", "ハウジング": "housing", "ハウス": "house", "ホーム": "home",
+    "ワークス": "works", "アセット": "asset", "キャピタル": "capital",
+    "インベストメント": "investment", "エステート": "estate", "リアルティ": "realty",
+    "ラボ": "lab", "リサーチ": "research", "イノベーション": "innovation", "ネクスト": "next",
+    "スマート": "smart", "クラウド": "cloud", "エレクトロニクス": "electronics",
+    "エレクトリック": "electric", "オート": "auto", "モーター": "motor",
+    "マシナリー": "machinery", "スチール": "steel", "メタル": "metal",
+    "プラスチック": "plastic", "パッケージ": "package", "ペーパー": "paper",
+    "プリンティング": "printing", "ファッション": "fashion", "アパレル": "apparel",
+    "リテール": "retail", "ストア": "store", "ショップ": "shop", "ダイニング": "dining",
+    "レストラン": "restaurant", "ベーカリー": "bakery", "ビバレッジ": "beverage",
+    "ヘルスケア": "healthcare", "ヘルス": "health", "ウェルネス": "wellness",
+    "フィットネス": "fitness", "スポーツ": "sports", "エデュケーション": "education",
+    "スクール": "school", "アカデミー": "academy", "キャリア": "career", "リンク": "link",
+    "トラスト": "trust", "ゲームス": "games", "エンターテインメント": "entertainment",
+    "ミュージック": "music", "スタジオ": "studio", "ビジョン": "vision",
+    "フロンティア": "frontier", "ギャラリー": "gallery", "プランニング": "planning",
+    "プラント": "plant", "コーポレーション": "corporation", "カンパニー": "company",
+    "ネット": "net", "ワン": "one", "プラス": "plus", "ユニオン": "union",
+}
+_LOAN_KEYS = sorted(_LOANWORDS, key=len, reverse=True)
+
+
+def loanword_forms(kana: str | None) -> list[str]:
+    """外来語を綴りに戻した形（つなげた形・語の境目にハイフン）。戻す語が無ければ空。
+
+    `オヤデンキサービス` → `oyadenkiservice`・`oyadenki-service`。外来語でない
+    部分はヘボン式（長音を詰める）。
+    """
+    text = _kana_text(kana)
+    parts: list[str] = []
+    rest = ""
+    i = 0
+    replaced = False
+    while i < len(text):
+        word = next((w for w in _LOAN_KEYS if text.startswith(w, i)), None)
+        if word is None:
+            rest += text[i]
+            i += 1
+            continue
+        if rest:
+            parts.append(_shorten(kana_to_romaji(rest)))
+            rest = ""
+        parts.append(_LOANWORDS[word])
+        replaced = True
+        i += len(word)
+    if rest:
+        parts.append(_shorten(kana_to_romaji(rest)))
+    parts = [p for p in parts if p]
+    if not replaced or not parts:
+        return []
+    joined = "".join(parts)
+    hyphen = "-".join(parts)
+    return list(dict.fromkeys([joined, hyphen] if len(parts) > 1 else [joined]))
 
 
 #: 証明書の組織名で確かめるときに、これより短い社名は使わない（偶然の一致）

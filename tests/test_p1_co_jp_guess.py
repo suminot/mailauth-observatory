@@ -844,3 +844,20 @@ def test_補完のキャッシュの鍵は母集団で分ける():
     assert "steps.run.outputs.pop" in keys[0], "最初に見る鍵は同じ母集団のもの"
     # ブロックの中の `#` は注釈ではなく鍵の一部になる
     assert not any(k.startswith("#") for k in keys)
+
+
+def test_外来語を含む読みは綴りに戻した形を先に試す():
+    """子会社の推測 4,460 社の 84% は、読みをヘボン式にしたドメインが DNS に無かった。"""
+    from mailauth.p1_population.co_jp_guess import kana_guesses, loanword_forms
+
+    assert kana_guesses("ソウゴウサービス") == [
+        "sogoservice.co.jp", "sogo-service.co.jp", "sogosabisu.co.jp",
+    ]
+    assert kana_guesses("カブシキガイシャライフケア") == [
+        "lifecare.co.jp", "life-care.co.jp", "raifukea.co.jp",
+    ]
+    # 外来語が無ければ今までどおり
+    assert kana_guesses("タイヘイデンギョウ") == ["taiheidengyo.co.jp", "taiheidengyou.co.jp"]
+    assert loanword_forms("ムラキ") == []
+    # 和語の中に出る短い読み（サン）は外来語にしない
+    assert loanword_forms("サンコー") == []
