@@ -322,6 +322,32 @@ def ct_mail_queue_cmd(
                           ensure_ascii=False))
 
 
+@app.command("watchdog")
+def watchdog_cmd(
+    runs: Annotated[str, typer.Option("--runs", help="ワークフローの実行一覧（JSON の配列）")],
+    month: Annotated[str, typer.Option("--month", help="見る月（YYYY-MM）")] = "",
+) -> None:
+    """起動漏れの見張り役。頼むべき起動を1行ずつ JSON で出す（頼むのはワークフロー）。"""
+    import datetime as dt
+
+    import pandas as pd
+
+    from .paths import config_path, gold_root
+    from .watchdog import decide, parse_runs
+
+    month = month or dt.datetime.now(dt.UTC).strftime("%Y-%m")
+    rows = json.loads(Path(runs).read_text(encoding="utf-8"))
+    gold = gold_root() / f"month={month}" / "stats_overall.parquet"
+    pops: set[str] = set()
+    if gold.is_file():
+        pops = {str(p) for p in pd.read_parquet(gold, columns=["population_id"])["population_id"]}
+    group_csv = config_path("configs/domains/subsidiary_domains.csv")
+    has_group = group_csv.is_file() and ",found," in group_csv.read_text(encoding="utf-8")
+    for action in decide(dt.datetime.now(dt.UTC), parse_runs(rows), month=month,
+                         gold_populations=pops, has_group_list=has_group):
+        typer.echo(json.dumps(action.to_dict(), ensure_ascii=False))
+
+
 @app.command("p3-domains")
 def p3_domains(
     run: RunOption = "",
