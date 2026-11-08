@@ -1492,6 +1492,7 @@ def backfill(
                     names.append(n)
         todo = [n for n in names if crtsh.cached_org(n) is None]
         tried = got_org = 0
+        org_errors: dict[str, int] = {}
         chunk = max(int(getattr(crtsh, "concurrency", 1)), 1)
         for start in range(0, len(todo), chunk):
             if deadline is not None and time.monotonic() > deadline:
@@ -1503,13 +1504,19 @@ def backfill(
                     tried += 1
                 if not result.error:
                     got_org += 1
+                else:
+                    # **取れなかった理由を数える。** 2026-11-08 は 8 本試して 0 本で、
+                    # 理由が残っていなかった（大きい組織名は crt.sh がすぐ 502 を返す）
+                    kind = result.error_kind or "other"
+                    org_errors[kind] = org_errors.get(kind, 0) + 1
         left = 0
         for path, payload in org_payloads.items():
             payload["pending"] = [n for n in payload.get("pending", [])
                                   if crtsh.cached_org(n) is None]
             left += len(payload["pending"])
             path.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
-        report.crtsh_org = {"tried": tried, "got": got_org, "pending_after": left}
+        report.crtsh_org = {"tried": tried, "got": got_org, "pending_after": left,
+                            "errors_by_kind": dict(sorted(org_errors.items()))}
 
     for path, payload in files.items():
         pop = payload.get("population") or path.stem

@@ -37,6 +37,9 @@ class EnrichResult:
     error: int = 0
     skipped_reason: str | None = None
     cache_hit: int = 0
+    #: 法人番号 → 読み（kana）・英字名（name_en）。gBizINFO にあるものだけ
+    #: （子会社の .co.jp の推測に使う。group_guess）
+    names: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
 class GbizInfoClient:
@@ -127,6 +130,11 @@ class GbizInfoClient:
                     )
 
                 info = (payload or {}).get("hojin-infos") or []
+                if info:
+                    names = {k: str(info[0].get(k) or "").strip() for k in ("kana", "name_en")}
+                    names = {k: v for k, v in names.items() if v}
+                    if names:
+                        result.names[bangou] = names
                 url = (info[0].get("company_url") if info else None) or None
                 if url:
                     result.values[bangou] = {"official_url": url}

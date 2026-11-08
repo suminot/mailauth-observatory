@@ -143,3 +143,133 @@ def test_同じ親の子会社が3社以上で使うドメインはグループ�
     )
     assert [e.official_domain for e in entities] == ["ko4.example.jp"]
     assert stats["group_site"] == 3
+
+
+# ---- サイトの登録が無い子会社の .co.jp の推測（group_guess） ----
+
+from mailauth.p1_population.co_jp_guess import CoJpGuesser  # noqa: E402
+from mailauth.p1_population.group_guess import (  # noqa: E402
+    guess_subsidiaries,
+    guess_targets,
+    parent_marks,
+)
+
+
+def _guesser(pages: dict[str, str]):
+    hosts = {u.split("/")[2].removeprefix("www.") for u in pages}
+    return CoJpGuesser(exists=lambda d: d in hosts, fetch=lambda u: pages.get(u))
+
+
+MARKS = {"E00001": parent_marks("親電機株式会社", "OYADENKI CORPORATION", ["oyadenki.co.jp"])}
+
+
+def test_読みから推測して商号と親会社が載っていれば採る():
+    g = _guesser({"https://www.kodenkiroji.co.jp/":
+                  "<title>子電機ロジ株式会社</title><p>親電機グループの物流会社です</p>"})
+    found, stats = guess_subsidiaries(
+        {"2000000000005": ("子電機ロジ株式会社", "E00001")},
+        {"2000000000005": {"kana": "コデンキロジ"}}, MARKS, g,
+    )
+    assert found == {"2000000000005": "kodenkiroji.co.jp"}
+    assert stats.found == 1
+
+
+def test_親会社が載っていなければ同じ商号の別会社かもしれないので採らない():
+    g = _guesser({"https://www.sanko.co.jp/": "<title>株式会社サンコー</title><p>創業 1950 年</p>"})
+    found, stats = guess_subsidiaries(
+        {"2000000000007": ("株式会社サンコー", "E00001")},
+        {"2000000000007": {"kana": "サンコー"}}, MARKS, g,
+    )
+    assert found == {}
+    assert stats.no_parent_mention == 1
+    assert stats.sample_no_parent_mention == ["sanko.co.jp ← 株式会社サンコー"]
+
+
+def test_子会社の商号の中に出る親の名前は親会社に触れたことにしない():
+    g = _guesser({"https://www.oyadenkisabisu.co.jp/":
+                  "<title>親電機サービス株式会社</title><p>親電機サービスへようこそ</p>"})
+    found, stats = guess_subsidiaries(
+        {"2000000000008": ("親電機サービス株式会社", "E00001")},
+        {"2000000000008": {"kana": "オヤデンキサービス"}}, MARKS, g,
+    )
+    assert found == {}
+    assert stats.no_parent_mention == 1
+
+
+def test_親会社のドメインへのリンクでもよい():
+    g = _guesser({"https://www.oyadenkisabisu.co.jp/":
+                  '<title>親電機サービス株式会社</title><a href="https://www.oyadenki.co.jp/">'})
+    found, _ = guess_subsidiaries(
+        {"2000000000008": ("親電機サービス株式会社", "E00001")},
+        {"2000000000008": {"kana": "オヤデンキサービス"}}, MARKS, g,
+    )
+    assert found == {"2000000000008": "oyadenkisabisu.co.jp"}
+
+
+def test_読みが無い子会社と持ち時間を過ぎた子会社は推測しない():
+    g = _guesser({})
+    targets = {"2000000000005": ("子電機ロジ株式会社", "E00001"),
+               "2000000000006": ("子電機テック株式会社", "E00001")}
+    _, stats = guess_subsidiaries(targets, {"2000000000006": {"kana": "コデンキテック"}},
+                                  MARKS, g, deadline=0.0, clock=lambda: 1.0)
+    assert stats.no_reading == 1
+    assert stats.deferred == 1
+    assert stats.attempted == 0
+
+
+def test_推測の結果は親会社の印も鍵にして持ち越す():
+    store: dict = {}
+
+    class Cache:
+        def get(self, args):
+            return store.get(args)
+
+        def put(self, args, domain, kind):
+            store[args] = (domain, kind)
+
+    pages = {"https://www.kodenkiroji.co.jp/":
+             "<title>子電機ロジ株式会社</title><p>親電機グループ</p>"}
+    args = ({"2000000000005": ("子電機ロジ株式会社", "E00001")},
+            {"2000000000005": {"kana": "コデンキロジ"}}, MARKS)
+    guess_subsidiaries(*args, _guesser(pages), cache=Cache())
+    found, stats = guess_subsidiaries(*args, _guesser({}), cache=Cache())
+    assert found == {"2000000000005": "kodenkiroji.co.jp"}
+    assert stats.cache_hit == 1
+    assert all("parent=" in k[-1] for k in store)
+
+
+def test_推測するのはサイトの無い子会社のうち作られうるものだけ():
+    group = dict(GROUP)
+    group[("E00001", "子電機ロジ株式会社")] = ("2000000000005", "", "no_url")
+    group[("E00003", "孫株式会社")] = ("2000000000009", "", "no_url")  # 親が上場をやめた
+    group[("E00001", "子電機サイト有り株式会社")] = ("2000000000006", "", "no_url")
+    targets = guess_targets(group, ["E00001", "E00002"], {"1000000000001", "1000000000002"},
+                            {"2000000000006": "https://example.jp/"})
+    assert targets == {
+        "2000000000003": ("サイトの無い株式会社", "E00001"),
+        "2000000000005": ("子電機ロジ株式会社", "E00001"),
+    }
+
+
+def test_推測したドメインで子会社を作る():
+    group = {("E00001", "子電機ロジ株式会社"): ("2000000000005", "", "no_url")}
+    entities, stats = build_group_entities(
+        group, [p for p in PARENTS if p.listing_status == "上場"], set(),
+        population_id="jp-all-listed-group", run_id=RUN,
+        guessed={"2000000000005": "kodenkiroji.co.jp"},
+    )
+    assert [(e.entity_id, e.official_domain) for e in entities] == [
+        ("jp:2000000000005", "kodenkiroji.co.jp"),
+    ]
+    assert stats["from_co_jp_guess"] == 1
+
+
+def test_offlineでは推測していないと残す(monkeypatch, tmp_path):
+    gpath = tmp_path / "subsidiary_domains.csv"
+    _write_group_csv(gpath, GROUP)
+    monkeypatch.setattr(group_domains, "GROUP_CSV", str(gpath))
+    monkeypatch.setattr(edinet_koukoku, "SCAN_CSV", str(tmp_path / "none.csv"))
+    result = run_p1(config=CONFIG, run_id=RUN, offline=True, rows=PARENTS)
+    codes = {w["code"] for w in result["warnings"]}
+    assert "ENRICH_SKIPPED_GROUP_CO_JP" in codes
+    assert result["breakdown"]["group_co_jp_guess"] == {"targets": 1}

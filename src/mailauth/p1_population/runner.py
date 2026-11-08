@@ -1351,8 +1351,9 @@ def _run_group(
     """グループ会社（上場会社の国内子会社）。BACKLOG 52。
 
     親は EDINET コードリストの上場会社。子会社とドメインは koukoku-scan と
-    group-domains が置いた一覧から読む（この工程では外に問い合わせない。
-    コードリストの取得だけ）。
+    group-domains が置いた一覧から読む。外に問い合わせるのは、コードリスト・
+    Wikidata と、サイトの登録が無い子会社の推測（gBizINFO の読み・DNS・その
+    会社のページ）だけ。
     """
     from .edinet_koukoku import SCAN_CSV, read_scan
     from .group_domains import GROUP_CSV
@@ -1405,9 +1406,14 @@ def _run_group(
                 "「無い」のではなく「引いていない」"
             ),
         )
+    # まだサイトの無い子会社は、読みから .co.jp を推測して確かめる（group_guess）
+    guessed = _guess_group_sites(
+        group_rows, parents, read_scan(config_path(SCAN_CSV)), sites, manifest,
+        offline=offline or dry_run,
+    )
     entities, stats = build_group_entities(
         group_rows, parents, listed_domains, population_id=cfg.id, run_id=run_id,
-        country=cfg.country, sites=sites,
+        country=cfg.country, sites=sites, guessed=guessed,
     )
     manifest.counts.input = stats["found"]
     if limit:
@@ -1445,6 +1451,97 @@ def _run_group(
         )
         manifest.add_output(OUTPUT_FILENAME, records=n)
     return manifest.to_dict()
+
+
+#: 子会社の .co.jp の推測にかける時間の上限（分）。残りは同じ月の流し直しで
+#: 続きから引く（結果は `co_jp_homepage` のキャッシュに持ち越す）
+GROUP_GUESS_MINUTES = 90
+
+
+def _guess_group_sites(
+    group_rows: dict[tuple[str, str], tuple[str, str, str]],
+    parents: list[Any],
+    scan: dict[str, tuple[str, list[str], str]],
+    sites: dict[str, str],
+    manifest: RunManifest,
+    *,
+    offline: bool,
+    guesser=None,
+    readings: dict[str, dict[str, str]] | None = None,
+    cache_dir: Path | None = None,
+) -> dict[str, str]:
+    """サイトの登録が無い子会社（no_url）の .co.jp を推測する。法人番号 → ドメイン。
+
+    `guesser` と `readings` を渡せるのは検査のため（ネットワークに出ない）。
+    """
+    from .group_guess import guess_subsidiaries, guess_targets, parent_marks
+
+    by_code = {r.edinet_code: r for r in parents if getattr(r, "edinet_code", None)}
+    listed_numbers = {
+        n for n in (normalize_houjin_bangou(r.houjin_bangou) for r in by_code.values()) if n
+    }
+    targets = guess_targets(group_rows, by_code, listed_numbers, sites)
+    if not targets:
+        manifest.set_breakdown(group_co_jp_guess={"targets": 0})
+        return {}
+    gbiz: dict[str, Any] = {}
+    if guesser is None:
+        why = None
+        if offline:
+            why = "offline / dry_run のため"
+        else:
+            contact = credential("MAILAUTH_CONTACT_EMAIL")
+            token = credential("MAILAUTH_GBIZINFO_TOKEN")
+            if not contact or not token:
+                why = "MAILAUTH_CONTACT_EMAIL か MAILAUTH_GBIZINFO_TOKEN が無いため"
+        if why:
+            manifest.add_warning(
+                "ENRICH_SKIPPED_GROUP_CO_JP",
+                count=len(targets),
+                message=(
+                    f"{why}、サイトの登録が無い子会社の .co.jp を推測していない。"
+                    "**「無い」のではなく「引いていない」**"
+                ),
+            )
+            manifest.set_breakdown(group_co_jp_guess={"targets": len(targets)})
+            return {}
+        guesser = _live_co_jp_guesser(str(contact))
+        if readings is None:
+            fetched = GbizInfoClient(token).fetch(sorted(targets))
+            readings = fetched.names
+            gbiz = {"attempted": fetched.attempted, "cache_hit": fetched.cache_hit,
+                    "error": fetched.error, "with_reading": len(fetched.names)}
+            if fetched.error:
+                manifest.add_warning(
+                    "ENRICH_FAILED_GROUP_READING",
+                    count=fetched.error,
+                    message="gBizINFO から読みを取れなかった子会社がある（推測していない）",
+                )
+        if cache_dir is None:
+            cache_dir = cache_root() / "co_jp_homepage"
+    marks = {
+        code: parent_marks(p.name, getattr(p, "name_en", None), (scan.get(code) or ("", [], ""))[1])
+        for code, p in by_code.items()
+    }
+    found, stats = guess_subsidiaries(
+        targets, readings or {}, marks, guesser,
+        cache=_CoJpCache(cache_dir) if cache_dir is not None else None,
+        concurrency=CO_JP_CONCURRENCY,
+        deadline=time.monotonic() + GROUP_GUESS_MINUTES * 60,
+    )
+    if stats.deferred:
+        manifest.add_warning(
+            "GROUP_CO_JP_GUESS_DEFERRED",
+            count=stats.deferred,
+            message=(
+                f"持ち時間（{GROUP_GUESS_MINUTES} 分）を過ぎ、推測していない子会社がある。"
+                "同じ月の流し直しで続きから引く"
+            ),
+        )
+    manifest.set_breakdown(
+        group_co_jp_guess={**stats.to_dict(), "gbizinfo": gbiz, "guesser": guesser.stats.to_dict()}
+    )
+    return found
 
 
 def _run_foreign(

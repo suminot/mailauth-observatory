@@ -363,7 +363,9 @@ jobs:
             jq '{status, counts, warnings: [.warnings[].code],
                  enrich_seconds: .breakdown.enrich_seconds,
                  wikidata: .breakdown.wikidata_identity,
-                 co_jp_homepage: .breakdown.co_jp_homepage}' "$M"
+                 co_jp_homepage: .breakdown.co_jp_homepage,
+                 group: .breakdown.group,
+                 group_co_jp_guess: .breakdown.group_co_jp_guess}' "$M"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
