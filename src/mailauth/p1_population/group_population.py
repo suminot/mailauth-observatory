@@ -49,19 +49,23 @@ def build_group_entities(
     run_id: str,
     country: str = "JP",
     sites: dict[str, str] | None = None,
+    guessed: dict[str, str] | None = None,
 ) -> tuple[list[Entity], dict[str, int]]:
     """子会社の Entity を組み立てる。
 
     `group_rows` は `group_domains.read_csv` の形（(親の EDINET コード, 子会社名)
     → (法人番号, ドメイン, 状態)）。`parents` は EDINET コードリストの行
     （上場会社だけ）。`listed_domains` は上場会社の自社ドメイン。
+    `sites` は法人番号 → Wikidata の公式サイト、`guessed` は法人番号 → 読みから
+    推測して確かめたドメイン（`group_guess`）。どちらも `no_url` の行だけに使う。
     """
     by_code = {r.edinet_code: r for r in parents if getattr(r, "edinet_code", None)}
     listed_numbers = {
         n for n in (normalize_houjin_bangou(r.houjin_bangou) for r in by_code.values()) if n
     }
     stats = {
-        "rows": 0, "found": 0, "from_wikidata": 0, "parent_not_listed": 0, "listed_company": 0,
+        "rows": 0, "found": 0, "from_wikidata": 0, "from_co_jp_guess": 0,
+        "parent_not_listed": 0, "listed_company": 0,
         "listed_domain": 0, "duplicate_number": 0, "many_parents": 0, "group_site": 0,
         "entities": 0,
     }
@@ -72,6 +76,7 @@ def build_group_entities(
         if hb_:
             parents_of.setdefault(hb_, set()).add(code)
     sites = sites or {}
+    guessed = guessed or {}
     entities: dict[str, Entity] = {}
     for (code, name), (number, domain, status) in sorted(group_rows.items()):
         stats["rows"] += 1
@@ -84,6 +89,10 @@ def build_group_entities(
             if wd:
                 domain, status = wd, "found"
                 stats["from_wikidata"] += 1
+            elif guessed.get(hb0 or ""):
+                # 読みから推測し、商号と親会社がページに載っていたもの（group_guess）
+                domain, status = guessed[hb0 or ""], "found"
+                stats["from_co_jp_guess"] += 1
         if status != "found" or not domain or not number:
             continue
         stats["found"] += 1

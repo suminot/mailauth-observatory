@@ -128,6 +128,12 @@ listed-company figures.
   the same name is not measured). Where gBizINFO has no homepage for the
   corporation, the official website recorded in Wikidata (CC0) for that
   corporate number is used
+- Where Wikidata has none either, a domain such as `.co.jp` is guessed from the
+  corporation's name reading (kana) in gBizINFO. It is used **only when that
+  domain's top page shows both the subsidiary's name and its parent** (the
+  parent's name, English name or domain), so that a different company with the
+  same name is not taken. As this is a guess, companies whose site does not show
+  these, or cannot be read, are not included
 - Listed subsidiaries (measured as listed companies) and subsidiaries whose
   website is on a listed company's own domain are left out. Corporations named
   under three or more listed companies (such as lenders or trust banks mentioned
@@ -135,8 +141,8 @@ listed-company figures.
   subsidiaries of the same parent give the same domain as their website, it is
   taken to be the parent's group site and they are left out
 - **This is not every subsidiary.** It covers the main subsidiaries named in the
-  annual securities report that have a website registered in gBizINFO. Overseas
-  subsidiaries are not included
+  annual securities report whose website domain was found by the methods above.
+  Overseas subsidiaries are not included
 - Group companies of the Nikkei 225 constituents (`jp-nikkei225-group`) are those
   in this population whose parent is a constituent, counted separately
 

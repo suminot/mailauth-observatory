@@ -916,7 +916,7 @@ def test_組織名の積み残しを_crtsh_で引いてキャッシュに入れ�
                         client=httpx.Client(transport=httpx.MockTransport(handler)))
     write_org_pending(tmp_path, MONTH, "jp-all-listed", ["Hitachi, Ltd.", "Kao Corporation"])
     report = backfill(tmp_path, MONTH, crtsh=crtsh, certspotter=None)
-    assert report.crtsh_org == {"tried": 2, "got": 2, "pending_after": 0}
+    assert report.crtsh_org == {"tried": 2, "got": 2, "pending_after": 0, "errors_by_kind": {}}
     assert crtsh.cached_org("Hitachi, Ltd.").found == ["brand-x.co.jp"]
     assert read_pending(org_pending_path(tmp_path, MONTH, "jp-all-listed"))["pending"] == []
     assert "crtsh_org" in report.to_dict()
