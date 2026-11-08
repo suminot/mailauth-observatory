@@ -8,19 +8,20 @@
 `configs/worklist/unidentified_hosts.yaml` に理由を書いて作業リストから外してください。
 **「調べたが分からなかった」は結論であって、無かったことにはしません。**
 
-## 手を付けるもの（68 件）
+## 手を付けるもの（70 件）
 
 | 登録ドメイン | 件数 | 連続月 | 例 |
 |---|---|---|---|
 | `index.or.jp` | 22 | 1 | `mskigw21.index.or.jp`, `mskigw23.index.or.jp`, `mskigw22.index.or.jp` |
+| `aams6.jp` | 12 | 1 | `mx.aams6.jp`, `mx-1.aams6.jp`, `mx-0.aams6.jp` |
 | `amazonses.com` | 10 | 1 | `feedback-smtp.ap-northeast-1.amazonses.com`, `feedback-smtp.us-east-1.amazonses.com` |
-| `aams6.jp` | 9 | 1 | `mx-1.aams6.jp`, `mx.aams6.jp`, `mx-0.aams6.jp` |
 | `keihin.co.jp` | 8 | 1 | `isgw.keihin.co.jp`, `mail.keihin.co.jp` |
 | `inet-jp.com` | 5 | 1 | `mxvc23.inet-jp.com`, `mxvc25.inet-jp.com`, `mxvc38.inet-jp.com` |
 | `bit-drive.ne.jp` | 4 | 1 | `vcgwp2.bit-drive.ne.jp`, `vcgws4.bit-drive.ne.jp`, `vcgwp1.bit-drive.ne.jp` |
 | `ddreams.jp` | 4 | 1 | `mail-swp2.ddreams.jp`, `mail-swp1.ddreams.jp`, `mail-nk1.ddreams.jp` |
 | `exacttarget.com` | 4 | 1 | `reply.s12.exacttarget.com`, `reply.s11.exacttarget.com` |
 | `fsi.ne.jp` | 4 | 1 | `sagw.fsi.ne.jp`, `argw.fsi.ne.jp` |
+| `thalesgroup.com` | 4 | 1 | `mx01.thalesgroup.com`, `mx02.thalesgroup.com` |
 | `mitene.jp` | 3 | 1 | `mx-1.mitene.jp`, `mx-0.mitene.jp`, `mx.mitene.jp` |
 | `msaas.jp` | 3 | 1 | `mail-mgcm.msaas.jp`, `mail-mgcm04.msaas.jp` |
 | `mxthunder.net` | 3 | 1 | `tsukuba-milk-co-jp.p30.mxthunder.net`, `tsukuba-milk-co-jp.p40.mxthunder.net`, `tsukuba-milk-co-jp.p20.mxthunder.net` |
@@ -41,7 +42,6 @@
 | `ryucom.ne.jp` | 2 | 1 | `mailgw.ryucom.ne.jp` |
 | `s3od.jp` | 2 | 1 | `mx4.s3od.jp`, `mx3.s3od.jp` |
 | `secu-dity.jp` | 2 | 1 | `bc.secu-dity.jp` |
-| `thalesgroup.com` | 2 | 1 | `mx01.thalesgroup.com`, `mx02.thalesgroup.com` |
 | `vanceport2.sakura.ne.jp` | 2 | 1 | `vanceport2.sakura.ne.jp` |
 | `zaq.ne.jp` | 2 | 1 | `mgw1.mx.zaq.ne.jp`, `mgw2.mx.zaq.ne.jp` |
 | `aeon-ecbo.biz` | 1 | 1 | `mm-mail.aeon-ecbo.biz` |
@@ -58,6 +58,7 @@
 | `gmogaika.com` | 1 | 1 | `mx.gmogaika.com` |
 | `gol.com` | 1 | 1 | `mx.mail.gol.com` |
 | `google.com` | 1 | 1 | `alt5.aspmx.l.google.com` |
+| `hetemail.jp` | 1 | 1 | `mx.hetemail.jp` |
 | `hikari.co.jp` | 1 | 1 | `mprg.hikari.co.jp` |
 | `hoshizaki-tokai.sakura.ne.jp` | 1 | 1 | `hoshizaki-tokai.sakura.ne.jp` |
 | `hostmasteris.me` | 1 | 1 | `adpub.hostmasteris.me` |
@@ -68,6 +69,7 @@
 | `mail.toray` | 1 | 1 | `igw-jp-mt.mail.toray` |
 | `mailslurp.com` | 1 | 1 | `mx.mailslurp.com` |
 | `marketingsuite.jp` | 1 | 1 | `ims.marketingsuite.jp` |
+| `matsumotounsou.sakura.ne.jp` | 1 | 1 | `matsumotounsou.sakura.ne.jp` |
 | `mcdonalds.co.jp` | 1 | 1 | `mail2.mcdonalds.co.jp` |
 | `mcnx.jp` | 1 | 1 | `sv2.mcnx.jp` |
 | `mxthunder.com` | 1 | 1 | `tsukuba-milk-co-jp.p10.mxthunder.com` |
