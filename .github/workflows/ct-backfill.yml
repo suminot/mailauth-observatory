@@ -170,8 +170,9 @@ jobs:
           echo "got=$got" >> "$GITHUB_OUTPUT"
           echo "ready=$(jq -r '.ready_for_rerun | join(" ")' /tmp/backfill.json)" >> "$GITHUB_OUTPUT"
           echo "pending=$(jq '([.populations[].pending_after // 0] | add // 0) + (.crtsh_org.pending_after // 0)' /tmp/backfill.json)" >> "$GITHUB_OUTPUT"
-          # crt.sh から実際に取れて、落ちているとも判定されなかったか（組織名検索も含む）
-          echo "crtsh_ok=$(jq -r '(((.crtsh.got // 0) + (.crtsh_org.got // 0)) > 0) and (.crtsh.upstream_down == null)' /tmp/backfill.json)" >> "$GITHUB_OUTPUT"
+          # crt.sh から実際に取れて、落ちているとも判定されなかったか（組織名検索も含む。
+          # 組織名検索で落ちていると見切った回も「取れなかった回」にする。2026-11-09）
+          echo "crtsh_ok=$(jq -r '(((.crtsh.got // 0) + (.crtsh_org.got // 0)) > 0) and (.crtsh.upstream_down == null) and (.crtsh_org.upstream_down == null)' /tmp/backfill.json)" >> "$GITHUB_OUTPUT"
           {
             echo "### CT の補充 ${{ steps.run.outputs.id }}"
             echo
