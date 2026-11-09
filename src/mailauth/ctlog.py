@@ -1515,8 +1515,13 @@ def backfill(
                                   if crtsh.cached_org(n) is None]
             left += len(payload["pending"])
             path.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+        # **落ちていると見切ったことも残す。** 残さないと、ドメインの補充が無い回
+        # （crtsh が空）は「crt.sh は落ちていない」と見なされ、組織名で1本でも
+        # 取れれば次をすぐ頼む ── 2026-11-09、弱っている crt.sh に5分おきに
+        # 8本ずつ投げ続けた（2026-11-01 と同じ形）
         report.crtsh_org = {"tried": tried, "got": got_org, "pending_after": left,
-                            "errors_by_kind": dict(sorted(org_errors.items()))}
+                            "errors_by_kind": dict(sorted(org_errors.items())),
+                            "upstream_down": crtsh.upstream_down}
 
     for path, payload in files.items():
         pop = payload.get("population") or path.stem

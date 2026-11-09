@@ -444,6 +444,8 @@ def test_進んだ回だけ続きを自分で頼む():
     assert "steps.fill.outputs.got" not in cond
     fill = _steps()[_index("補充")]["run"]
     assert ".crtsh.upstream_down == null" in fill
+    # 組織名検索で落ちていると見切った回も続けない（2026-11-09、5分おきに8本ずつ）
+    assert ".crtsh_org.upstream_down == null" in fill
     assert "steps.fill.outputs.ready == ''" in cond, "流し直しを頼んだ回は続けない"
     assert "steps.fill.outputs.pending != '0'" in cond
     assert "gh workflow run ct-backfill.yml" in step["run"]
@@ -916,7 +918,8 @@ def test_組織名の積み残しを_crtsh_で引いてキャッシュに入れ�
                         client=httpx.Client(transport=httpx.MockTransport(handler)))
     write_org_pending(tmp_path, MONTH, "jp-all-listed", ["Hitachi, Ltd.", "Kao Corporation"])
     report = backfill(tmp_path, MONTH, crtsh=crtsh, certspotter=None)
-    assert report.crtsh_org == {"tried": 2, "got": 2, "pending_after": 0, "errors_by_kind": {}}
+    assert report.crtsh_org == {"tried": 2, "got": 2, "pending_after": 0, "errors_by_kind": {},
+                                "upstream_down": None}
     assert crtsh.cached_org("Hitachi, Ltd.").found == ["brand-x.co.jp"]
     assert read_pending(org_pending_path(tmp_path, MONTH, "jp-all-listed"))["pending"] == []
     assert "crtsh_org" in report.to_dict()
@@ -1104,3 +1107,15 @@ def test_certspotterだけで埋める積み残しはcrtshに投げない(tmp_pa
     report = backfill(tmp_path, MONTH, crtsh=NoCrtSh(), certspotter=cs)
     assert report.certspotter["got"] == 1
     assert read_pending(pending_path(tmp_path, MONTH, "jp-all-listed-group"))["pending"] == []
+
+
+def test_組織名検索で落ちていると見切ったことを報告に残す(tmp_path):
+    """残さないと、ドメインの補充が無い回は「落ちていない」と見なされ、5分おきに
+    次を頼み続けた（2026-11-09）。"""
+    from mailauth.ctlog import write_org_pending
+
+    write_org_pending(tmp_path, MONTH, "jp-all-listed", ["A Corp", "B Corp", "C Corp"])
+    report = backfill(tmp_path, MONTH, crtsh=_crtsh_down(tmp_path), certspotter=None)
+    assert report.crtsh == {}
+    assert report.crtsh_org["upstream_down"]
+    assert report.crtsh_org["tried"] == 2
