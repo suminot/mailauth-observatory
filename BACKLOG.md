@@ -2353,7 +2353,7 @@ Constant Contact（資料が「include は要らない」）、GoDaddy `securese
 ブラストメール（サイトが不正アクセスで停止中、2026-10-21 公表）、SHANON
 （頁が 403）、ベアメール・SATORI・Cuenote・BowNow（値が申込者向けで
 公開の資料に無い）、`spfhost.messageprovider.com`（運営者不明）。
-NTT の `_spf.mwprem.net` は手引きが 503 で、写しでしか確かめられていない。
+NTT の `_spf.mwprem.net` は手引きが 503 で、写しでしか確かめられていなかった → **2026-11-11 に手引きが読めるようになり、公式の記載例（`include:_spf.mwprem.net`、「値には必ず指定」）で確かめて足した**（bizmw.jp/p-manual/mwpr3_setup/oid0043/）。同日、ブラストメール（停止のお知らせに飛ぶ）と SHANON（サポートが 403）はまだ読めない。
 
 DMARC rua の宛先は、`rua.dmp.cisco.com`（54社）・`qiye.163.com`（24社）を
 同定できない一覧に。Check Point の資料にある宛先は `dmarc-cp.com` で、
