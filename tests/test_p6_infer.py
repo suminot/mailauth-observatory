@@ -1575,6 +1575,8 @@ def test_undocumented_gateway_spf_is_not_outbound(rules, includes, mechanisms):
         ("sender.zcsend.jp", "Zoho"),
         ("spf.sender.xserver.jp", "エックスサーバー"),
         ("kagoya.net", "カゴヤ・ジャパン"),
+        # 手引きが 503 で足していなかった。2026-11-11 に公式の手引きで確かめた
+        ("_spf.mwprem.net", "NTTコミュニケーションズ"),
     ],
 )
 def test_documented_spf_includes_are_identified(rules, include, vendor):

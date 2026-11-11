@@ -3,7 +3,7 @@
 # 証拠の強さ: DKIM_CNAME >= MX > SPF_INCLUDE > VERIFICATION_TXT（DESIGN.md P3/P6）
 # ゲートウェイ型製品が MX を握っていても、SPF include / DKIM CNAME から
 # 背後の実基盤を別カテゴリとして残すこと（原則2。単一ベンダーに丸めない）。
-version: 2026-11-01
+version: 2026-11-11
 category: mail_platform
 
 rules:
@@ -222,7 +222,23 @@ rules:
       record: MX
       pattern: '^mwpremgw\d*\.ocn\.ad\.jp\.?$'
     confidence: medium
-    note: ホスト名の mwpremgw は「メール&ウェブ プレミアム」の綴り。製品名は推察
+    # 2026-11-11、手引きが読めるようになった：迷惑メールフィルタリング・ウイルスチェックの
+    # オプションを使うときの MX に mwpremgw1/2.ocn.ad.jp を指定する
+    source: https://bizmw.jp/p-manual/mwpr3_setup/oid0043/
+    note: プレミアム r3 セットアップマニュアル「6.2 お客さまDNSサーバーの設定」
+
+  - id: ntt-ocn-spf-01
+    vendor: NTTコミュニケーションズ
+    product: Bizメール&ウェブ プレミアム
+    region: JP
+    match:
+      # 手引きの記載例は "v=spf1 +a include:_spf.mwprem.net ~all"、「値には必ず
+      # _spf.mwprem.net を指定してください」（2026-11-11 に公式の手引きで確かめた。
+      # それまでは手引きが 503 で、写しでしか確かめられず足していなかった）
+      record: SPF_INCLUDE
+      pattern: '^_spf\.mwprem\.net$'
+    confidence: medium
+    source: https://bizmw.jp/p-manual/mwpr3_setup/oid0043/
 
   - id: ntt-ocn-mx-02
     vendor: NTTコミュニケーションズ
